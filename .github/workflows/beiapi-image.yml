@@ -32,6 +32,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve build metadata
+        run: |
+          echo "VERSION=beiapi-${GITHUB_SHA::12}" >> "$GITHUB_ENV"
+          echo "COMMIT=${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
       - name: Build and push
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -40,6 +46,10 @@ jobs:
           platforms: linux/amd64
           push: true
           pull: true
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            COMMIT=${{ env.COMMIT }}
+            BUILD_DATE=${{ env.BUILD_DATE }}
           tags: |
             ghcr.io/yorick-ryu/cli-proxy-api:beiapi-production
             ghcr.io/yorick-ryu/cli-proxy-api:sha-${{ github.sha }}
