@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/klauspost/compress/zstd"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
@@ -16,6 +18,110 @@ import (
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
 	"github.com/tidwall/gjson"
 )
+
+func TestCodexExecutorCacheHelper_RequestCompression(t *testing.T) {
+	rawJSON := []byte(`{"model":"gpt-5-codex","input":"` + string(bytes.Repeat([]byte("compressible prompt "), 128)) + `"}`)
+	req := cliproxyexecutor.Request{Model: "gpt-5-codex", Payload: rawJSON}
+	oauth := &cliproxyauth.Auth{ID: "oauth-1", Provider: "codex"}
+
+	tests := []struct {
+		name           string
+		cfg            *config.Config
+		auth           *cliproxyauth.Auth
+		wantCompressed bool
+	}{
+		{
+			name: "disabled",
+			cfg: &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{
+				Enabled:  false,
+				MinBytes: 1,
+			}}},
+			auth: oauth,
+		},
+		{
+			name: "oauth above threshold",
+			cfg: &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{
+				Enabled:  true,
+				MinBytes: 1,
+			}}},
+			auth:           oauth,
+			wantCompressed: true,
+		},
+		{
+			name: "api key",
+			cfg: &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{
+				Enabled:  true,
+				MinBytes: 1,
+			}}},
+			auth: &cliproxyauth.Auth{Provider: "codex", Attributes: map[string]string{"api_key": "test-key"}},
+		},
+		{
+			name: "below threshold",
+			cfg: &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{
+				Enabled:  true,
+				MinBytes: len(rawJSON) + 1,
+			}}},
+			auth: oauth,
+		},
+		{
+			name: "zero threshold uses default",
+			cfg: &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{
+				Enabled:  true,
+				MinBytes: 0,
+			}}},
+			auth: oauth,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			executor := NewCodexExecutor(tt.cfg)
+			httpReq, upstreamBody, _, err := executor.cacheHelper(context.Background(), sdktranslator.FromString("openai-response"), "https://example.com/responses", tt.auth, req, req.Payload, rawJSON)
+			if err != nil {
+				t.Fatalf("cacheHelper error: %v", err)
+			}
+			wireBody, errRead := io.ReadAll(httpReq.Body)
+			if errRead != nil {
+				t.Fatalf("read request body: %v", errRead)
+			}
+			if !bytes.Equal(upstreamBody, rawJSON) {
+				t.Fatalf("logged upstream body changed: got %d bytes, want %d", len(upstreamBody), len(rawJSON))
+			}
+			if got := httpReq.ContentLength; got != int64(len(wireBody)) {
+				t.Fatalf("ContentLength = %d, want %d", got, len(wireBody))
+			}
+
+			if !tt.wantCompressed {
+				if got := httpReq.Header.Get("Content-Encoding"); got != "" {
+					t.Fatalf("Content-Encoding = %q, want empty", got)
+				}
+				if !bytes.Equal(wireBody, upstreamBody) {
+					t.Fatalf("wire body differs without compression")
+				}
+				return
+			}
+
+			if got := httpReq.Header.Get("Content-Encoding"); got != "zstd" {
+				t.Fatalf("Content-Encoding = %q, want zstd", got)
+			}
+			if bytes.Equal(wireBody, upstreamBody) {
+				t.Fatalf("wire body was not compressed")
+			}
+			decoder, errDecoder := zstd.NewReader(bytes.NewReader(wireBody))
+			if errDecoder != nil {
+				t.Fatalf("create zstd decoder: %v", errDecoder)
+			}
+			decoded, errDecode := io.ReadAll(decoder)
+			decoder.Close()
+			if errDecode != nil {
+				t.Fatalf("decode zstd request body: %v", errDecode)
+			}
+			if !bytes.Equal(decoded, upstreamBody) {
+				t.Fatalf("decoded wire body differs from upstream body")
+			}
+		})
+	}
+}
 
 func TestCodexExecutorCacheHelper_OpenAIChatCompletions_StablePromptCacheKeyFromAPIKey(t *testing.T) {
 	recorder := httptest.NewRecorder()
@@ -162,7 +268,13 @@ func TestCodexExecutorCacheHelper_IdentityConfuseRemapsBodyAndHeaders(t *testing
 	ctx := context.WithValue(context.Background(), "gin", ginCtx)
 	executor := &CodexExecutor{cfg: &config.Config{
 		Routing: config.RoutingConfig{Strategy: "fill-first"},
-		Codex:   config.CodexConfig{IdentityConfuse: true},
+		Codex: config.CodexConfig{
+			IdentityConfuse: true,
+			RequestCompression: config.CodexRequestCompressionConfig{
+				Enabled:  true,
+				MinBytes: 1,
+			},
+		},
 	}}
 	auth := &cliproxyauth.Auth{ID: "auth-1", Provider: "codex"}
 	rawJSON := []byte(`{"model":"gpt-5-codex","stream":true,"client_metadata":{"x-codex-turn-metadata":"{\"prompt_cache_key\":\"cache-1\",\"turn_id\":\"turn-1\",\"window_id\":\"cache-1:0\"}","x-codex-window-id":"cache-1:0"}}`)
@@ -175,6 +287,25 @@ func TestCodexExecutorCacheHelper_IdentityConfuseRemapsBodyAndHeaders(t *testing
 	httpReq, body, identityState, err := executor.cacheHelper(ctx, sdktranslator.FromString("openai-response"), url, auth, req, req.Payload, rawJSON)
 	if err != nil {
 		t.Fatalf("cacheHelper error: %v", err)
+	}
+	compressedBody, errRead := io.ReadAll(httpReq.Body)
+	if errRead != nil {
+		t.Fatalf("read compressed request body: %v", errRead)
+	}
+	decoder, errDecoder := zstd.NewReader(bytes.NewReader(compressedBody))
+	if errDecoder != nil {
+		t.Fatalf("create zstd decoder: %v", errDecoder)
+	}
+	wireBody, errDecode := io.ReadAll(decoder)
+	decoder.Close()
+	if errDecode != nil {
+		t.Fatalf("decode zstd request body: %v", errDecode)
+	}
+	if got := httpReq.Header.Get("Content-Encoding"); got != "zstd" {
+		t.Fatalf("Content-Encoding = %q, want zstd", got)
+	}
+	if !bytes.Equal(wireBody, body) {
+		t.Fatalf("decoded wire body differs from identity-confused upstream body")
 	}
 	applyCodexHeaders(httpReq, auth, "oauth-token", true, executor.cfg)
 	applyCodexIdentityConfuseHeaders(httpReq.Header, &identityState)

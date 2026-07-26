@@ -32,6 +32,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/klauspost/compress/zstd"
 )
 
 const (
@@ -45,6 +46,8 @@ const (
 var dataTag = []byte("data:")
 
 const codexIncompleteStreamMessage = "stream error: stream disconnected before completion: stream closed before response.completed"
+
+const codexDefaultRequestCompressionMinBytes = 64 * 1024
 
 type codexIncompleteStreamError struct {
 	statusErr
@@ -1826,14 +1829,55 @@ func (e *CodexExecutor) cacheHelper(ctx context.Context, from sdktranslator.Form
 	if identityState.promptCacheKey != "" {
 		cache.ID = identityState.promptCacheKey
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(rawJSON))
+	requestBody := rawJSON
+	compressed := codexRequestCompressionEnabled(e.cfg, auth, len(rawJSON))
+	if compressed {
+		var errCompress error
+		requestBody, errCompress = compressCodexRequestBody(rawJSON)
+		if errCompress != nil {
+			return nil, nil, codexIdentityConfuseState{}, errCompress
+		}
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(requestBody))
 	if err != nil {
 		return nil, nil, codexIdentityConfuseState{}, err
+	}
+	if compressed {
+		httpReq.Header.Set("Content-Encoding", "zstd")
 	}
 	if cache.ID != "" {
 		httpReq.Header.Set("Session_id", cache.ID)
 	}
 	return httpReq, rawJSON, identityState, nil
+}
+
+func codexRequestCompressionEnabled(cfg *config.Config, auth *cliproxyauth.Auth, bodyBytes int) bool {
+	if cfg == nil || !cfg.Codex.RequestCompression.Enabled || auth == nil {
+		return false
+	}
+	if auth.Attributes != nil && strings.TrimSpace(auth.Attributes["api_key"]) != "" {
+		return false
+	}
+	minBytes := cfg.Codex.RequestCompression.MinBytes
+	if minBytes <= 0 {
+		minBytes = codexDefaultRequestCompressionMinBytes
+	}
+	return bodyBytes >= minBytes
+}
+
+func compressCodexRequestBody(body []byte) ([]byte, error) {
+	encoder, err := zstd.NewWriter(nil,
+		zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(3)),
+		zstd.WithEncoderConcurrency(1),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create Codex zstd request encoder: %w", err)
+	}
+	compressed := encoder.EncodeAll(body, nil)
+	if errClose := encoder.Close(); errClose != nil {
+		return nil, fmt.Errorf("close Codex zstd request encoder: %w", errClose)
+	}
+	return compressed, nil
 }
 
 func applyCodexIdentityConfuseBody(cfg *config.Config, auth *cliproxyauth.Auth, userPayload []byte, rawJSON []byte) ([]byte, codexIdentityConfuseState) {

@@ -134,6 +134,21 @@ func TestBuildConfigChangeDetails_CodexLiveMediaRelay(t *testing.T) {
 	}
 }
 
+func TestBuildConfigChangeDetails_CodexRequestCompression(t *testing.T) {
+	oldCfg := &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{
+		Enabled:  false,
+		MinBytes: 65536,
+	}}}
+	newCfg := &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{
+		Enabled:  true,
+		MinBytes: 32768,
+	}}}
+
+	details := BuildConfigChangeDetails(oldCfg, newCfg)
+	expectContains(t, details, "codex.request-compression.enabled: false -> true")
+	expectContains(t, details, "codex.request-compression.min-bytes: 65536 -> 32768")
+}
+
 func TestBuildConfigChangeDetails_GeminiVertexHeaders(t *testing.T) {
 	oldCfg := &config.Config{
 		GeminiKey: []config.GeminiKey{

@@ -293,8 +293,16 @@ type CodexConfig struct {
 	IdentityConfuse bool `yaml:"identity-confuse" json:"identity-confuse"`
 	// OptimizeMultiAgentV2 optimizes official Codex multi-agent requests.
 	OptimizeMultiAgentV2 bool `yaml:"optimize-multi-agent-v2" json:"optimize-multi-agent-v2"`
+	// RequestCompression compresses eligible Codex OAuth HTTP request bodies.
+	RequestCompression CodexRequestCompressionConfig `yaml:"request-compression" json:"request-compression"`
 	// LiveMediaRelay terminates and relays Codex Live WebRTC media in this process.
 	LiveMediaRelay CodexLiveMediaRelayConfig `yaml:"live-media-relay" json:"live-media-relay"`
+}
+
+// CodexRequestCompressionConfig configures outbound Codex OAuth request compression.
+type CodexRequestCompressionConfig struct {
+	Enabled  bool `yaml:"enabled" json:"enabled"`
+	MinBytes int  `yaml:"min-bytes" json:"min-bytes"`
 }
 
 // CodexLiveMediaRelayConfig configures the in-process Codex Live WebRTC gateway.

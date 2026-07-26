@@ -108,6 +108,14 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 	if oldCfg.Codex.OptimizeMultiAgentV2 != newCfg.Codex.OptimizeMultiAgentV2 {
 		changes = append(changes, fmt.Sprintf("codex.optimize-multi-agent-v2: %t -> %t", oldCfg.Codex.OptimizeMultiAgentV2, newCfg.Codex.OptimizeMultiAgentV2))
 	}
+	oldRequestCompression := oldCfg.Codex.RequestCompression
+	newRequestCompression := newCfg.Codex.RequestCompression
+	if oldRequestCompression.Enabled != newRequestCompression.Enabled {
+		changes = append(changes, fmt.Sprintf("codex.request-compression.enabled: %t -> %t", oldRequestCompression.Enabled, newRequestCompression.Enabled))
+	}
+	if oldRequestCompression.MinBytes != newRequestCompression.MinBytes {
+		changes = append(changes, fmt.Sprintf("codex.request-compression.min-bytes: %d -> %d", oldRequestCompression.MinBytes, newRequestCompression.MinBytes))
+	}
 	oldLiveRelay := oldCfg.Codex.LiveMediaRelay
 	newLiveRelay := newCfg.Codex.LiveMediaRelay
 	if oldLiveRelay.Enabled != newLiveRelay.Enabled {
