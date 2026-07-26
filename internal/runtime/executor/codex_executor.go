@@ -47,8 +47,6 @@ var dataTag = []byte("data:")
 
 const codexIncompleteStreamMessage = "stream error: stream disconnected before completion: stream closed before response.completed"
 
-const codexDefaultRequestCompressionMinBytes = 64 * 1024
-
 type codexIncompleteStreamError struct {
 	statusErr
 }
@@ -1859,8 +1857,8 @@ func codexRequestCompressionEnabled(cfg *config.Config, auth *cliproxyauth.Auth,
 		return false
 	}
 	minBytes := cfg.Codex.RequestCompression.MinBytes
-	if minBytes <= 0 {
-		minBytes = codexDefaultRequestCompressionMinBytes
+	if minBytes < 0 {
+		minBytes = 0
 	}
 	return bodyBytes >= minBytes
 }

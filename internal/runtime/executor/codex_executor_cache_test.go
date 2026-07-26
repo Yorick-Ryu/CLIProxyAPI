@@ -64,12 +64,13 @@ func TestCodexExecutorCacheHelper_RequestCompression(t *testing.T) {
 			auth: oauth,
 		},
 		{
-			name: "zero threshold uses default",
+			name: "zero threshold compresses every request like Codex",
 			cfg: &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{
 				Enabled:  true,
 				MinBytes: 0,
 			}}},
-			auth: oauth,
+			auth:           oauth,
+			wantCompressed: true,
 		},
 	}
 
