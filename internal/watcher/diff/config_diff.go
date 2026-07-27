@@ -116,6 +116,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 	if oldRequestCompression.MinBytes != newRequestCompression.MinBytes {
 		changes = append(changes, fmt.Sprintf("codex.request-compression.min-bytes: %d -> %d", oldRequestCompression.MinBytes, newRequestCompression.MinBytes))
 	}
+	if oldCfg.XAI.InjectXSearch != newCfg.XAI.InjectXSearch {
+		changes = append(changes, fmt.Sprintf("xai.inject-x-search: %t -> %t", oldCfg.XAI.InjectXSearch, newCfg.XAI.InjectXSearch))
+	}
 	oldLiveRelay := oldCfg.Codex.LiveMediaRelay
 	newLiveRelay := newCfg.Codex.LiveMediaRelay
 	if oldLiveRelay.Enabled != newLiveRelay.Enabled {
