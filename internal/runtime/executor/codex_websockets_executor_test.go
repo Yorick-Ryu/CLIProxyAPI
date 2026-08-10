@@ -175,7 +175,7 @@ func TestClearCodexReasoningReplayOnWebsocketInvalidSignature(t *testing.T) {
 	}
 }
 
-func TestCodexWebsocketsExecuteResponsesLiteDoesNotInjectImageGenerationTool(t *testing.T) {
+func TestCodexWebsocketsExecuteResponsesLiteBridgesImageGenerationTool(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	capturedPayload := make(chan []byte, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -219,14 +219,17 @@ func TestCodexWebsocketsExecuteResponsesLiteDoesNotInjectImageGenerationTool(t *
 
 	select {
 	case payload := <-capturedPayload:
-		if tools := gjson.GetBytes(payload, "tools"); tools.Exists() {
-			t.Fatalf("unexpected tools in responses-lite upstream payload: %s", tools.Raw)
+		if got := gjson.GetBytes(payload, "tools.0.name").String(); got != "exec" {
+			t.Fatalf("bridged custom tool name = %q, want exec; payload=%s", got, payload)
 		}
-		if got := gjson.GetBytes(payload, "input.0.type").String(); got != "additional_tools" {
-			t.Fatalf("input.0.type = %q, want additional_tools; payload=%s", got, payload)
+		if got := gjson.GetBytes(payload, "tools.1.type").String(); got != "image_generation" {
+			t.Fatalf("bridged image tool type = %q, want image_generation; payload=%s", got, payload)
 		}
-		if got := gjson.GetBytes(payload, "client_metadata.ws_request_header_x_openai_internal_codex_responses_lite").String(); got != "true" {
-			t.Fatalf("responses-lite metadata = %q, want true; payload=%s", got, payload)
+		if got := gjson.GetBytes(payload, "input.0.content").String(); got != "hello" {
+			t.Fatalf("bridged user input = %q, want hello; payload=%s", got, payload)
+		}
+		if gjson.GetBytes(payload, codexResponsesLiteMetadata).Exists() {
+			t.Fatalf("responses-lite metadata was not removed: %s", payload)
 		}
 		parallelToolCalls := gjson.GetBytes(payload, "parallel_tool_calls")
 		if !parallelToolCalls.Exists() || parallelToolCalls.Bool() {
@@ -237,7 +240,7 @@ func TestCodexWebsocketsExecuteResponsesLiteDoesNotInjectImageGenerationTool(t *
 	}
 }
 
-func TestCodexWebsocketsExecuteStreamResponsesLiteForcesParallelToolCallsFalse(t *testing.T) {
+func TestCodexWebsocketsExecuteStreamResponsesLiteBridgesImageGenerationTool(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	capturedPayload := make(chan []byte, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -299,6 +302,12 @@ func TestCodexWebsocketsExecuteStreamResponsesLiteForcesParallelToolCallsFalse(t
 
 	select {
 	case payload := <-capturedPayload:
+		if got := gjson.GetBytes(payload, "tools.1.type").String(); got != "image_generation" {
+			t.Fatalf("bridged image tool type = %q, want image_generation; payload=%s", got, payload)
+		}
+		if gjson.GetBytes(payload, codexResponsesLiteMetadata).Exists() {
+			t.Fatalf("responses-lite metadata was not removed: %s", payload)
+		}
 		parallelToolCalls := gjson.GetBytes(payload, "parallel_tool_calls")
 		if !parallelToolCalls.Exists() || parallelToolCalls.Bool() {
 			t.Fatalf("responses-lite parallel_tool_calls should be false: %s", payload)

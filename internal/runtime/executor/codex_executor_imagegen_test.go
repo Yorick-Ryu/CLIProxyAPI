@@ -14,7 +14,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func TestCodexExecutorExecuteResponsesLiteHeaderDoesNotInjectImageGenerationTool(t *testing.T) {
+func TestCodexExecutorExecuteResponsesLiteHeaderInjectsImageGenerationTool(t *testing.T) {
 	var gotBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, errRead := io.ReadAll(r.Body)
@@ -41,7 +41,7 @@ func TestCodexExecutorExecuteResponsesLiteHeaderDoesNotInjectImageGenerationTool
 
 	_, err := executor.Execute(context.Background(), auth, cliproxyexecutor.Request{
 		Model:   "gpt-5.6-sol",
-		Payload: []byte(`{"model":"gpt-5.6-sol","input":"hello"}`),
+		Payload: []byte(`{"model":"gpt-5.6-sol","input":[{"type":"additional_tools","role":"developer","tools":[{"type":"custom","name":"exec"}]},{"role":"user","content":"hello"}]}`),
 	}, cliproxyexecutor.Options{
 		SourceFormat: sdktranslator.FromString("openai-response"),
 		Headers:      headers,
@@ -49,8 +49,11 @@ func TestCodexExecutorExecuteResponsesLiteHeaderDoesNotInjectImageGenerationTool
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if tools := gjson.GetBytes(gotBody, "tools"); tools.Exists() {
-		t.Fatalf("unexpected tools in responses-lite upstream payload: %s", tools.Raw)
+	if got := gjson.GetBytes(gotBody, "tools.1.type").String(); got != "image_generation" {
+		t.Fatalf("bridged image tool type = %q, want image_generation; body=%s", got, gotBody)
+	}
+	if got := gjson.GetBytes(gotBody, "input.0.content").String(); got != "hello" {
+		t.Fatalf("bridged user input = %q, want hello; body=%s", got, gotBody)
 	}
 	parallelToolCalls := gjson.GetBytes(gotBody, "parallel_tool_calls")
 	if !parallelToolCalls.Exists() || parallelToolCalls.Bool() {
@@ -58,7 +61,7 @@ func TestCodexExecutorExecuteResponsesLiteHeaderDoesNotInjectImageGenerationTool
 	}
 }
 
-func TestCodexExecutorExecuteStreamResponsesLiteHeaderForcesParallelToolCallsFalse(t *testing.T) {
+func TestCodexExecutorExecuteStreamResponsesLiteHeaderBridgesImageGenerationTool(t *testing.T) {
 	var gotBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, errRead := io.ReadAll(r.Body)
@@ -85,7 +88,7 @@ func TestCodexExecutorExecuteStreamResponsesLiteHeaderForcesParallelToolCallsFal
 
 	result, errExecute := executor.ExecuteStream(context.Background(), auth, cliproxyexecutor.Request{
 		Model:   "gpt-5.6-luna",
-		Payload: []byte(`{"model":"gpt-5.6-luna","input":"hello"}`),
+		Payload: []byte(`{"model":"gpt-5.6-luna","input":[{"type":"additional_tools","role":"developer","tools":[]},{"role":"user","content":"hello"}]}`),
 	}, cliproxyexecutor.Options{
 		SourceFormat: sdktranslator.FromString("openai-response"),
 		Headers:      headers,
@@ -103,37 +106,49 @@ func TestCodexExecutorExecuteStreamResponsesLiteHeaderForcesParallelToolCallsFal
 	if !parallelToolCalls.Exists() || parallelToolCalls.Bool() {
 		t.Fatalf("responses-lite parallel_tool_calls should be false: %s", gotBody)
 	}
+	if got := gjson.GetBytes(gotBody, "tools.0.type").String(); got != "image_generation" {
+		t.Fatalf("bridged image tool type = %q, want image_generation; body=%s", got, gotBody)
+	}
 }
 
-func TestEnsureImageGenerationTool_ResponsesLiteMetadataDoesNotInjectTool(t *testing.T) {
-	body := []byte(`{"model":"gpt-5.6-sol","client_metadata":{"ws_request_header_x_openai_internal_codex_responses_lite":"true"},"input":[{"role":"user","content":"hello"}]}`)
+func TestEnsureImageGenerationTool_ResponsesLiteMetadataBridgesToolsToTopLevel(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","client_metadata":{"ws_request_header_x_openai_internal_codex_responses_lite":"true"},"input":[{"type":"additional_tools","role":"developer","tools":[{"type":"custom","name":"exec"}]},{"role":"user","content":"hello"}]}`)
 	result := ensureImageGenerationTool(body, "gpt-5.6-sol", nil, nil)
 
-	if string(result) != string(body) {
-		t.Fatalf("expected responses-lite body to be unchanged, got %s", string(result))
+	if got := gjson.GetBytes(result, "tools.0.name").String(); got != "exec" {
+		t.Fatalf("bridged custom tool name = %q, want exec; body=%s", got, result)
 	}
-	if gjson.GetBytes(result, "tools").Exists() {
-		t.Fatalf("expected no injected tools for responses-lite request, got %s", gjson.GetBytes(result, "tools").Raw)
+	if got := gjson.GetBytes(result, "tools.1.type").String(); got != "image_generation" {
+		t.Fatalf("bridged image tool type = %q, want image_generation; body=%s", got, result)
+	}
+	if gjson.GetBytes(result, codexResponsesLiteMetadata).Exists() {
+		t.Fatalf("responses-lite metadata was not removed: %s", result)
 	}
 }
 
-func TestEnsureImageGenerationTool_ResponsesLiteBooleanMetadataDoesNotInjectTool(t *testing.T) {
-	body := []byte(`{"model":"gpt-5.6-sol","client_metadata":{"ws_request_header_x_openai_internal_codex_responses_lite":true},"input":"hello"}`)
+func TestEnsureImageGenerationTool_ResponsesLiteBooleanMetadataAddsTopLevelTool(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","client_metadata":{"ws_request_header_x_openai_internal_codex_responses_lite":true},"input":[{"role":"user","content":"hello"}]}`)
 	result := ensureImageGenerationTool(body, "gpt-5.6-sol", nil, nil)
 
-	if string(result) != string(body) {
-		t.Fatalf("expected responses-lite body to be unchanged, got %s", string(result))
+	if got := gjson.GetBytes(result, "tools.0.type").String(); got != "image_generation" {
+		t.Fatalf("bridged image tool type = %q, want image_generation; body=%s", got, result)
+	}
+	if got := gjson.GetBytes(result, "input.0.content").String(); got != "hello" {
+		t.Fatalf("original input content = %q, want hello; body=%s", got, result)
 	}
 }
 
-func TestEnsureImageGenerationTool_ResponsesLiteHeaderDoesNotInjectTool(t *testing.T) {
-	body := []byte(`{"model":"gpt-5.6-sol","input":"hello"}`)
+func TestEnsureImageGenerationTool_ResponsesLiteHeaderBridgesEmptyAdditionalTools(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","input":[{"type":"additional_tools","role":"developer","tools":[]},{"role":"user","content":"hello"}]}`)
 	headers := make(http.Header)
 	headers.Set("X-OpenAI-Internal-Codex-Responses-Lite", "true")
 	result := ensureImageGenerationTool(body, "gpt-5.6-sol", nil, headers)
 
-	if string(result) != string(body) {
-		t.Fatalf("expected responses-lite body to be unchanged, got %s", string(result))
+	if got := gjson.GetBytes(result, "tools.0.type").String(); got != "image_generation" {
+		t.Fatalf("bridged image tool type = %q, want image_generation; body=%s", got, result)
+	}
+	if got := gjson.GetBytes(result, "input.0.content").String(); got != "hello" {
+		t.Fatalf("original input content = %q, want hello; body=%s", got, result)
 	}
 }
 
@@ -143,6 +158,25 @@ func TestEnsureImageGenerationTool_ResponsesLiteFalseMetadataStillInjectsTool(t 
 
 	if got := gjson.GetBytes(result, "tools.0.type").String(); got != "image_generation" {
 		t.Fatalf("tools.0.type = %q, want image_generation; body=%s", got, result)
+	}
+}
+
+func TestEnsureImageGenerationTool_ResponsesLiteExistingHostedImageToolIsBridgedWithoutDuplicate(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","client_metadata":{"ws_request_header_x_openai_internal_codex_responses_lite":true},"input":[{"type":"additional_tools","role":"developer","tools":[{"type":"image_generation","output_format":"webp"}]}]}`)
+	result := ensureImageGenerationTool(body, "gpt-5.6-sol", nil, nil)
+
+	tools := gjson.GetBytes(result, "tools").Array()
+	if len(tools) != 1 || tools[0].Get("type").String() != "image_generation" || tools[0].Get("output_format").String() != "webp" {
+		t.Fatalf("expected one preserved hosted image tool, got %s", result)
+	}
+}
+
+func TestEnsureImageGenerationTool_ResponsesLiteLocalImageToolDoesNotInjectHostedTool(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","client_metadata":{"ws_request_header_x_openai_internal_codex_responses_lite":true},"input":[{"type":"additional_tools","role":"developer","tools":[{"type":"namespace","name":"image_gen","tools":[{"type":"function","name":"imagegen"}]}]}]}`)
+	result := ensureImageGenerationTool(body, "gpt-5.6-sol", nil, nil)
+
+	if string(result) != string(body) {
+		t.Fatalf("expected local responses-lite image tool to be preserved, got %s", result)
 	}
 }
 
