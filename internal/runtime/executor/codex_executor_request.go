@@ -467,14 +467,14 @@ func isCodexResponsesLiteRequest(body []byte, headers http.Header) bool {
 }
 
 func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth.Auth, headers http.Header) []byte {
+	if isCodexResponsesLiteRequest(body, headers) {
+		return body
+	}
 	if strings.HasSuffix(baseModel, "spark") {
 		return body
 	}
 	if isCodexFreePlanAuth(auth) {
 		return body
-	}
-	if isCodexResponsesLiteRequest(body, headers) {
-		return ensureResponsesLiteImageGenerationTool(body)
 	}
 
 	tools := gjson.GetBytes(body, "tools")
@@ -488,52 +488,6 @@ func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth
 		}
 	}
 	body, _ = sjson.SetRawBytes(body, "tools.-1", imageGenToolJSON)
-	return body
-}
-
-func ensureResponsesLiteImageGenerationTool(body []byte) []byte {
-	input := gjson.GetBytes(body, "input")
-	if !input.IsArray() {
-		return body
-	}
-
-	tools := make([]any, 0)
-	hasHostedImageTool := false
-	if topLevelTools := gjson.GetBytes(body, "tools"); topLevelTools.IsArray() {
-		for _, tool := range topLevelTools.Array() {
-			if isImageGenerationFunctionTool(tool) {
-				return body
-			}
-			if tool.Get("type").String() == "image_generation" {
-				hasHostedImageTool = true
-			}
-			tools = append(tools, tool.Value())
-		}
-	}
-
-	for _, item := range input.Array() {
-		if item.Get("type").String() != "additional_tools" {
-			continue
-		}
-		for _, tool := range item.Get("tools").Array() {
-			if isImageGenerationFunctionTool(tool) {
-				return body
-			}
-			if tool.Get("type").String() == "image_generation" {
-				if !hasHostedImageTool {
-					tools = append(tools, tool.Value())
-					hasHostedImageTool = true
-				}
-			}
-		}
-	}
-
-	if !hasHostedImageTool {
-		tools = append(tools, gjson.ParseBytes(imageGenToolJSON).Value())
-	}
-	body, _ = sjson.SetBytes(body, "tools", tools)
-	body = helps.SetBoolIfDifferent(body, "parallel_tool_calls", false)
-	body, _ = sjson.DeleteBytes(body, codexResponsesLiteMetadata)
 	return body
 }
 

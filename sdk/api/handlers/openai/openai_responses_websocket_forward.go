@@ -45,7 +45,6 @@ func (h *OpenAIResponsesAPIHandler) forwardResponsesWebsocket(
 	completedResponseID := ""
 	outputItemsByIndex := make(map[int64][]byte)
 	var outputItemsFallback [][]byte
-	var imageCompletionTracker responsesSSEFramer
 	pendingToolCallIDs := make(map[string]struct{})
 	downstreamSessionKey := ""
 	if c != nil && c.Request != nil {
@@ -115,35 +114,10 @@ func (h *OpenAIResponsesAPIHandler) forwardResponsesWebsocket(
 
 			payloads := websocketJSONPayloadsFromChunk(chunk)
 			for i := range payloads {
-				eventType := gjson.GetBytes(payloads[i], "type").String()
-				if eventType == "response.image_generation_call.completed" {
-					if imageCompletionTracker.imageCallCompleted(payloads[i]) {
-						continue
-					}
-					imageCompletionTracker.recordCompletedImageCall(payloads[i])
-				}
-				if eventType == "response.output_item.done" {
-					repaired, imageCompleted := responsesCompleteImageGenerationCall(payloads[i])
-					payloads[i] = repaired
-					if len(imageCompleted) > 0 && !imageCompletionTracker.imageCallCompleted(imageCompleted) {
-						imageCompletionTracker.recordCompletedImageCall(imageCompleted)
-						markAPIResponseTimestamp(c)
-						if errWrite := writeResponsesWebsocketPayload(writer, wsTimelineLog, imageCompleted, time.Now()); errWrite != nil {
-							log.Warnf(
-								"responses websocket: downstream_out write failed id=%s event=%s error=%v",
-								sessionID,
-								websocketPayloadEventType(imageCompleted),
-								errWrite,
-							)
-							cancel(errWrite)
-							return completedOutput, completedResponseID, sortedStringSet(pendingToolCallIDs), nil, errWrite
-						}
-					}
-				}
 				collectResponsesWebsocketOutputItem(payloads[i], outputItemsByIndex, &outputItemsFallback)
+				eventType := gjson.GetBytes(payloads[i], "type").String()
 				if isResponsesWebsocketCompletionEvent(eventType) {
 					payloads[i] = restoreResponsesWebsocketCompletionOutput(payloads[i], outputItemsByIndex, outputItemsFallback)
-					payloads[i] = responsesCompleteImageGenerationCallsInOutput(payloads[i])
 				}
 				if toolCacheTurn != nil {
 					toolCacheTurn.recordResponse(payloads[i])
