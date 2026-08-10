@@ -504,10 +504,8 @@ func ensureResponsesLiteImageGenerationTool(body []byte) []byte {
 		}
 	}
 
-	keptInput := make([]any, 0, len(input.Array()))
 	for _, item := range input.Array() {
 		if item.Get("type").String() != "additional_tools" {
-			keptInput = append(keptInput, item.Value())
 			continue
 		}
 		for _, tool := range item.Get("tools").Array() {
@@ -515,16 +513,17 @@ func ensureResponsesLiteImageGenerationTool(body []byte) []byte {
 				return body
 			}
 			if tool.Get("type").String() == "image_generation" {
-				hasHostedImageTool = true
+				if !hasHostedImageTool {
+					tools = append(tools, tool.Value())
+					hasHostedImageTool = true
+				}
 			}
-			tools = append(tools, tool.Value())
 		}
 	}
 
 	if !hasHostedImageTool {
 		tools = append(tools, gjson.ParseBytes(imageGenToolJSON).Value())
 	}
-	body, _ = sjson.SetBytes(body, "input", keptInput)
 	body, _ = sjson.SetBytes(body, "tools", tools)
 	body = helps.SetBoolIfDifferent(body, "parallel_tool_calls", false)
 	body, _ = sjson.DeleteBytes(body, codexResponsesLiteMetadata)

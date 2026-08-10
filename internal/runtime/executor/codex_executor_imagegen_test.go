@@ -49,11 +49,14 @@ func TestCodexExecutorExecuteResponsesLiteHeaderInjectsImageGenerationTool(t *te
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if got := gjson.GetBytes(gotBody, "tools.1.type").String(); got != "image_generation" {
+	if got := gjson.GetBytes(gotBody, "tools.0.type").String(); got != "image_generation" {
 		t.Fatalf("bridged image tool type = %q, want image_generation; body=%s", got, gotBody)
 	}
-	if got := gjson.GetBytes(gotBody, "input.0.content").String(); got != "hello" {
-		t.Fatalf("bridged user input = %q, want hello; body=%s", got, gotBody)
+	if got := gjson.GetBytes(gotBody, "input.0.type").String(); got != "additional_tools" {
+		t.Fatalf("additional tools item type = %q, want additional_tools; body=%s", got, gotBody)
+	}
+	if got := gjson.GetBytes(gotBody, "input.0.tools.0.name").String(); got != "exec" {
+		t.Fatalf("terminal tool name = %q, want exec; body=%s", got, gotBody)
 	}
 	parallelToolCalls := gjson.GetBytes(gotBody, "parallel_tool_calls")
 	if !parallelToolCalls.Exists() || parallelToolCalls.Bool() {
@@ -111,15 +114,18 @@ func TestCodexExecutorExecuteStreamResponsesLiteHeaderBridgesImageGenerationTool
 	}
 }
 
-func TestEnsureImageGenerationTool_ResponsesLiteMetadataBridgesToolsToTopLevel(t *testing.T) {
+func TestEnsureImageGenerationTool_ResponsesLiteMetadataPreservesAdditionalTools(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.6-sol","client_metadata":{"ws_request_header_x_openai_internal_codex_responses_lite":"true"},"input":[{"type":"additional_tools","role":"developer","tools":[{"type":"custom","name":"exec"}]},{"role":"user","content":"hello"}]}`)
 	result := ensureImageGenerationTool(body, "gpt-5.6-sol", nil, nil)
 
-	if got := gjson.GetBytes(result, "tools.0.name").String(); got != "exec" {
-		t.Fatalf("bridged custom tool name = %q, want exec; body=%s", got, result)
-	}
-	if got := gjson.GetBytes(result, "tools.1.type").String(); got != "image_generation" {
+	if got := gjson.GetBytes(result, "tools.0.type").String(); got != "image_generation" {
 		t.Fatalf("bridged image tool type = %q, want image_generation; body=%s", got, result)
+	}
+	if got := gjson.GetBytes(result, "input.0.type").String(); got != "additional_tools" {
+		t.Fatalf("additional tools item type = %q, want additional_tools; body=%s", got, result)
+	}
+	if got := gjson.GetBytes(result, "input.0.tools.0.name").String(); got != "exec" {
+		t.Fatalf("terminal tool name = %q, want exec; body=%s", got, result)
 	}
 	if gjson.GetBytes(result, codexResponsesLiteMetadata).Exists() {
 		t.Fatalf("responses-lite metadata was not removed: %s", result)
@@ -147,7 +153,7 @@ func TestEnsureImageGenerationTool_ResponsesLiteHeaderBridgesEmptyAdditionalTool
 	if got := gjson.GetBytes(result, "tools.0.type").String(); got != "image_generation" {
 		t.Fatalf("bridged image tool type = %q, want image_generation; body=%s", got, result)
 	}
-	if got := gjson.GetBytes(result, "input.0.content").String(); got != "hello" {
+	if got := gjson.GetBytes(result, "input.1.content").String(); got != "hello" {
 		t.Fatalf("original input content = %q, want hello; body=%s", got, result)
 	}
 }
@@ -168,6 +174,9 @@ func TestEnsureImageGenerationTool_ResponsesLiteExistingHostedImageToolIsBridged
 	tools := gjson.GetBytes(result, "tools").Array()
 	if len(tools) != 1 || tools[0].Get("type").String() != "image_generation" || tools[0].Get("output_format").String() != "webp" {
 		t.Fatalf("expected one preserved hosted image tool, got %s", result)
+	}
+	if got := gjson.GetBytes(result, "input.0.type").String(); got != "additional_tools" {
+		t.Fatalf("additional tools item type = %q, want additional_tools; body=%s", got, result)
 	}
 }
 

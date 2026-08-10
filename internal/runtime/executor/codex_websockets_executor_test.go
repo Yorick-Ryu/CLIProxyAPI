@@ -219,14 +219,14 @@ func TestCodexWebsocketsExecuteResponsesLiteBridgesImageGenerationTool(t *testin
 
 	select {
 	case payload := <-capturedPayload:
-		if got := gjson.GetBytes(payload, "tools.0.name").String(); got != "exec" {
-			t.Fatalf("bridged custom tool name = %q, want exec; payload=%s", got, payload)
-		}
-		if got := gjson.GetBytes(payload, "tools.1.type").String(); got != "image_generation" {
+		if got := gjson.GetBytes(payload, "tools.0.type").String(); got != "image_generation" {
 			t.Fatalf("bridged image tool type = %q, want image_generation; payload=%s", got, payload)
 		}
-		if got := gjson.GetBytes(payload, "input.0.content").String(); got != "hello" {
-			t.Fatalf("bridged user input = %q, want hello; payload=%s", got, payload)
+		if got := gjson.GetBytes(payload, "input.0.type").String(); got != "additional_tools" {
+			t.Fatalf("additional tools item type = %q, want additional_tools; payload=%s", got, payload)
+		}
+		if got := gjson.GetBytes(payload, "input.0.tools.0.name").String(); got != "exec" {
+			t.Fatalf("terminal tool name = %q, want exec; payload=%s", got, payload)
 		}
 		if gjson.GetBytes(payload, codexResponsesLiteMetadata).Exists() {
 			t.Fatalf("responses-lite metadata was not removed: %s", payload)
@@ -302,8 +302,11 @@ func TestCodexWebsocketsExecuteStreamResponsesLiteBridgesImageGenerationTool(t *
 
 	select {
 	case payload := <-capturedPayload:
-		if got := gjson.GetBytes(payload, "tools.1.type").String(); got != "image_generation" {
+		if got := gjson.GetBytes(payload, "tools.0.type").String(); got != "image_generation" {
 			t.Fatalf("bridged image tool type = %q, want image_generation; payload=%s", got, payload)
+		}
+		if got := gjson.GetBytes(payload, "input.0.type").String(); got != "additional_tools" {
+			t.Fatalf("additional tools item type = %q, want additional_tools; payload=%s", got, payload)
 		}
 		if gjson.GetBytes(payload, codexResponsesLiteMetadata).Exists() {
 			t.Fatalf("responses-lite metadata was not removed: %s", payload)
