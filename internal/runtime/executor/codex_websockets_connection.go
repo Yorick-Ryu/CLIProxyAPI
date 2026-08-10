@@ -83,16 +83,43 @@ func (codexWebsocketMessageTooBigError) IsRequestScoped() bool {
 	return true
 }
 
+type codexWebsocketAbnormalClosureError struct {
+	cause error
+}
+
+func (e codexWebsocketAbnormalClosureError) Error() string {
+	if e.cause == nil {
+		return ""
+	}
+	return e.cause.Error()
+}
+
+func (e codexWebsocketAbnormalClosureError) Unwrap() error {
+	return e.cause
+}
+
+func (codexWebsocketAbnormalClosureError) IsRequestScoped() bool {
+	return true
+}
+
 func mapCodexWebsocketReadError(err error) error {
 	if err == nil {
 		return nil
 	}
 	var closeErr *websocket.CloseError
-	if errors.As(err, &closeErr) && closeErr.Code == websocket.CloseMessageTooBig {
-		return codexWebsocketMessageTooBigError{statusErr: statusErr{
-			code: http.StatusRequestEntityTooLarge,
-			msg:  `{"error":{"message":"upstream websocket message too big","type":"invalid_request_error","code":"message_too_big"}}`,
-		}}
+	if errors.As(err, &closeErr) {
+		switch closeErr.Code {
+		case websocket.CloseMessageTooBig:
+			return codexWebsocketMessageTooBigError{statusErr: statusErr{
+				code: http.StatusRequestEntityTooLarge,
+				msg:  `{"error":{"message":"upstream websocket message too big","type":"invalid_request_error","code":"message_too_big"}}`,
+			}}
+		case websocket.CloseAbnormalClosure:
+			// A 1006 close has no protocol-level status that identifies the
+			// selected credential as unhealthy. Keep the failure visible to the
+			// caller, but do not put that credential into cooldown.
+			return codexWebsocketAbnormalClosureError{cause: err}
+		}
 	}
 	return err
 }

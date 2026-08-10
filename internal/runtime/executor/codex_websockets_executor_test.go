@@ -823,6 +823,41 @@ func TestMapCodexWebsocketWriteErrorStopsRetryForMessageTooBig(t *testing.T) {
 	}
 }
 
+func TestMapCodexWebsocketReadErrorAbnormalClosureIsRequestScoped(t *testing.T) {
+	original := &websocket.CloseError{
+		Code: websocket.CloseAbnormalClosure,
+		Text: "unexpected EOF",
+	}
+
+	mappedErr := mapCodexWebsocketReadError(original)
+	if mappedErr == nil {
+		t.Fatal("mapped error = nil, want abnormal closure error")
+	}
+	if !errors.Is(mappedErr, original) {
+		t.Fatalf("mapped error does not preserve original: %v", mappedErr)
+	}
+	var closeErr *websocket.CloseError
+	if !errors.As(mappedErr, &closeErr) || closeErr.Code != websocket.CloseAbnormalClosure {
+		t.Fatalf("mapped close error = %#v, want code %d", closeErr, websocket.CloseAbnormalClosure)
+	}
+	requestErr, ok := mappedErr.(cliproxyexecutor.RequestScopedError)
+	if !ok || !requestErr.IsRequestScoped() {
+		t.Fatalf("abnormal closure should be request scoped, got %T", mappedErr)
+	}
+}
+
+func TestMapCodexWebsocketReadErrorNormalClosureIsNotRequestScoped(t *testing.T) {
+	original := &websocket.CloseError{Code: websocket.CloseNormalClosure}
+
+	mappedErr := mapCodexWebsocketReadError(original)
+	if mappedErr != original {
+		t.Fatalf("mapped error = %v, want original normal close", mappedErr)
+	}
+	if requestErr, ok := mappedErr.(cliproxyexecutor.RequestScopedError); ok && requestErr.IsRequestScoped() {
+		t.Fatalf("normal closure unexpectedly became request scoped: %T", mappedErr)
+	}
+}
+
 func TestMapCodexWebsocketWriteErrorDoesNotReusePriorConnectionClose(t *testing.T) {
 	sess := &codexWebsocketSession{}
 	priorConn := &websocket.Conn{}
