@@ -89,6 +89,7 @@ type codexIdentityConfuseState struct {
 	originalPromptCacheKey string
 	promptCacheKey         string
 	turnIDs                []codexIdentityReplacement
+	convergence            codexIdentityConvergenceState
 }
 
 type codexIdentityReplacement struct {
@@ -142,8 +143,12 @@ func (e *CodexExecutor) cacheHelper(ctx context.Context, from sdktranslator.Form
 	rawJSON = helps.SanitizeCodexInputItemIDs(rawJSON)
 	var identityState codexIdentityConfuseState
 	rawJSON, identityState = applyCodexIdentityConfuseBody(e.cfg, auth, userPayload, rawJSON)
+	rawJSON, identityState.convergence = applyCodexIdentityConvergenceBody(e.cfg, auth, userPayload, rawJSON, headers)
 	if identityState.promptCacheKey != "" {
 		cache.ID = identityState.promptCacheKey
+	}
+	if identityState.convergence.promptCacheKeyWasConverged {
+		cache.ID = identityState.convergence.sessionID
 	}
 	requestBody := rawJSON
 	compressed := codexRequestCompressionEnabled(e.cfg, auth, len(rawJSON))
@@ -197,7 +202,7 @@ func compressCodexRequestBody(body []byte) ([]byte, error) {
 }
 
 func applyCodexIdentityConfuseBody(cfg *config.Config, auth *cliproxyauth.Auth, userPayload []byte, rawJSON []byte) ([]byte, codexIdentityConfuseState) {
-	if !codexIdentityConfuseEnabled(cfg) || auth == nil || strings.TrimSpace(auth.ID) == "" || len(rawJSON) == 0 {
+	if codexIdentityConvergenceEnabled(cfg, auth) || !codexIdentityConfuseEnabled(cfg) || auth == nil || strings.TrimSpace(auth.ID) == "" || len(rawJSON) == 0 {
 		return rawJSON, codexIdentityConfuseState{}
 	}
 
@@ -223,10 +228,11 @@ func applyCodexIdentityConfuseBody(cfg *config.Config, auth *cliproxyauth.Auth, 
 }
 
 func applyCodexIdentityConfuseHeaders(headers http.Header, state *codexIdentityConfuseState) {
-	if headers == nil {
+	if headers == nil || state == nil {
 		return
 	}
-	if state == nil || !state.enabled {
+	applyCodexIdentityConvergenceHeaders(headers, &state.convergence)
+	if !state.enabled {
 		return
 	}
 

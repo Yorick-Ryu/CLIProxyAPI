@@ -146,6 +146,9 @@ type AntigravityConfig struct {
 // CodexConfig configures provider-wide Codex request behavior.
 type CodexConfig struct {
 	IdentityConfuse bool `yaml:"identity-confuse" json:"identity-confuse"`
+	// IdentityConvergence rewrites Codex OAuth device and session identifiers to stable per-auth values.
+	// It is opt-in and takes precedence over IdentityConfuse for Codex OAuth requests.
+	IdentityConvergence bool `yaml:"identity-convergence" json:"identity-convergence"`
 	// DisableCodexCloaking disables forcing the official Codex identity headers on HTTP/SSE and WebSocket requests.
 	DisableCodexCloaking bool `yaml:"disable-codex-cloaking" json:"disable-codex-cloaking"`
 	// OptimizeMultiAgentV2 optimizes official Codex multi-agent requests.

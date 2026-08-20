@@ -226,6 +226,10 @@ codex:
   # Some superstitious users believe request tracking identifiers can be used
   # as evidence for TOS enforcement bans; this option only satisfies those odd concerns.
   identity-confuse: false
+  # For Codex OAuth only, converge device and session identifiers to stable
+  # per-auth values. This is disabled by default and takes precedence over
+  # identity-confuse for Codex OAuth requests.
+  identity-convergence: false
   # Disable forcing the official Codex User-Agent and Originator headers on HTTP/SSE and WebSocket requests.
   disable-codex-cloaking: false
   # When true, optimize Codex Desktop, codex-tui, and codex_cli_rs requests for multi-agent v2.

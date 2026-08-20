@@ -40,6 +40,7 @@ func TestLoadConfigOptional_CodexIdentityConfuse(t *testing.T) {
 	configYAML := []byte(`
 codex:
   identity-confuse: true
+  identity-convergence: true
   disable-codex-cloaking: true
   optimize-multi-agent-v2: true
   request-compression:
@@ -57,6 +58,9 @@ codex:
 
 	if !cfg.Codex.IdentityConfuse {
 		t.Fatalf("IdentityConfuse = false, want true")
+	}
+	if !cfg.Codex.IdentityConvergence {
+		t.Fatalf("IdentityConvergence = false, want true")
 	}
 	if !cfg.Codex.DisableCodexCloaking {
 		t.Fatal("DisableCodexCloaking = false, want true")
