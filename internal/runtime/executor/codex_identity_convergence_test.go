@@ -142,3 +142,66 @@ func TestCodexIdentityConvergencePreservesAPIKeyAndWebsocketHeaderShape(t *testi
 		t.Fatalf("Session-Id = %q, want only websocket session_id", got)
 	}
 }
+
+func TestCodexIdentityConvergenceAccountModeOverridesGlobalDefault(t *testing.T) {
+	clientBody := []byte(`{"prompt_cache_key":"client-session","client_metadata":{"session_id":"client-session","x-codex-installation-id":"client-install","thread_id":"client-thread"}}`)
+	cfg := &config.Config{Codex: config.CodexConfig{IdentityConvergence: true}}
+
+	offAuth := &cliproxyauth.Auth{
+		ID:       "oauth-off",
+		Provider: "codex",
+		Metadata: map[string]any{codexIdentityConvergenceModeKey: "off"},
+	}
+	offBody, offState := applyCodexIdentityConvergenceBody(cfg, offAuth, clientBody, clientBody, nil)
+	if offState.enabled || !bytes.Equal(offBody, clientBody) {
+		t.Fatal("account-level off must override the enabled global default")
+	}
+
+	accountAuth := &cliproxyauth.Auth{
+		ID:       "oauth-account-session",
+		Provider: "codex",
+		Metadata: map[string]any{codexIdentityConvergenceModeKey: "session"},
+	}
+	_, accountState := applyCodexIdentityConvergenceBody(&config.Config{}, accountAuth, clientBody, clientBody, nil)
+	if !accountState.enabled || accountState.mode != codexIdentityConvergenceSession {
+		t.Fatalf("account-level session mode = %#v, want enabled session", accountState)
+	}
+}
+
+func TestCodexIdentityConvergenceSupportsDeviceAndFullAccountModes(t *testing.T) {
+	clientBody := []byte(`{"prompt_cache_key":"client-session","client_metadata":{"session_id":"client-session","x-codex-installation-id":"client-install","thread_id":"client-thread"}}`)
+
+	deviceAuth := &cliproxyauth.Auth{
+		ID:       "oauth-device",
+		Provider: "codex",
+		Metadata: map[string]any{codexIdentityConvergenceModeKey: "device"},
+	}
+	deviceBody, deviceState := applyCodexIdentityConvergenceBody(&config.Config{}, deviceAuth, clientBody, clientBody, nil)
+	if deviceState.mode != codexIdentityConvergenceDevice {
+		t.Fatalf("device mode = %q", deviceState.mode)
+	}
+	if got := gjson.GetBytes(deviceBody, "client_metadata.x-codex-installation-id").String(); got != deviceState.installationID {
+		t.Fatalf("device installation id = %q, want %q", got, deviceState.installationID)
+	}
+	if got := gjson.GetBytes(deviceBody, "client_metadata.session_id").String(); got != "client-session" {
+		t.Fatalf("device mode changed session id to %q", got)
+	}
+	if got := gjson.GetBytes(deviceBody, "prompt_cache_key").String(); got != "client-session" {
+		t.Fatalf("device mode changed prompt cache key to %q", got)
+	}
+
+	fullAuth := &cliproxyauth.Auth{
+		ID:       "oauth-full",
+		Provider: "codex",
+		Metadata: map[string]any{codexIdentityConvergenceModeKey: "full"},
+	}
+	_, first := applyCodexIdentityConvergenceBody(&config.Config{}, fullAuth, clientBody, clientBody, nil)
+	secondBody := []byte(`{"prompt_cache_key":"another-client-session","client_metadata":{"session_id":"another-client-session"}}`)
+	_, second := applyCodexIdentityConvergenceBody(&config.Config{}, fullAuth, secondBody, secondBody, nil)
+	if first.mode != codexIdentityConvergenceFull || second.mode != codexIdentityConvergenceFull {
+		t.Fatalf("full mode states = %q, %q", first.mode, second.mode)
+	}
+	if first.threadID != second.threadID || first.windowID != second.windowID {
+		t.Fatal("full mode must keep one stable thread and window per account")
+	}
+}
