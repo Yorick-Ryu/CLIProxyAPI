@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	internalcache "github.com/router-for-me/CLIProxyAPI/v7/internal/cache"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
@@ -22,6 +23,8 @@ import (
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
 	"github.com/tidwall/gjson"
 )
+
+var benchmarkBuildCodexWebsocketRequestBodyOutput []byte
 
 func TestBuildCodexWebsocketRequestBodyPreservesPreviousResponseID(t *testing.T) {
 	body := []byte(`{"model":"gpt-5-codex","previous_response_id":"resp-1","input":[{"type":"message","id":"msg-1"}]}`)
@@ -42,11 +45,21 @@ func TestBuildCodexWebsocketRequestBodyPreservesPreviousResponseID(t *testing.T)
 	}
 }
 
+func BenchmarkBuildCodexWebsocketRequestBodyLargePayload(b *testing.B) {
+	body := []byte(`{"model":"gpt-5.6","input":[{"type":"message","id":"msg_1","role":"user","content":"` + strings.Repeat("x", 8<<20) + `"}]}`)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(body)))
+	b.ResetTimer()
+	for b.Loop() {
+		benchmarkBuildCodexWebsocketRequestBodyOutput = buildCodexWebsocketRequestBody(body)
+	}
+}
+
 func TestBuildCodexWebsocketRequestBodySanitizesOverlongInputItemIDs(t *testing.T) {
 	longReasoningItemID := "rs_" + strings.Repeat("a", 64)
 	longCallItemID := strings.Repeat("grok-call-item-", 6)
 	longOutputItemID := strings.Repeat("grok-output-item-", 6)
-	body := []byte(`{"model":"gpt-5-codex","input":[{"type":"reasoning","id":"` + longReasoningItemID + `","encrypted_content":"gAAAA-encrypted","summary":[]},{"type":"function_call","id":"` + longCallItemID + `","call_id":"call-1","name":"lookup"},{"type":"function_call_output","id":"` + longOutputItemID + `","call_id":"call-1","output":"ok"},{"type":"message","id":"msg-1"}]}`)
+	body := []byte(`{"model":"gpt-5-codex","input":[{"type":"reasoning","id":"` + longReasoningItemID + `","encrypted_content":"gAAAA-encrypted","summary":[]},{"type":"function_call","id":"` + longCallItemID + `","call_id":"call-1","name":"lookup"},{"type":"function_call_output","id":"` + longOutputItemID + `","call_id":"call-1","output":"ok"},{"type":"message","id":"item_74ec40c883248ebb4885ec84"}]}`)
 
 	first := buildCodexWebsocketRequestBody(body)
 	second := buildCodexWebsocketRequestBody(body)
@@ -78,8 +91,8 @@ func TestBuildCodexWebsocketRequestBodySanitizesOverlongInputItemIDs(t *testing.
 	if got := gjson.GetBytes(first, "input.1.call_id").String(); got != "call-1" {
 		t.Fatalf("function call output call_id = %q, want call-1", got)
 	}
-	if got := gjson.GetBytes(first, "input.2.id").String(); got != "msg-1" {
-		t.Fatalf("valid input item ID changed: %q", got)
+	if got := gjson.GetBytes(first, "input.2.id").String(); got != "msg_item_74ec40c883248ebb4885ec84" {
+		t.Fatalf("message input item ID was not normalized: %q", got)
 	}
 }
 
@@ -810,6 +823,41 @@ func TestMapCodexWebsocketWriteErrorStopsRetryForMessageTooBig(t *testing.T) {
 	}
 }
 
+func TestMapCodexWebsocketReadErrorAbnormalClosureIsRequestScoped(t *testing.T) {
+	original := &websocket.CloseError{
+		Code: websocket.CloseAbnormalClosure,
+		Text: "unexpected EOF",
+	}
+
+	mappedErr := mapCodexWebsocketReadError(original)
+	if mappedErr == nil {
+		t.Fatal("mapped error = nil, want abnormal closure error")
+	}
+	if !errors.Is(mappedErr, original) {
+		t.Fatalf("mapped error does not preserve original: %v", mappedErr)
+	}
+	var closeErr *websocket.CloseError
+	if !errors.As(mappedErr, &closeErr) || closeErr.Code != websocket.CloseAbnormalClosure {
+		t.Fatalf("mapped close error = %#v, want code %d", closeErr, websocket.CloseAbnormalClosure)
+	}
+	requestErr, ok := mappedErr.(cliproxyexecutor.RequestScopedError)
+	if !ok || !requestErr.IsRequestScoped() {
+		t.Fatalf("abnormal closure should be request scoped, got %T", mappedErr)
+	}
+}
+
+func TestMapCodexWebsocketReadErrorNormalClosureIsNotRequestScoped(t *testing.T) {
+	original := &websocket.CloseError{Code: websocket.CloseNormalClosure}
+
+	mappedErr := mapCodexWebsocketReadError(original)
+	if mappedErr != original {
+		t.Fatalf("mapped error = %v, want original normal close", mappedErr)
+	}
+	if requestErr, ok := mappedErr.(cliproxyexecutor.RequestScopedError); ok && requestErr.IsRequestScoped() {
+		t.Fatalf("normal closure unexpectedly became request scoped: %T", mappedErr)
+	}
+}
+
 func TestMapCodexWebsocketWriteErrorDoesNotReusePriorConnectionClose(t *testing.T) {
 	sess := &codexWebsocketSession{}
 	priorConn := &websocket.Conn{}
@@ -996,7 +1044,63 @@ func TestApplyCodexWebsocketHeadersDefaultsToCurrentResponsesBeta(t *testing.T) 
 	}
 }
 
-func TestApplyCodexWebsocketHeadersPassesThroughClientIdentityHeaders(t *testing.T) {
+func TestApplyCodexWebsocketHeadersDefaultsToCodexCloaking(t *testing.T) {
+	tests := []struct {
+		name  string
+		auth  *cliproxyauth.Auth
+		token string
+	}{
+		{
+			name: "OAuth",
+			auth: &cliproxyauth.Auth{
+				Provider: "codex",
+				Attributes: map[string]string{
+					"header:User-Agent": "custom-ua",
+					"header:Originator": "custom-origin",
+				},
+			},
+		},
+		{
+			name: "API key",
+			auth: &cliproxyauth.Auth{
+				Provider: "codex",
+				Attributes: map[string]string{
+					"api_key":           "sk-test",
+					"header:User-Agent": "custom-ua",
+					"header:Originator": "custom-origin",
+				},
+			},
+			token: "sk-test",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{
+				CodexHeaderDefaults: config.CodexHeaderDefaults{UserAgent: "config-ua"},
+			}
+			ctx := contextWithGinHeaders(map[string]string{
+				"User-Agent": "client-ua",
+				"Originator": "client-origin",
+			})
+			headers := http.Header{}
+			headers.Set("User-Agent", "existing-ua")
+			headers.Set("Originator", "existing-origin")
+
+			headers = applyCodexWebsocketHeaders(ctx, headers, tt.auth, tt.token, cfg)
+
+			if got := headers.Get("User-Agent"); got != codexUserAgent {
+				t.Fatalf("User-Agent = %q, want %q", got, codexUserAgent)
+			}
+			if got := headers.Get("Originator"); got != codexOriginator {
+				t.Fatalf("Originator = %q, want %q", got, codexOriginator)
+			}
+		})
+	}
+}
+
+func TestApplyCodexWebsocketHeadersPassesThroughClientIdentityHeadersWhenCloakingDisabled(t *testing.T) {
+	cfg := &config.Config{Codex: config.CodexConfig{DisableCodexCloaking: true}}
 	auth := &cliproxyauth.Auth{
 		Provider: "codex",
 		Metadata: map[string]any{"email": "user@example.com"},
@@ -1010,7 +1114,7 @@ func TestApplyCodexWebsocketHeadersPassesThroughClientIdentityHeaders(t *testing
 		"session-id":            "legacy-session",
 	})
 
-	headers := applyCodexWebsocketHeaders(ctx, http.Header{}, auth, "", nil)
+	headers := applyCodexWebsocketHeaders(ctx, http.Header{}, auth, "", cfg)
 
 	if got := headers.Get("Originator"); got != "Codex Desktop" {
 		t.Fatalf("Originator = %s, want %s", got, "Codex Desktop")
@@ -1058,6 +1162,7 @@ func TestApplyCodexWebsocketHeadersCanonicalizesLegacyUnderscoreSessionHeader(t 
 
 func TestApplyCodexWebsocketHeadersUsesConfigDefaultsForOAuth(t *testing.T) {
 	cfg := &config.Config{
+		Codex: config.CodexConfig{DisableCodexCloaking: true},
 		CodexHeaderDefaults: config.CodexHeaderDefaults{
 			UserAgent:    "my-codex-client/1.0",
 			BetaFeatures: "feature-a,feature-b",
@@ -1083,6 +1188,7 @@ func TestApplyCodexWebsocketHeadersUsesConfigDefaultsForOAuth(t *testing.T) {
 
 func TestApplyCodexWebsocketHeadersPrefersExistingHeadersOverClientAndConfig(t *testing.T) {
 	cfg := &config.Config{
+		Codex: config.CodexConfig{DisableCodexCloaking: true},
 		CodexHeaderDefaults: config.CodexHeaderDefaults{
 			UserAgent:    "config-ua",
 			BetaFeatures: "config-beta",
@@ -1112,6 +1218,7 @@ func TestApplyCodexWebsocketHeadersPrefersExistingHeadersOverClientAndConfig(t *
 
 func TestApplyCodexWebsocketHeadersConfigUserAgentOverridesClientHeader(t *testing.T) {
 	cfg := &config.Config{
+		Codex: config.CodexConfig{DisableCodexCloaking: true},
 		CodexHeaderDefaults: config.CodexHeaderDefaults{
 			UserAgent:    "config-ua",
 			BetaFeatures: "config-beta",
@@ -1138,6 +1245,7 @@ func TestApplyCodexWebsocketHeadersConfigUserAgentOverridesClientHeader(t *testi
 
 func TestApplyCodexWebsocketHeadersIgnoresConfigForAPIKeyAuth(t *testing.T) {
 	cfg := &config.Config{
+		Codex: config.CodexConfig{DisableCodexCloaking: true},
 		CodexHeaderDefaults: config.CodexHeaderDefaults{
 			UserAgent:    "config-ua",
 			BetaFeatures: "config-beta",
@@ -1205,6 +1313,55 @@ func TestApplyCodexPromptCacheHeadersSetsSessionIDAndLegacyConversation(t *testi
 	}
 	if got := headers.Get("Conversation_id"); got != "cache-1" {
 		t.Fatalf("Conversation_id = %s, want cache-1", got)
+	}
+}
+
+func TestApplyCodexPromptCacheHeadersUsesDerivedSessionUUID(t *testing.T) {
+	t.Parallel()
+
+	req := cliproxyexecutor.Request{
+		Model:    "gpt-5-codex",
+		Payload:  []byte(`{"input":"hello"}`),
+		Metadata: map[string]any{cliproxyexecutor.DerivedSessionIDMetadataKey: "ctx:v1:derived-root"},
+	}
+	body, headers := applyCodexPromptCacheHeaders(sdktranslator.FormatInteractions, req, []byte(`{"model":"gpt-5-codex"}`))
+	cacheKey := gjson.GetBytes(body, "prompt_cache_key").String()
+	if _, errParse := uuid.Parse(cacheKey); errParse != nil {
+		t.Fatalf("prompt_cache_key %q is not a UUID: %v", cacheKey, errParse)
+	}
+	if got := headers["session_id"]; len(got) != 1 || got[0] != cacheKey {
+		t.Fatalf("session_id = %#v, want [%q]", got, cacheKey)
+	}
+	if got := headers.Get("Conversation_id"); got != cacheKey {
+		t.Fatalf("Conversation_id = %q, want %q", got, cacheKey)
+	}
+}
+
+func TestApplyCodexPromptCacheHeadersKeepsExecutionSessionAcrossIncrementalRoots(t *testing.T) {
+	t.Parallel()
+
+	firstReq := cliproxyexecutor.Request{
+		Model:   "gpt-5-codex",
+		Payload: []byte(`{"input":"first"}`),
+		Metadata: map[string]any{
+			cliproxyexecutor.ExecutionSessionMetadataKey: "connection-1",
+			cliproxyexecutor.DerivedSessionIDMetadataKey: "ctx:v1:first-root",
+		},
+	}
+	secondReq := cliproxyexecutor.Request{
+		Model:   "gpt-5-codex",
+		Payload: []byte(`{"input":"second"}`),
+		Metadata: map[string]any{
+			cliproxyexecutor.ExecutionSessionMetadataKey: "connection-1",
+			cliproxyexecutor.DerivedSessionIDMetadataKey: "ctx:v1:second-root",
+		},
+	}
+	firstBody, _ := applyCodexPromptCacheHeaders(sdktranslator.FormatOpenAIResponse, firstReq, []byte(`{"model":"gpt-5-codex"}`))
+	secondBody, _ := applyCodexPromptCacheHeaders(sdktranslator.FormatOpenAIResponse, secondReq, []byte(`{"model":"gpt-5-codex"}`))
+	firstKey := gjson.GetBytes(firstBody, "prompt_cache_key").String()
+	secondKey := gjson.GetBytes(secondBody, "prompt_cache_key").String()
+	if firstKey == "" || firstKey != secondKey {
+		t.Fatalf("incremental websocket roots changed prompt cache key: first=%q second=%q", firstKey, secondKey)
 	}
 }
 
@@ -1460,6 +1617,7 @@ func TestApplyCodexHeadersUsesConfigUserAgentForOAuth(t *testing.T) {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
 	cfg := &config.Config{
+		Codex: config.CodexConfig{DisableCodexCloaking: true},
 		CodexHeaderDefaults: config.CodexHeaderDefaults{
 			UserAgent:    "config-ua",
 			BetaFeatures: "config-beta",
@@ -1483,12 +1641,13 @@ func TestApplyCodexHeadersUsesConfigUserAgentForOAuth(t *testing.T) {
 	}
 }
 
-func TestApplyModelHeaderOverridesFromModelConfig(t *testing.T) {
-	const wantUA = "codex-tui/0.144.0 (Mac OS 26.5.1; arm64) iTerm.app/3.6.11 (codex-tui; 0.144.0)"
+func TestApplyCodexHeadersDefaultsToCodexCloaking(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPost, "https://example.com/responses", nil)
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
+	req.Header.Set("User-Agent", "existing-ua")
+	req.Header.Set("Originator", "existing-origin")
 	cfg := &config.Config{
 		CodexHeaderDefaults: config.CodexHeaderDefaults{
 			UserAgent: "config-ua",
@@ -1496,22 +1655,24 @@ func TestApplyModelHeaderOverridesFromModelConfig(t *testing.T) {
 	}
 	auth := &cliproxyauth.Auth{
 		Provider: "codex",
-		Metadata: map[string]any{"email": "user@example.com"},
+		Attributes: map[string]string{
+			"api_key":           "api-key",
+			"header:User-Agent": "custom-ua",
+			"header:Originator": "custom-origin",
+		},
+	}
+	ginHeaders := http.Header{
+		"User-Agent": []string{"client-ua"},
+		"Originator": []string{"client-origin"},
 	}
 
-	applyCodexHeaders(req, auth, "oauth-token", true, cfg)
-	applyModelHeaderOverrides(req.Header, "gpt-5.6-luna")
+	applyCodexHeadersFromSources(req, auth, "api-key", false, cfg, ginHeaders)
 
-	if got := req.Header.Get("User-Agent"); got != wantUA {
-		t.Fatalf("User-Agent = %q, want %q", got, wantUA)
+	if got := req.Header.Get("User-Agent"); got != codexUserAgent {
+		t.Fatalf("User-Agent = %q, want %q", got, codexUserAgent)
 	}
-	if got := codexSessionHeaderValue(req.Header); got == "" {
-		t.Fatal("expected Session_id to be set for Mac OS User-Agent override")
-	}
-
-	applyModelHeaderOverrides(req.Header, "gpt-5.4")
-	if got := req.Header.Get("User-Agent"); got != wantUA {
-		t.Fatalf("User-Agent after no-op override = %q, want %q", got, wantUA)
+	if got := req.Header.Get("Originator"); got != codexOriginator {
+		t.Fatalf("Originator = %q, want %q", got, codexOriginator)
 	}
 }
 
@@ -1564,7 +1725,8 @@ func TestApplyCodexHeadersPassesThroughClientIdentityHeaders(t *testing.T) {
 		"X-Client-Request-Id":   "019d2233-e240-7162-992d-38df0a2a0e0d",
 	}))
 
-	applyCodexHeaders(req, auth, "oauth-token", true, nil)
+	cfg := &config.Config{Codex: config.CodexConfig{DisableCodexCloaking: true}}
+	applyCodexHeaders(req, auth, "oauth-token", true, cfg)
 
 	if got := req.Header.Get("Originator"); got != "Codex Desktop" {
 		t.Fatalf("Originator = %s, want %s", got, "Codex Desktop")

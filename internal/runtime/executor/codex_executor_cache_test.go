@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/klauspost/compress/zstd"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
@@ -16,6 +18,111 @@ import (
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
 	"github.com/tidwall/gjson"
 )
+
+func TestCodexExecutorCacheHelper_RequestCompression(t *testing.T) {
+	rawJSON := []byte(`{"model":"gpt-5-codex","input":"` + string(bytes.Repeat([]byte("compressible prompt "), 128)) + `"}`)
+	req := cliproxyexecutor.Request{Model: "gpt-5-codex", Payload: rawJSON}
+	oauth := &cliproxyauth.Auth{ID: "oauth-1", Provider: "codex"}
+
+	tests := []struct {
+		name           string
+		cfg            *config.Config
+		auth           *cliproxyauth.Auth
+		wantCompressed bool
+	}{
+		{
+			name: "disabled",
+			cfg: &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{
+				Enabled:  false,
+				MinBytes: 1,
+			}}},
+			auth: oauth,
+		},
+		{
+			name: "oauth above threshold",
+			cfg: &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{
+				Enabled:  true,
+				MinBytes: 1,
+			}}},
+			auth:           oauth,
+			wantCompressed: true,
+		},
+		{
+			name: "api key",
+			cfg: &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{
+				Enabled:  true,
+				MinBytes: 1,
+			}}},
+			auth: &cliproxyauth.Auth{Provider: "codex", Attributes: map[string]string{"api_key": "test-key"}},
+		},
+		{
+			name: "below threshold",
+			cfg: &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{
+				Enabled:  true,
+				MinBytes: len(rawJSON) + 1,
+			}}},
+			auth: oauth,
+		},
+		{
+			name: "zero threshold compresses every request like Codex",
+			cfg: &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{
+				Enabled:  true,
+				MinBytes: 0,
+			}}},
+			auth:           oauth,
+			wantCompressed: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			executor := NewCodexExecutor(tt.cfg)
+			httpReq, upstreamBody, _, err := executor.cacheHelper(context.Background(), sdktranslator.FromString("openai-response"), "https://example.com/responses", tt.auth, req, req.Payload, rawJSON)
+			if err != nil {
+				t.Fatalf("cacheHelper error: %v", err)
+			}
+			wireBody, errRead := io.ReadAll(httpReq.Body)
+			if errRead != nil {
+				t.Fatalf("read request body: %v", errRead)
+			}
+			if !bytes.Equal(upstreamBody, rawJSON) {
+				t.Fatalf("logged upstream body changed: got %d bytes, want %d", len(upstreamBody), len(rawJSON))
+			}
+			if got := httpReq.ContentLength; got != int64(len(wireBody)) {
+				t.Fatalf("ContentLength = %d, want %d", got, len(wireBody))
+			}
+
+			if !tt.wantCompressed {
+				if got := httpReq.Header.Get("Content-Encoding"); got != "" {
+					t.Fatalf("Content-Encoding = %q, want empty", got)
+				}
+				if !bytes.Equal(wireBody, upstreamBody) {
+					t.Fatalf("wire body differs without compression")
+				}
+				return
+			}
+
+			if got := httpReq.Header.Get("Content-Encoding"); got != "zstd" {
+				t.Fatalf("Content-Encoding = %q, want zstd", got)
+			}
+			if bytes.Equal(wireBody, upstreamBody) {
+				t.Fatalf("wire body was not compressed")
+			}
+			decoder, errDecoder := zstd.NewReader(bytes.NewReader(wireBody))
+			if errDecoder != nil {
+				t.Fatalf("create zstd decoder: %v", errDecoder)
+			}
+			decoded, errDecode := io.ReadAll(decoder)
+			decoder.Close()
+			if errDecode != nil {
+				t.Fatalf("decode zstd request body: %v", errDecode)
+			}
+			if !bytes.Equal(decoded, upstreamBody) {
+				t.Fatalf("decoded wire body differs from upstream body")
+			}
+		})
+	}
+}
 
 func TestCodexExecutorCacheHelper_OpenAIChatCompletions_StablePromptCacheKeyFromAPIKey(t *testing.T) {
 	recorder := httptest.NewRecorder()
@@ -49,11 +156,11 @@ func TestCodexExecutorCacheHelper_OpenAIChatCompletions_StablePromptCacheKeyFrom
 	if gotConversation := httpReq.Header.Get("Conversation_id"); gotConversation != "" {
 		t.Fatalf("Conversation_id = %q, want empty", gotConversation)
 	}
-	if gotSession := httpReq.Header["Session_id"]; len(gotSession) != 1 || gotSession[0] != expectedKey {
-		t.Fatalf("Session_id = %#v, want [%q]", gotSession, expectedKey)
+	if gotSession := httpReq.Header["Session-Id"]; len(gotSession) != 1 || gotSession[0] != expectedKey {
+		t.Fatalf("Session-Id = %#v, want [%q]", gotSession, expectedKey)
 	}
-	if gotCanonicalSession := httpReq.Header.Get("Session-Id"); gotCanonicalSession != "" {
-		t.Fatalf("Session-Id = %q, want empty", gotCanonicalSession)
+	if gotLegacySession := httpReq.Header.Get("Session_id"); gotLegacySession != "" {
+		t.Fatalf("Session_id = %q, want empty", gotLegacySession)
 	}
 
 	httpReq2, _, _, err := executor.cacheHelper(ctx, sdktranslator.FromString("openai"), url, nil, req, req.Payload, rawJSON)
@@ -67,6 +174,32 @@ func TestCodexExecutorCacheHelper_OpenAIChatCompletions_StablePromptCacheKeyFrom
 	gotKey2 := gjson.GetBytes(body2, "prompt_cache_key").String()
 	if gotKey2 != expectedKey {
 		t.Fatalf("prompt_cache_key (second call) = %q, want %q", gotKey2, expectedKey)
+	}
+}
+
+func TestCodexExecutorCacheHelper_UsesDerivedSessionUUID(t *testing.T) {
+	t.Parallel()
+
+	executor := &CodexExecutor{}
+	req := cliproxyexecutor.Request{
+		Model:    "gpt-5.4",
+		Payload:  []byte(`{"model":"gpt-5.4","messages":[{"role":"user","content":"hello"}]}`),
+		Metadata: map[string]any{cliproxyexecutor.DerivedSessionIDMetadataKey: "ctx:v1:derived-root"},
+	}
+	expectedKey := helps.DerivedSessionUUID("codex", req.Metadata)
+
+	httpReq, body, _, err := executor.cacheHelper(context.Background(), sdktranslator.FormatOpenAI, "https://example.com/responses", nil, req, req.Payload, []byte(`{"model":"gpt-5.4","stream":true}`))
+	if err != nil {
+		t.Fatalf("cacheHelper error: %v", err)
+	}
+	if got := gjson.GetBytes(body, "prompt_cache_key").String(); got != expectedKey {
+		t.Fatalf("prompt_cache_key = %q, want %q", got, expectedKey)
+	}
+	if got := httpReq.Header.Get("Session-Id"); got != expectedKey {
+		t.Fatalf("Session-Id = %q, want %q", got, expectedKey)
+	}
+	if _, errParse := uuid.Parse(expectedKey); errParse != nil {
+		t.Fatalf("derived prompt cache key %q is not a UUID: %v", expectedKey, errParse)
 	}
 }
 
@@ -117,11 +250,11 @@ func TestCodexExecutorCacheHelper_ClaudeUsesClaudeCodeSessionID(t *testing.T) {
 	if secondKey != firstKey {
 		t.Fatalf("same Claude Code session_id produced different prompt_cache_key: first=%q second=%q", firstKey, secondKey)
 	}
-	if gotSession := firstHTTPReq.Header["Session_id"]; len(gotSession) != 1 || gotSession[0] != firstKey {
-		t.Fatalf("first Session_id = %#v, want [%q]", gotSession, firstKey)
+	if gotSession := firstHTTPReq.Header["Session-Id"]; len(gotSession) != 1 || gotSession[0] != firstKey {
+		t.Fatalf("first Session-Id = %#v, want [%q]", gotSession, firstKey)
 	}
-	if gotSession := secondHTTPReq.Header["Session_id"]; len(gotSession) != 1 || gotSession[0] != firstKey {
-		t.Fatalf("second Session_id = %#v, want [%q]", gotSession, firstKey)
+	if gotSession := secondHTTPReq.Header["Session-Id"]; len(gotSession) != 1 || gotSession[0] != firstKey {
+		t.Fatalf("second Session-Id = %#v, want [%q]", gotSession, firstKey)
 	}
 }
 
@@ -144,11 +277,11 @@ func TestCodexExecutorCacheHelper_ClaudeRejectsBareUserID(t *testing.T) {
 	if got := gjson.GetBytes(body, "prompt_cache_key").String(); got != "" {
 		t.Fatalf("bare metadata.user_id must not create prompt_cache_key, got %q; body=%s", got, string(body))
 	}
-	if got := httpReq.Header["Session_id"]; len(got) != 0 {
-		t.Fatalf("bare metadata.user_id must not create Session_id, got %#v", got)
+	if got := httpReq.Header["Session-Id"]; len(got) != 0 {
+		t.Fatalf("bare metadata.user_id must not create Session-Id, got %#v", got)
 	}
-	if got := httpReq.Header.Get("Session-Id"); got != "" {
-		t.Fatalf("bare metadata.user_id must not create Session-Id, got %q", got)
+	if got := httpReq.Header.Get("Session_id"); got != "" {
+		t.Fatalf("bare metadata.user_id must not create Session_id, got %q", got)
 	}
 }
 
@@ -162,7 +295,13 @@ func TestCodexExecutorCacheHelper_IdentityConfuseRemapsBodyAndHeaders(t *testing
 	ctx := context.WithValue(context.Background(), "gin", ginCtx)
 	executor := &CodexExecutor{cfg: &config.Config{
 		Routing: config.RoutingConfig{Strategy: "fill-first"},
-		Codex:   config.CodexConfig{IdentityConfuse: true},
+		Codex: config.CodexConfig{
+			IdentityConfuse: true,
+			RequestCompression: config.CodexRequestCompressionConfig{
+				Enabled:  true,
+				MinBytes: 1,
+			},
+		},
 	}}
 	auth := &cliproxyauth.Auth{ID: "auth-1", Provider: "codex"}
 	rawJSON := []byte(`{"model":"gpt-5-codex","stream":true,"client_metadata":{"x-codex-turn-metadata":"{\"prompt_cache_key\":\"cache-1\",\"turn_id\":\"turn-1\",\"window_id\":\"cache-1:0\"}","x-codex-window-id":"cache-1:0"}}`)
@@ -175,6 +314,25 @@ func TestCodexExecutorCacheHelper_IdentityConfuseRemapsBodyAndHeaders(t *testing
 	httpReq, body, identityState, err := executor.cacheHelper(ctx, sdktranslator.FromString("openai-response"), url, auth, req, req.Payload, rawJSON)
 	if err != nil {
 		t.Fatalf("cacheHelper error: %v", err)
+	}
+	compressedBody, errRead := io.ReadAll(httpReq.Body)
+	if errRead != nil {
+		t.Fatalf("read compressed request body: %v", errRead)
+	}
+	decoder, errDecoder := zstd.NewReader(bytes.NewReader(compressedBody))
+	if errDecoder != nil {
+		t.Fatalf("create zstd decoder: %v", errDecoder)
+	}
+	wireBody, errDecode := io.ReadAll(decoder)
+	decoder.Close()
+	if errDecode != nil {
+		t.Fatalf("decode zstd request body: %v", errDecode)
+	}
+	if got := httpReq.Header.Get("Content-Encoding"); got != "zstd" {
+		t.Fatalf("Content-Encoding = %q, want zstd", got)
+	}
+	if !bytes.Equal(wireBody, body) {
+		t.Fatalf("decoded wire body differs from identity-confused upstream body")
 	}
 	applyCodexHeaders(httpReq, auth, "oauth-token", true, executor.cfg)
 	applyCodexIdentityConfuseHeaders(httpReq.Header, &identityState)
@@ -201,16 +359,16 @@ func TestCodexExecutorCacheHelper_IdentityConfuseRemapsBodyAndHeaders(t *testing
 	if gotWindowID := gjson.GetBytes(body, "client_metadata.x-codex-window-id").String(); gotWindowID != expectedPromptCacheKey+":0" {
 		t.Fatalf("client_metadata.x-codex-window-id = %q, want %q", gotWindowID, expectedPromptCacheKey+":0")
 	}
-	if gotHeader := httpReq.Header["Session_id"]; len(gotHeader) != 1 || gotHeader[0] != expectedPromptCacheKey {
-		t.Fatalf("Session_id = %#v, want [%q]", gotHeader, expectedPromptCacheKey)
+	if gotHeader := httpReq.Header["Session-Id"]; len(gotHeader) != 1 || gotHeader[0] != expectedPromptCacheKey {
+		t.Fatalf("Session-Id = %#v, want [%q]", gotHeader, expectedPromptCacheKey)
 	}
 	for _, headerName := range []string{"X-Client-Request-Id", "Thread-Id"} {
 		if gotHeader := httpReq.Header.Get(headerName); gotHeader != expectedPromptCacheKey {
 			t.Fatalf("%s = %q, want %q", headerName, gotHeader, expectedPromptCacheKey)
 		}
 	}
-	if gotCanonicalSession := httpReq.Header.Get("Session-Id"); gotCanonicalSession != "" {
-		t.Fatalf("Session-Id = %q, want empty", gotCanonicalSession)
+	if gotLegacySession := httpReq.Header.Get("Session_id"); gotLegacySession != "" {
+		t.Fatalf("Session_id = %q, want empty", gotLegacySession)
 	}
 	if gotWindow := httpReq.Header.Get("X-Codex-Window-Id"); gotWindow != expectedPromptCacheKey+":0" {
 		t.Fatalf("X-Codex-Window-Id = %q, want %q", gotWindow, expectedPromptCacheKey+":0")

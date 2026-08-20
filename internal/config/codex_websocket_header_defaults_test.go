@@ -29,6 +29,9 @@ codex-header-defaults:
 	if got := cfg.CodexHeaderDefaults.BetaFeatures; got != "feature-a,feature-b" {
 		t.Fatalf("BetaFeatures = %q, want %q", got, "feature-a,feature-b")
 	}
+	if cfg.Codex.DisableCodexCloaking {
+		t.Fatal("DisableCodexCloaking = true, want default false")
+	}
 }
 
 func TestLoadConfigOptional_CodexIdentityConfuse(t *testing.T) {
@@ -37,7 +40,12 @@ func TestLoadConfigOptional_CodexIdentityConfuse(t *testing.T) {
 	configYAML := []byte(`
 codex:
   identity-confuse: true
+  identity-convergence: true
+  disable-codex-cloaking: true
   optimize-multi-agent-v2: true
+  request-compression:
+    enabled: true
+    min-bytes: 32768
 `)
 	if err := os.WriteFile(configPath, configYAML, 0o600); err != nil {
 		t.Fatalf("failed to write config: %v", err)
@@ -51,7 +59,19 @@ codex:
 	if !cfg.Codex.IdentityConfuse {
 		t.Fatalf("IdentityConfuse = false, want true")
 	}
+	if !cfg.Codex.IdentityConvergence {
+		t.Fatalf("IdentityConvergence = false, want true")
+	}
+	if !cfg.Codex.DisableCodexCloaking {
+		t.Fatal("DisableCodexCloaking = false, want true")
+	}
 	if !cfg.Codex.OptimizeMultiAgentV2 {
 		t.Fatalf("OptimizeMultiAgentV2 = false, want true")
+	}
+	if !cfg.Codex.RequestCompression.Enabled {
+		t.Fatalf("RequestCompression.Enabled = false, want true")
+	}
+	if got := cfg.Codex.RequestCompression.MinBytes; got != 32768 {
+		t.Fatalf("RequestCompression.MinBytes = %d, want 32768", got)
 	}
 }
