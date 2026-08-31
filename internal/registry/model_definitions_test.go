@@ -8,6 +8,13 @@ func TestLunaDoesNotOverrideCodexHeaders(t *testing.T) {
 	}
 }
 
+func TestGetStaticModelDefinitionsByChannelSupportsGeminiInteractions(t *testing.T) {
+	models := GetStaticModelDefinitionsByChannel("gemini-interactions")
+	if len(models) == 0 {
+		t.Fatal("GetStaticModelDefinitionsByChannel(gemini-interactions) returned no models")
+	}
+}
+
 func TestGeminiVertexModelsUseFlashLiteReleaseID(t *testing.T) {
 	const releaseID = "gemini-3.1-flash-lite"
 	const previewID = releaseID + "-preview"
