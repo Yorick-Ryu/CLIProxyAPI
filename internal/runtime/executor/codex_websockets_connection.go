@@ -40,9 +40,9 @@ func (e *CodexWebsocketsExecutor) dialCodexWebsocket(ctx context.Context, auth *
 	}
 	closer := newWebsocketConnectionCloser(conn)
 	if conn != nil {
-		// Avoid gorilla/websocket flate tail validation issues on some upstreams/Go versions.
-		// Negotiating permessage-deflate is fine; we just don't compress outbound messages.
-		conn.EnableWriteCompression(false)
+		// Compress requests when the upstream negotiates permessage-deflate.
+		// Peers that decline the extension continue to receive plain messages.
+		conn.EnableWriteCompression(true)
 	}
 	return conn, closer, resp, err
 }
