@@ -42,6 +42,8 @@ func (e *CodexWebsocketsExecutor) dialCodexWebsocket(ctx context.Context, auth *
 	if conn != nil {
 		// Compress requests when the upstream negotiates permessage-deflate.
 		// Peers that decline the extension continue to receive plain messages.
+		// Match the Codex client's DEFLATE level; 6 is always valid.
+		_ = conn.SetCompressionLevel(6)
 		conn.EnableWriteCompression(true)
 	}
 	return conn, closer, resp, err
