@@ -38,6 +38,12 @@ jobs:
           echo "COMMIT=${GITHUB_SHA}" >> "$GITHUB_ENV"
           echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
 
+      - name: Resolve image tag
+        id: tag
+        run: |
+          BRANCH_TAG=$(printf '%s' "$GITHUB_REF_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^[.-]+//; s/[.-]+$//')
+          echo "branch_tag=${BRANCH_TAG:0:100}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -51,7 +57,7 @@ jobs:
             COMMIT=${{ env.COMMIT }}
             BUILD_DATE=${{ env.BUILD_DATE }}
           tags: |
-            ghcr.io/yorick-ryu/cli-proxy-api:beiapi-production
+            ghcr.io/yorick-ryu/cli-proxy-api:${{ steps.tag.outputs.branch_tag }}
             ghcr.io/yorick-ryu/cli-proxy-api:sha-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
