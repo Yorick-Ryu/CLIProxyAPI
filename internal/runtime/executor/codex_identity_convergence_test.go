@@ -17,6 +17,7 @@ func TestCodexIdentityConvergenceUsesStableAccountDeviceAndSession(t *testing.T)
 		IdentityConvergence: true,
 	}}
 	auth := &cliproxyauth.Auth{ID: "oauth-auth-a", Provider: "codex"}
+	auth.Metadata = map[string]any{codexIdentityConvergenceModeKey: "session"}
 	firstClientBody := []byte(`{"prompt_cache_key":"client-session-a","client_metadata":{"session_id":"client-session-a","x-codex-installation-id":"client-install-a","x-codex-window-id":"client-session-a:0","x-codex-turn-metadata":"{\"installation_id\":\"client-install-a\",\"session_id\":\"client-session-a\",\"thread_id\":\"client-session-a\",\"turn_id\":\"client-turn-a\",\"window_id\":\"client-session-a:0\"}"}}`)
 
 	confusedBody, confusedState := applyCodexIdentityConfuseBody(cfg, auth, firstClientBody, firstClientBody)
@@ -131,7 +132,11 @@ func TestCodexIdentityConvergencePreservesAPIKeyAndWebsocketHeaderShape(t *testi
 		t.Fatal("identity convergence must not change Codex API-key requests")
 	}
 
-	oauthAuth := &cliproxyauth.Auth{ID: "oauth-auth", Provider: "codex"}
+	oauthAuth := &cliproxyauth.Auth{
+		ID:       "oauth-auth",
+		Provider: "codex",
+		Metadata: map[string]any{codexIdentityConvergenceModeKey: "session"},
+	}
 	_, oauthState := applyCodexIdentityConvergenceBody(cfg, oauthAuth, clientBody, clientBody, nil)
 	headers := http.Header{"session_id": []string{"client-session"}}
 	applyCodexIdentityConvergenceHeaders(headers, &oauthState)
@@ -140,6 +145,41 @@ func TestCodexIdentityConvergencePreservesAPIKeyAndWebsocketHeaderShape(t *testi
 	}
 	if got := headers.Get("Session-Id"); got != "" {
 		t.Fatalf("Session-Id = %q, want only websocket session_id", got)
+	}
+}
+
+func TestCodexIdentityConvergenceGlobalDefaultPreservesClientSessions(t *testing.T) {
+	cfg := &config.Config{Codex: config.CodexConfig{IdentityConvergence: true}}
+	auth := &cliproxyauth.Auth{ID: "oauth-safe-default", Provider: "codex"}
+	firstClientBody := []byte(`{"prompt_cache_key":"client-session-a","client_metadata":{"session_id":"client-session-a","thread_id":"client-thread-a","x-codex-installation-id":"client-install-a"}}`)
+	secondClientBody := []byte(`{"prompt_cache_key":"client-session-b","client_metadata":{"session_id":"client-session-b","thread_id":"client-thread-b","x-codex-installation-id":"client-install-b"}}`)
+
+	firstBody, first := applyCodexIdentityConvergenceBody(cfg, auth, firstClientBody, firstClientBody, http.Header{"Session-Id": []string{"client-session-a"}})
+	secondBody, second := applyCodexIdentityConvergenceBody(cfg, auth, secondClientBody, secondClientBody, http.Header{"Session-Id": []string{"client-session-b"}})
+
+	if first.mode != codexIdentityConvergenceDevice || second.mode != codexIdentityConvergenceDevice {
+		t.Fatalf("global convergence modes = %q, %q, want device", first.mode, second.mode)
+	}
+	if first.installationID != second.installationID {
+		t.Fatal("global convergence must retain one stable installation per OAuth auth")
+	}
+	for _, test := range []struct {
+		body        string
+		wantSession string
+		wantThread  string
+	}{
+		{body: string(firstBody), wantSession: "client-session-a", wantThread: "client-thread-a"},
+		{body: string(secondBody), wantSession: "client-session-b", wantThread: "client-thread-b"},
+	} {
+		if got := gjson.Get(test.body, "client_metadata.session_id").String(); got != test.wantSession {
+			t.Fatalf("session id = %q, want %q", got, test.wantSession)
+		}
+		if got := gjson.Get(test.body, "client_metadata.thread_id").String(); got != test.wantThread {
+			t.Fatalf("thread id = %q, want %q", got, test.wantThread)
+		}
+		if got := gjson.Get(test.body, "prompt_cache_key").String(); got != test.wantSession {
+			t.Fatalf("prompt_cache_key = %q, want %q", got, test.wantSession)
+		}
 	}
 }
 

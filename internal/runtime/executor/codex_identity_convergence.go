@@ -62,6 +62,10 @@ func codexIdentityConvergenceAccountMode(auth *cliproxyauth.Auth) (codexIdentity
 
 // codexIdentityConvergenceModeForAuth applies the account-level override first,
 // then falls back to the provider-wide setting for native Codex OAuth only.
+// The boolean provider-wide setting intentionally selects device mode: making
+// session mode the implicit default collapses every client conversation on an
+// OAuth credential into one upstream session. Operators can still opt an
+// individual credential into session or full mode explicitly.
 // API-key upstreams preserve their caller-provided identity.
 func codexIdentityConvergenceModeForAuth(cfg *config.Config, auth *cliproxyauth.Auth) codexIdentityConvergenceMode {
 	if auth == nil || strings.TrimSpace(auth.ID) == "" {
@@ -77,7 +81,7 @@ func codexIdentityConvergenceModeForAuth(cfg *config.Config, auth *cliproxyauth.
 		return mode
 	}
 	if cfg != nil && cfg.Codex.IdentityConvergence {
-		return codexIdentityConvergenceSession
+		return codexIdentityConvergenceDevice
 	}
 	return codexIdentityConvergenceOff
 }

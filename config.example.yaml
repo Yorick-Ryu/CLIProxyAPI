@@ -246,7 +246,9 @@ codex:
   identity-confuse: false
   # Provider-wide default for Codex OAuth fingerprint convergence. Account files
   # can override this with codex_fingerprint_mode: off/device/session/full.
-  # `true` maps to session mode (stable device + session, client-specific thread).
+  # `true` maps to the safer device mode: one stable device per OAuth auth while
+  # preserving each client's session, thread, and prompt cache identity.
+  # Use an explicit per-account session/full mode only when intentional.
   identity-convergence: false
   # Disable forcing the official Codex User-Agent and Originator headers on HTTP/SSE and WebSocket requests.
   disable-codex-cloaking: false

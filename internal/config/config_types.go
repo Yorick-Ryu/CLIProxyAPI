@@ -147,7 +147,8 @@ type AntigravityConfig struct {
 type CodexConfig struct {
 	IdentityConfuse bool `yaml:"identity-confuse" json:"identity-confuse"`
 	// IdentityConvergence is the provider-wide default for Codex OAuth fingerprint convergence.
-	// An auth metadata field named codex_fingerprint_mode can override it per account.
+	// It converges only the device identity so independent client sessions remain distinct.
+	// An auth metadata field named codex_fingerprint_mode can explicitly select off/device/session/full.
 	IdentityConvergence bool `yaml:"identity-convergence" json:"identity-convergence"`
 	// DisableCodexCloaking disables forcing the official Codex identity headers on HTTP/SSE and WebSocket requests.
 	DisableCodexCloaking bool `yaml:"disable-codex-cloaking" json:"disable-codex-cloaking"`
