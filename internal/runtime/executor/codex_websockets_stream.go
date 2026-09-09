@@ -79,9 +79,15 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 		return nil, errPromptCache
 	}
 	clientBody := body
+	upstreamBody, accountIdentityState := applyCodexAccountIdentityBodyForConfig(ctx, e.cfg, auth, body)
 	var identityState codexIdentityConfuseState
-	upstreamBody, identityState := applyCodexIdentityConfuseBody(e.cfg, auth, originalPayloadSource, body)
-	upstreamBody, identityState.convergence = applyCodexIdentityConvergenceBody(e.cfg, auth, originalPayloadSource, upstreamBody, opts.Headers)
+	upstreamBody, identityState = applyCodexIdentityConfuseBody(e.cfg, auth, originalPayloadSource, upstreamBody)
+	identityState.accountIdentity = accountIdentityState
+	convergenceSourcePayload := originalPayloadSource
+	if accountIdentityState.enabled {
+		convergenceSourcePayload = upstreamBody
+	}
+	upstreamBody, identityState.convergence = applyCodexIdentityConvergenceBody(e.cfg, auth, convergenceSourcePayload, upstreamBody, opts.Headers)
 	reporter.SetTranslatedReasoningEffort(clientBody, to.String())
 	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, opts.Headers)
 	applyModelHeaderOverrides(wsHeaders, baseModel)

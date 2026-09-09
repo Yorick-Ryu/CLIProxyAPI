@@ -92,13 +92,13 @@ func codexIdentityConvergenceEnabled(cfg *config.Config, auth *cliproxyauth.Auth
 	return codexIdentityConvergenceModeForAuth(cfg, auth) != codexIdentityConvergenceOff
 }
 
-func codexIdentityConvergenceUUID(authID string, kind string, source string) string {
+func codexIdentityConvergenceUUID(identitySource string, kind string, source string) string {
 	name := strings.Join([]string{
 		"cli-proxy-api",
 		"codex",
 		"identity-convergence",
 		strings.TrimSpace(kind),
-		strings.TrimSpace(authID),
+		strings.TrimSpace(identitySource),
 		strings.TrimSpace(source),
 	}, ":")
 	id := uuid.NewSHA1(uuid.NameSpaceOID, []byte(name))
@@ -129,11 +129,12 @@ func resolveCodexIdentityConvergenceState(cfg *config.Config, auth *cliproxyauth
 		clientSessionID = codexSessionHeaderValue(clientHeaders)
 	}
 
-	installationID := codexIdentityConvergenceUUID(auth.ID, "installation", "")
-	sessionID := codexIdentityConvergenceUUID(auth.ID, "session", "")
+	credentialSource := codexCredentialIdentitySource(auth)
+	installationID := codexIdentityConvergenceUUID(credentialSource, "installation", "")
+	sessionID := codexIdentityConvergenceUUID(credentialSource, "session", "")
 	threadID := sessionID
 	if mode == codexIdentityConvergenceSession && clientSessionID != "" {
-		threadID = codexIdentityConvergenceUUID(auth.ID, "thread", clientSessionID)
+		threadID = codexIdentityConvergenceUUID(credentialSource, "thread", clientSessionID)
 	}
 
 	return codexIdentityConvergenceState{

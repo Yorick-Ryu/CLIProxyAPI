@@ -91,6 +91,7 @@ type codexIdentityConfuseState struct {
 	originalPromptCacheKey string
 	promptCacheKey         string
 	turnIDs                []codexIdentityReplacement
+	accountIdentity        codexAccountIdentityState
 	convergence            codexIdentityConvergenceState
 }
 
@@ -143,9 +144,18 @@ func (e *CodexExecutor) cacheHelper(ctx context.Context, from sdktranslator.Form
 		rawJSON = helps.SetStringIfDifferent(rawJSON, "prompt_cache_key", cache.ID)
 	}
 	rawJSON = helps.SanitizeCodexInputItemIDs(rawJSON)
+	rawJSON, accountIdentityState := applyCodexAccountIdentityBodyForConfig(ctx, e.cfg, auth, rawJSON)
 	var identityState codexIdentityConfuseState
 	rawJSON, identityState = applyCodexIdentityConfuseBody(e.cfg, auth, userPayload, rawJSON)
-	rawJSON, identityState.convergence = applyCodexIdentityConvergenceBody(e.cfg, auth, userPayload, rawJSON, headers)
+	identityState.accountIdentity = accountIdentityState
+	convergenceSourcePayload := userPayload
+	if accountIdentityState.enabled {
+		convergenceSourcePayload = rawJSON
+	}
+	rawJSON, identityState.convergence = applyCodexIdentityConvergenceBody(e.cfg, auth, convergenceSourcePayload, rawJSON, headers)
+	if identityState.accountIdentity.promptCacheKeyWasRemapped {
+		cache.ID = identityState.accountIdentity.promptCacheKey
+	}
 	if identityState.promptCacheKey != "" {
 		cache.ID = identityState.promptCacheKey
 	}
@@ -233,6 +243,7 @@ func applyCodexIdentityConfuseHeaders(headers http.Header, state *codexIdentityC
 	if headers == nil || state == nil {
 		return
 	}
+	applyCodexAccountIdentityHeaders(headers, &state.accountIdentity)
 	applyCodexIdentityConvergenceHeaders(headers, &state.convergence)
 	if !state.enabled {
 		return
