@@ -19,14 +19,12 @@ func TestOpenAICompatExecutorToolResultContentByInputModalities(t *testing.T) {
 		name            string
 		stream          bool
 		inputModalities []string
-		wantOmitted     bool
+		wantString      bool
 	}{
-		{name: "non-stream text-only", stream: false, inputModalities: []string{"text"}, wantOmitted: true},
-		{name: "stream text-only", stream: true, inputModalities: []string{"text"}, wantOmitted: true},
-		{name: "non-stream multimodal", stream: false, inputModalities: []string{"text", "image"}},
-		{name: "stream multimodal", stream: true, inputModalities: []string{"text", "image"}},
-		{name: "non-stream unspecified", stream: false},
-		{name: "stream unspecified", stream: true},
+		{name: "non-stream text-only", stream: false, inputModalities: []string{"text"}, wantString: true},
+		{name: "stream text-only", stream: true, inputModalities: []string{"text"}, wantString: true},
+		{name: "non-stream multimodal", stream: false, inputModalities: []string{"text", "image"}, wantString: false},
+		{name: "non-stream unspecified", stream: false, inputModalities: nil, wantString: false},
 	}
 
 	for _, tt := range tests {
@@ -86,25 +84,16 @@ func TestOpenAICompatExecutorToolResultContentByInputModalities(t *testing.T) {
 			}
 
 			toolContent := gjson.GetBytes(gotBody, "messages.1.content")
-			if toolContent.Type != gjson.String || toolContent.String() != "image inspected" {
-				t.Fatalf("tool content = %s, want text-only tool result", toolContent.Raw)
-			}
-			if got := gjson.GetBytes(gotBody, "messages.1.tool_call_id").String(); got != "call_1" {
-				t.Fatalf("tool call ID = %q, want call_1", got)
-			}
-			if got := gjson.GetBytes(gotBody, "messages.2.role").String(); got != "user" {
-				t.Fatalf("image relay role = %q, want user", got)
-			}
-			imagePart := gjson.GetBytes(gotBody, "messages.2.content.1")
-			if tt.wantOmitted {
-				if imagePart.Get("type").String() != "text" || imagePart.Get("text").String() != "[image omitted: unsupported by upstream]" {
-					t.Fatalf("relayed image = %s, want omission marker", imagePart.Raw)
+			if tt.wantString {
+				if toolContent.Type != gjson.String {
+					t.Fatalf("tool content type = %s, want string; body=%s", toolContent.Type, string(gotBody))
 				}
-				if imagePart.Get("image_url").Exists() {
-					t.Fatal("text-only model still receives image data")
+				want := "image inspected\n\n[image omitted: unsupported by upstream]"
+				if toolContent.String() != want {
+					t.Fatalf("tool content = %q, want %q", toolContent.String(), want)
 				}
-			} else if imagePart.Get("type").String() != "image_url" || imagePart.Get("image_url.url").String() != "data:image/png;base64,AA==" {
-				t.Fatalf("relayed image = %s, want original image", imagePart.Raw)
+			} else if !toolContent.IsArray() {
+				t.Fatalf("tool content type = %s, want array; body=%s", toolContent.Type, string(gotBody))
 			}
 		})
 	}

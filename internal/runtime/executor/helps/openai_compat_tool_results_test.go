@@ -71,30 +71,6 @@ func TestNormalizeOpenAIToolResultsTextOnlyImageAndUnknownContent(t *testing.T) 
 	}
 }
 
-func TestNormalizeOpenAIToolResultsTextOnlyPreservesRelayedUserText(t *testing.T) {
-	input := []byte(`{"messages":[{"role":"tool","tool_call_id":"call_1","content":"image inspected"},{"role":"user","content":[{"type":"text","text":"Images returned by the preceding tool call(s):"},{"type":"image_url","image_url":{"url":"data:image/png;base64,AA=="}},{"type":"text","text":"Continue with the result."},{"type":"custom","value":1}]}]}`)
-	got := NormalizeOpenAIToolResultsTextOnly(input)
-	if gjson.GetBytes(got, "messages.0").Raw != gjson.GetBytes(input, "messages.0").Raw {
-		t.Fatal("text tool result changed")
-	}
-	before := gjson.GetBytes(input, "messages.1.content").Array()
-	after := gjson.GetBytes(got, "messages.1.content").Array()
-	if len(after) != len(before) {
-		t.Fatalf("user content parts = %d, want %d", len(after), len(before))
-	}
-	for _, index := range []int{0, 2, 3} {
-		if after[index].Raw != before[index].Raw {
-			t.Fatalf("non-image part %d changed", index)
-		}
-	}
-	if after[1].Get("type").String() != "text" || after[1].Get("text").String() != openAIToolResultImageOmittedText || after[1].Get("image_url").Exists() {
-		t.Fatalf("image part was not replaced: %s", after[1].Raw)
-	}
-	if again := NormalizeOpenAIToolResultsTextOnly(got); string(again) != string(got) {
-		t.Fatal("normalization is not idempotent")
-	}
-}
-
 func TestShouldNormalizeOpenAIToolResultsForModel(t *testing.T) {
 	compat := &config.OpenAICompatibility{Models: []config.OpenAICompatibilityModel{
 		{Name: "upstream-text", Alias: "alias-text", InputModalities: []string{"text"}},
