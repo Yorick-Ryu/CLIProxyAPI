@@ -28,6 +28,8 @@ func ShouldNormalizeOpenAIToolResultsForModel(compat *config.OpenAICompatibility
 
 // NormalizeOpenAIToolResultsTextOnly converts tool message content to strings.
 // Text parts are preserved and image parts are replaced with a short marker.
+// Images relayed into user messages are also replaced for text-only models,
+// preserving the user content array and all non-image parts.
 func NormalizeOpenAIToolResultsTextOnly(payload []byte) []byte {
 	messages := gjson.GetBytes(payload, "messages")
 	if !messages.Exists() || !messages.IsArray() {
@@ -37,12 +39,27 @@ func NormalizeOpenAIToolResultsTextOnly(payload []byte) []byte {
 	out := payload
 	messageIndex := 0
 	messages.ForEach(func(_, message gjson.Result) bool {
-		if message.Get("role").String() == "tool" {
+		switch message.Get("role").String() {
+		case "tool":
 			content := message.Get("content")
 			if content.Exists() && content.Type != gjson.String {
 				path := fmt.Sprintf("messages.%d.content", messageIndex)
 				if updated, errSet := sjson.SetBytes(out, path, flattenOpenAIToolResultContent(content)); errSet == nil {
 					out = updated
+				}
+			}
+		case "user":
+			content := message.Get("content")
+			if content.IsArray() {
+				for partIndex, part := range content.Array() {
+					if !isOpenAIImageToolResultPart(part) {
+						continue
+					}
+					path := fmt.Sprintf("messages.%d.content.%d", messageIndex, partIndex)
+					marker := map[string]string{"type": "text", "text": openAIToolResultImageOmittedText}
+					if updated, errSet := sjson.SetBytes(out, path, marker); errSet == nil {
+						out = updated
+					}
 				}
 			}
 		}
