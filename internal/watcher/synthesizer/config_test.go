@@ -314,7 +314,7 @@ func TestConfigSynthesizer_CodexKeys(t *testing.T) {
 					Prefix:         "dev",
 					BaseURL:        "https://api.openai.com",
 					ProxyURL:       "http://proxy.local",
-					Websockets:     true,
+					Websockets:     boolPointer(true),
 					AlphaSearch:    true,
 					DisableCooling: boolPointer(true),
 				},
@@ -361,7 +361,7 @@ func TestConfigSynthesizer_XAIKeys(t *testing.T) {
 				Prefix:         "grok",
 				BaseURL:        "https://api.x.ai/v1",
 				ProxyURL:       "http://proxy.local",
-				Websockets:     true,
+				Websockets:     boolPointer(true),
 				AlphaSearch:    true,
 				DisableCooling: boolPointer(true),
 				Headers:        map[string]string{"X-Custom": "value"},
@@ -1265,6 +1265,34 @@ func TestConfigSynthesizer_RequestScopedErrors(t *testing.T) {
 		extracted, ok := val.([]config.RequestScopedErrorRule)
 		if !ok || len(extracted) != 1 || extracted[0].Action != "stop" {
 			t.Fatalf("auth %s unexpected request_scoped_errors: %#v", auth.ID, val)
+		}
+	}
+}
+
+func TestConfigSynthesizerCodexWebsocketsOverrides(t *testing.T) {
+	for _, provider := range []string{"codex", "xai"} {
+		cfg := &config.Config{}
+		keys := []config.CodexKey{{APIKey: "missing"}, {APIKey: "off", Websockets: boolPointer(false)}, {APIKey: "on", Websockets: boolPointer(true)}}
+		if provider == "codex" {
+			cfg.CodexKey = keys
+		} else {
+			cfg.XAIKey = keys
+		}
+		auths, err := NewConfigSynthesizer().Synthesize(&SynthesisContext{Config: cfg, Now: time.Now(), IDGenerator: NewStableIDGenerator()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(auths) != 3 {
+			t.Fatalf("got %d auths", len(auths))
+		}
+		if _, ok := auths[0].Attributes["websockets"]; ok {
+			t.Fatal("missing override became explicit")
+		}
+		if auths[1].Attributes["websockets"] != "false" || auths[2].Attributes["websockets"] != "true" {
+			t.Fatal("explicit override lost")
+		}
+		if auths[0].EffectiveWebsocketsEnabled() != (provider == "codex") {
+			t.Fatal("wrong provider default")
 		}
 	}
 }

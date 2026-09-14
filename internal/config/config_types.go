@@ -163,7 +163,9 @@ type AntigravityConnectionPoolConfig struct {
 
 // CodexConfig configures provider-wide Codex request behavior.
 type CodexConfig struct {
-	IdentityConfuse bool `yaml:"identity-confuse" json:"identity-confuse"`
+	// WebsocketsDefault applies when a Codex credential omits websockets. Nil means true.
+	WebsocketsDefault *bool `yaml:"websockets-default,omitempty" json:"websockets-default,omitempty"`
+	IdentityConfuse   bool  `yaml:"identity-confuse" json:"identity-confuse"`
 	// IdentityConvergence is the provider-wide default for Codex OAuth fingerprint convergence.
 	// It converges only the device identity so independent client sessions remain distinct.
 	// An auth metadata field named codex_fingerprint_mode can explicitly select off/device/session/full.
@@ -515,8 +517,9 @@ type CodexKey struct {
 	// If empty, the default Codex API URL will be used.
 	BaseURL string `yaml:"base-url" json:"base-url"`
 
-	// Websockets enables the Responses API websocket transport for this credential.
-	Websockets bool `yaml:"websockets,omitempty" json:"websockets,omitempty"`
+	// Websockets overrides the Responses API websocket transport for this credential.
+	// Nil inherits codex.websockets-default for Codex; xAI defaults to false.
+	Websockets *bool `yaml:"websockets,omitempty" json:"websockets,omitempty"`
 
 	// AlphaSearch allows this Codex API key to serve the Alpha Search endpoint.
 	AlphaSearch bool `yaml:"alpha-search,omitempty" json:"alpha-search,omitempty"`
@@ -789,3 +792,8 @@ func (m OpenAICompatibilityModel) GetForceMapping() bool    { return m.ForceMapp
 func (m OpenAICompatibilityModel) GetIsCompat() bool        { return m.IsCompat }
 
 func (m OpenAICompatibilityModel) GetThinking() *registry.ThinkingSupport { return m.Thinking }
+
+// CodexWebsocketsDefault returns the inherited Codex transport preference.
+func (cfg *Config) CodexWebsocketsDefault() bool {
+	return cfg == nil || cfg.Codex.WebsocketsDefault == nil || *cfg.Codex.WebsocketsDefault
+}

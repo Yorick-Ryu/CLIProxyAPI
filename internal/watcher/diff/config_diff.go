@@ -134,6 +134,7 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 		changes = append(changes, fmt.Sprintf("antigravity.connection-pool.max-idle-conns-per-host: %s -> %s", oldMaxIdle, newMaxIdle))
 	}
 
+	changes = appendOptionalBoolChange(changes, "codex.websockets-default", oldCfg.Codex.WebsocketsDefault, newCfg.Codex.WebsocketsDefault)
 	if oldCfg.Codex.IdentityConfuse != newCfg.Codex.IdentityConfuse {
 		changes = append(changes, fmt.Sprintf("codex.identity-confuse: %t -> %t", oldCfg.Codex.IdentityConfuse, newCfg.Codex.IdentityConfuse))
 	}
@@ -341,9 +342,7 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 			if strings.TrimSpace(o.Prefix) != strings.TrimSpace(n.Prefix) {
 				changes = append(changes, fmt.Sprintf("codex[%d].prefix: %s -> %s", i, strings.TrimSpace(o.Prefix), strings.TrimSpace(n.Prefix)))
 			}
-			if o.Websockets != n.Websockets {
-				changes = append(changes, fmt.Sprintf("codex[%d].websockets: %t -> %t", i, o.Websockets, n.Websockets))
-			}
+			changes = appendOptionalBoolChange(changes, fmt.Sprintf("codex[%d].websockets", i), o.Websockets, n.Websockets)
 			if o.AlphaSearch != n.AlphaSearch {
 				changes = append(changes, fmt.Sprintf("codex[%d].alpha-search: %t -> %t", i, o.AlphaSearch, n.AlphaSearch))
 			}
@@ -387,9 +386,7 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 			if o.Priority != n.Priority {
 				changes = append(changes, fmt.Sprintf("xai[%d].priority: %d -> %d", i, o.Priority, n.Priority))
 			}
-			if o.Websockets != n.Websockets {
-				changes = append(changes, fmt.Sprintf("xai[%d].websockets: %t -> %t", i, o.Websockets, n.Websockets))
-			}
+			changes = appendOptionalBoolChange(changes, fmt.Sprintf("xai[%d].websockets", i), o.Websockets, n.Websockets)
 			changes = appendOptionalBoolChange(changes, fmt.Sprintf("xai[%d].disable-cooling", i), o.DisableCooling, n.DisableCooling)
 			changes = appendOptionalIntChange(changes, fmt.Sprintf("xai[%d].request-retry", i), o.RequestRetry, n.RequestRetry)
 			if strings.TrimSpace(o.APIKey) != strings.TrimSpace(n.APIKey) {

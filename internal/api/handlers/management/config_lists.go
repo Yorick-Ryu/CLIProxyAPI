@@ -1420,6 +1420,7 @@ func (h *Handler) PutCodexKeys(c *gin.Context) {
 }
 func (h *Handler) PatchCodexKey(c *gin.Context) {
 	type codexKeyPatch struct {
+		Websockets          json.RawMessage                  `json:"websockets"`
 		APIKey              *string                          `json:"api-key"`
 		Weight              json.RawMessage                  `json:"weight"`
 		Prefix              *string                          `json:"prefix"`
@@ -1511,6 +1512,12 @@ func (h *Handler) PatchCodexKey(c *gin.Context) {
 	}
 	if body.Value.RequestScopedErrors != nil {
 		entry.RequestScopedErrors = append([]config.RequestScopedErrorRule(nil), *body.Value.RequestScopedErrors...)
+	}
+	if len(body.Value.Websockets) > 0 {
+		if err := json.Unmarshal(body.Value.Websockets, &entry.Websockets); err != nil {
+			c.JSON(400, gin.H{"error": "websockets must be a boolean or null"})
+			return
+		}
 	}
 	normalizeCodexKey(&entry)
 	h.cfg.CodexKey[targetIndex] = entry
@@ -1687,7 +1694,7 @@ func (h *Handler) PatchXAIKey(c *gin.Context) {
 		entry.BaseURL = trimmed
 	}
 	if body.Value.Websockets != nil {
-		entry.Websockets = *body.Value.Websockets
+		entry.Websockets = body.Value.Websockets
 	}
 	if body.Value.ProxyURL != nil {
 		entry.ProxyURL = strings.TrimSpace(*body.Value.ProxyURL)

@@ -239,6 +239,10 @@ routing:
 
 # Codex provider behavior.
 codex:
+  # Default upstream WebSocket support when a Codex credential omits websockets.
+  # Omitted defaults to true; explicit account true/false overrides this setting.
+  # Only downstream WebSocket requests use this transport; HTTP remains HTTP.
+  websockets-default: true
   # OAuth client identifiers are remapped into a stable namespace made from the
   # downstream API key, selected OAuth account, ID kind, and original client
   # value. This preserves session/thread cardinality while preventing the same
@@ -437,6 +441,7 @@ nonstream-keepalive-interval: 0
 #           - "context_window_exceeded"
 #         action: "stop-and-cooldown"
 #     base-url: "https://www.example.com" # use the custom codex API endpoint
+#     websockets: false # optional override; omit to inherit codex.websockets-default (true)
 #     alpha-search: false # optional: allow this key to serve /v1/alpha/search via base-url + /alpha/search
 #     headers:
 #       X-Custom-Header: "custom-value"

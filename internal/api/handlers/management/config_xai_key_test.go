@@ -17,7 +17,7 @@ func TestPatchXAIKeyUpdatesExecutionFields(t *testing.T) {
 			APIKey:         "xai-key",
 			Priority:       1,
 			BaseURL:        "https://api.x.ai/v1",
-			Websockets:     true,
+			Websockets:     func() *bool { v := true; return &v }(),
 			DisableCooling: &disableCooling,
 		}}},
 		configFilePath: writeTestConfigFile(t),
@@ -45,7 +45,7 @@ func TestPatchXAIKeyUpdatesExecutionFields(t *testing.T) {
 	if entry.Priority != 7 {
 		t.Fatalf("priority = %d, want 7", entry.Priority)
 	}
-	if entry.Websockets {
+	if entry.Websockets != nil && *entry.Websockets {
 		t.Fatal("websockets = true, want false")
 	}
 	if entry.DisableCooling == nil || !*entry.DisableCooling {
