@@ -25,6 +25,8 @@ const (
 	codexResponsesWebsocketBetaHeaderValue = "responses_websockets=2026-02-06"
 	codexResponsesWebsocketIdleTimeout     = 15 * time.Minute
 	codexResponsesWebsocketHandshakeTO     = 30 * time.Second
+	// Limit the complete, uncompressed upstream message, including JSON framing.
+	codexWebsocketMaxPayloadBytes = 20_000_000
 )
 
 func (e *CodexWebsocketsExecutor) dialCodexWebsocket(ctx context.Context, auth *cliproxyauth.Auth, wsURL string, headers http.Header) (*websocket.Conn, *websocketConnectionCloser, *http.Response, error) {
@@ -79,11 +81,21 @@ func writeWebsocketPayloadMessage(provider string, sess *codexWebsocketSession, 
 }
 
 func writeCodexWebsocketMessage(sess *codexWebsocketSession, conn *websocket.Conn, payload []byte) error {
+	if len(payload) > codexWebsocketMaxPayloadBytes {
+		return codexWebsocketMessageTooBigError{statusErr: statusErr{
+			code: http.StatusRequestEntityTooLarge,
+			msg: fmt.Sprintf(`{"error":{"message":"Codex WebSocket message exceeds the local uncompressed size limit: %d bytes > %d bytes","type":"invalid_request_error","code":"message_too_big","actual_bytes":%d,"limit_bytes":%d}}`,
+				len(payload), codexWebsocketMaxPayloadBytes, len(payload), codexWebsocketMaxPayloadBytes),
+		}}
+	}
 	return writeWebsocketPayloadMessage("codex", sess, conn, payload)
 }
 
 func mapCodexWebsocketWriteError(sess *codexWebsocketSession, conn *websocket.Conn, err error) error {
 	if err == nil || sess == nil || conn == nil {
+		return err
+	}
+	if !shouldRetryCodexWebsocketSend(err) {
 		return err
 	}
 	upstreamErr := sess.upstreamDisconnectError(conn)

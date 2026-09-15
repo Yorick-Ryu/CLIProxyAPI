@@ -3,6 +3,8 @@ package executor
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
 )
 
 type codexCompressionListener struct{ net.Listener }
@@ -68,10 +71,40 @@ func TestCodexWebsocketRequestCompression(t *testing.T) {
 				if persistent {
 					session = &codexWebsocketSession{}
 				}
+				// A compressible oversized message must be rejected before any frame
+				// is sent, without preventing the next valid message on this socket.
+				oversized := bytes.Repeat([]byte("x"), codexWebsocketMaxPayloadBytes+1)
+				err = writeCodexWebsocketMessage(session, conn, oversized)
+				var status interface{ StatusCode() int }
+				if !errors.As(err, &status) || status.StatusCode() != http.StatusRequestEntityTooLarge {
+					t.Fatalf("oversized message status: %v", err)
+				}
+				var scoped cliproxyexecutor.RequestScopedError
+				if !errors.As(err, &scoped) || !scoped.IsRequestScoped() || shouldRetryCodexWebsocketSend(err) {
+					t.Fatalf("oversized message must be request-scoped and non-retryable: %v", err)
+				}
+				var body struct {
+					Error struct {
+						Code   string `json:"code"`
+						Actual int    `json:"actual_bytes"`
+						Limit  int    `json:"limit_bytes"`
+					} `json:"error"`
+				}
+				if json.Unmarshal([]byte(err.Error()), &body) != nil || body.Error.Code != "message_too_big" || body.Error.Actual != len(oversized) || body.Error.Limit != codexWebsocketMaxPayloadBytes {
+					t.Fatalf("unexpected size error: %v", err)
+				}
+				if session != nil {
+					session.setUpstreamDisconnectError(conn, &websocket.CloseError{Code: websocket.CloseMessageTooBig})
+					if mapped := mapCodexWebsocketWriteError(session, conn, err); mapped != err {
+						t.Fatal("upstream close must not replace local size details")
+					}
+				}
 				for _, payload := range [][]byte{
 					[]byte(`{"type":"response.create","model":"test-model","input":"hello"}`),
 					[]byte(`{"type":"response.create","model":"test-model","input":"` + strings.Repeat("context ", 128*1024) + `"}`),
 					[]byte(`{"type":"response.create","model":"test-model","previous_response_id":"resp-1","input":"continue"}`),
+					bytes.Repeat([]byte("x"), codexWebsocketMaxPayloadBytes-1),
+					bytes.Repeat([]byte("x"), codexWebsocketMaxPayloadBytes),
 				} {
 					recorded.received.Reset()
 					written := make(chan error, 1)
