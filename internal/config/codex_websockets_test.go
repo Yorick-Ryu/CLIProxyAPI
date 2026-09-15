@@ -40,6 +40,34 @@ func TestCodexWebsocketsDefault(t *testing.T) {
 	}
 }
 
+func TestCodexWebsocketMessageLimitRoundTrip(t *testing.T) {
+	for _, tc := range []struct {
+		document string
+		want     int64
+	}{
+		{"{}", 0},
+		{"codex: {websocket-max-message-bytes: 0}", 0},
+		{"codex: {websocket-max-message-bytes: 20000000}", 20_000_000},
+		{"codex: {websocket-max-message-bytes: 30000000}", 30_000_000},
+	} {
+		var cfg Config
+		if err := yaml.Unmarshal([]byte(tc.document), &cfg); err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(cfg.CloneForRuntime())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var roundTrip Config
+		if err := json.Unmarshal(data, &roundTrip); err != nil {
+			t.Fatal(err)
+		}
+		if roundTrip.Codex.WebsocketMaxMessageBytes != tc.want {
+			t.Fatalf("lost limit: got %d, want %d", roundTrip.Codex.WebsocketMaxMessageBytes, tc.want)
+		}
+	}
+}
+
 func TestCodexKeyWebsocketsTriState(t *testing.T) {
 	var cfg Config
 	if err := yaml.Unmarshal([]byte("codex-api-key:\n  - api-key: omitted\n  - api-key: disabled\n    websockets: false\n  - api-key: enabled\n    websockets: true\n"), &cfg); err != nil {

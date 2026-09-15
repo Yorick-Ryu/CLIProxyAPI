@@ -165,7 +165,10 @@ type AntigravityConnectionPoolConfig struct {
 type CodexConfig struct {
 	// WebsocketsDefault applies when a Codex credential omits websockets. Nil means true.
 	WebsocketsDefault *bool `yaml:"websockets-default,omitempty" json:"websockets-default,omitempty"`
-	IdentityConfuse   bool  `yaml:"identity-confuse" json:"identity-confuse"`
+	// WebsocketMaxMessageBytes limits complete uncompressed upstream WS messages.
+	// Omitted or non-positive values disable the local limit.
+	WebsocketMaxMessageBytes int64 `yaml:"websocket-max-message-bytes,omitempty" json:"websocket-max-message-bytes,omitempty"`
+	IdentityConfuse          bool  `yaml:"identity-confuse" json:"identity-confuse"`
 	// IdentityConvergence is the provider-wide default for Codex OAuth fingerprint convergence.
 	// It converges only the device identity so independent client sessions remain distinct.
 	// An auth metadata field named codex_fingerprint_mode can explicitly select off/device/session/full.

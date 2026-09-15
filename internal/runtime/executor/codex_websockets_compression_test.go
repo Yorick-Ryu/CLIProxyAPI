@@ -17,6 +17,30 @@ import (
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
 )
 
+const codexWebsocketMaxPayloadBytes = 20_000_000
+
+func TestCodexWebsocketPayloadSizeConfiguration(t *testing.T) {
+	payload := make([]byte, 20_000_001)
+	for _, tc := range []struct {
+		name      string
+		cfg       *config.Config
+		wantError bool
+	}{
+		{"nil", nil, false},
+		{"omitted", &config.Config{}, false},
+		{"negative", &config.Config{Codex: config.CodexConfig{WebsocketMaxMessageBytes: -1}}, false},
+		{"20MB", &config.Config{Codex: config.CodexConfig{WebsocketMaxMessageBytes: 20_000_000}}, true},
+		{"exact", &config.Config{Codex: config.CodexConfig{WebsocketMaxMessageBytes: 20_000_001}}, false},
+		{"30MB", &config.Config{Codex: config.CodexConfig{WebsocketMaxMessageBytes: 30_000_000}}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateCodexWebsocketPayloadSize(tc.cfg, payload); (err != nil) != tc.wantError {
+				t.Fatalf("unexpected size check: %v", err)
+			}
+		})
+	}
+}
+
 type codexCompressionListener struct{ net.Listener }
 
 func (l codexCompressionListener) Accept() (net.Conn, error) {
@@ -55,7 +79,7 @@ func TestCodexWebsocketRequestCompression(t *testing.T) {
 				server.Listener = codexCompressionListener{server.Listener}
 				server.Start()
 				defer server.Close()
-				executor := NewCodexWebsocketsExecutor(&config.Config{})
+				executor := NewCodexWebsocketsExecutor(&config.Config{Codex: config.CodexConfig{WebsocketMaxMessageBytes: codexWebsocketMaxPayloadBytes}})
 				conn, closer, response, err := executor.dialCodexWebsocket(context.Background(), nil, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
 				if err != nil {
 					t.Fatalf("dial: %v", err)
@@ -74,7 +98,7 @@ func TestCodexWebsocketRequestCompression(t *testing.T) {
 				// A compressible oversized message must be rejected before any frame
 				// is sent, without preventing the next valid message on this socket.
 				oversized := bytes.Repeat([]byte("x"), codexWebsocketMaxPayloadBytes+1)
-				err = writeCodexWebsocketMessage(session, conn, oversized)
+				err = writeCodexWebsocketMessage(executor.cfg, session, conn, oversized)
 				var status interface{ StatusCode() int }
 				if !errors.As(err, &status) || status.StatusCode() != http.StatusRequestEntityTooLarge {
 					t.Fatalf("oversized message status: %v", err)
@@ -108,7 +132,7 @@ func TestCodexWebsocketRequestCompression(t *testing.T) {
 				} {
 					recorded.received.Reset()
 					written := make(chan error, 1)
-					go func() { written <- writeCodexWebsocketMessage(session, conn, payload) }()
+					go func() { written <- writeCodexWebsocketMessage(executor.cfg, session, conn, payload) }()
 					messageType, received, err := peer.ReadMessage()
 					if err != nil {
 						t.Fatalf("read upstream request: %v", err)
@@ -145,6 +169,20 @@ func TestCodexWebsocketRequestCompression(t *testing.T) {
 					if string(reply) != `{"type":"response.completed"}` {
 						t.Fatal("upstream reply changed")
 					}
+				}
+				// Removing the setting must also disable the send-path guard on
+				// an existing connection, even for messages above the old limit.
+				written := make(chan error, 1)
+				go func() { written <- writeCodexWebsocketMessage(&config.Config{}, session, conn, oversized) }()
+				_, received, err := peer.ReadMessage()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := <-written; err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(received, oversized) {
+					t.Fatal("disabled limit changed the message")
 				}
 			})
 		}

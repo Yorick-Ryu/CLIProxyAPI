@@ -243,6 +243,9 @@ codex:
   # Omitted defaults to true; explicit account true/false overrides this setting.
   # Only downstream WebSocket requests use this transport; HTTP remains HTTP.
   websockets-default: true
+  # Optional limit on each complete, uncompressed Codex upstream WebSocket message.
+  # Omitted or <= 0 disables local size checks. Example: 20000000 enables a 20 MB limit.
+  websocket-max-message-bytes: 0
   # OAuth client identifiers are remapped into a stable namespace made from the
   # downstream API key, selected OAuth account, ID kind, and original client
   # value. This preserves session/thread cardinality while preventing the same
