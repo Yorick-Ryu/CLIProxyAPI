@@ -81,6 +81,13 @@ func writeWebsocketPayloadMessage(provider string, sess *codexWebsocketSession, 
 }
 
 func writeCodexWebsocketMessage(sess *codexWebsocketSession, conn *websocket.Conn, payload []byte) error {
+	if err := validateCodexWebsocketPayloadSize(payload); err != nil {
+		return err
+	}
+	return writeWebsocketPayloadMessage("codex", sess, conn, payload)
+}
+
+func validateCodexWebsocketPayloadSize(payload []byte) error {
 	if len(payload) > codexWebsocketMaxPayloadBytes {
 		return codexWebsocketMessageTooBigError{statusErr: statusErr{
 			code: http.StatusRequestEntityTooLarge,
@@ -88,7 +95,7 @@ func writeCodexWebsocketMessage(sess *codexWebsocketSession, conn *websocket.Con
 				len(payload), codexWebsocketMaxPayloadBytes, len(payload), codexWebsocketMaxPayloadBytes),
 		}}
 	}
-	return writeWebsocketPayloadMessage("codex", sess, conn, payload)
+	return nil
 }
 
 func mapCodexWebsocketWriteError(sess *codexWebsocketSession, conn *websocket.Conn, err error) error {

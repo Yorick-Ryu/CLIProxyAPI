@@ -28,6 +28,40 @@ import (
 
 var benchmarkBuildCodexWebsocketRequestBodyOutput []byte
 
+func TestCodexWebsocketsOversizedRequestRejectedBeforeDial(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	exec := NewCodexWebsocketsExecutor(&config.Config{SDKConfig: config.SDKConfig{DisableImageGeneration: config.DisableImageGenerationAll}})
+	auth := &cliproxyauth.Auth{Attributes: map[string]string{"api_key": "test", "base_url": server.URL}}
+	req := cliproxyexecutor.Request{
+		Model:   "gpt-5-codex",
+		Payload: []byte(`{"model":"gpt-5-codex","input":[{"role":"user","content":"` + strings.Repeat("x", codexWebsocketMaxPayloadBytes) + `"}]}`),
+	}
+	opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("openai-response")}
+	for _, stream := range []bool{false, true} {
+		var err error
+		if stream {
+			_, err = exec.ExecuteStream(context.Background(), auth, req, opts)
+		} else {
+			_, err = exec.Execute(context.Background(), auth, req, opts)
+		}
+		var status interface{ StatusCode() int }
+		if !errors.As(err, &status) || status.StatusCode() != http.StatusRequestEntityTooLarge {
+			t.Fatalf("stream=%t: expected local 413, got %v", stream, err)
+		}
+		if gjson.Get(err.Error(), "error.limit_bytes").Int() != codexWebsocketMaxPayloadBytes || shouldRetryCodexWebsocketSend(err) {
+			t.Fatalf("stream=%t: unexpected size error: %v", stream, err)
+		}
+	}
+	if attempts.Load() != 0 {
+		t.Fatalf("oversized request dialed upstream %d times", attempts.Load())
+	}
+}
+
 func TestBuildCodexWebsocketRequestBodyPreservesPreviousResponseID(t *testing.T) {
 	body := []byte(`{"model":"gpt-5-codex","previous_response_id":"resp-1","input":[{"type":"message","id":"msg-1"}]}`)
 
