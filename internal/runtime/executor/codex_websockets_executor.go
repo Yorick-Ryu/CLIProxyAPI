@@ -66,7 +66,7 @@ func (e *CodexAutoExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth
 	if e == nil || e.httpExec == nil || e.wsExec == nil {
 		return cliproxyexecutor.Response{}, fmt.Errorf("codex auto executor: executor is nil")
 	}
-	if cliproxyexecutor.DownstreamWebsocket(ctx) && auth.WebsocketsEnabled(e.httpExec.cfg.CodexWebsocketsDefault()) {
+	if !cliproxyexecutor.CodexHTTPUpstream(ctx) && cliproxyexecutor.DownstreamWebsocket(ctx) && auth.WebsocketsEnabled(e.httpExec.cfg.CodexWebsocketsDefault()) {
 		return e.wsExec.Execute(ctx, auth, req, opts)
 	}
 	if cliproxyexecutor.RequiredUpstreamWebsocket(ctx) {
@@ -79,7 +79,7 @@ func (e *CodexAutoExecutor) ExecuteStream(ctx context.Context, auth *cliproxyaut
 	if e == nil || e.httpExec == nil || e.wsExec == nil {
 		return nil, fmt.Errorf("codex auto executor: executor is nil")
 	}
-	if cliproxyexecutor.DownstreamWebsocket(ctx) && auth.WebsocketsEnabled(e.httpExec.cfg.CodexWebsocketsDefault()) {
+	if !cliproxyexecutor.CodexHTTPUpstream(ctx) && cliproxyexecutor.DownstreamWebsocket(ctx) && auth.WebsocketsEnabled(e.httpExec.cfg.CodexWebsocketsDefault()) {
 		return e.wsExec.ExecuteStream(ctx, auth, req, opts)
 	}
 	if cliproxyexecutor.RequiredUpstreamWebsocket(ctx) {

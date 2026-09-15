@@ -22,6 +22,7 @@ import (
 )
 
 type responsesWebsocketForwardOptions struct {
+	beforeResponse    func()
 	toolCacheTurn     *responsesWebsocketToolCacheTurn
 	suppressError     func(*interfaces.ErrorMessage) bool
 	keepAliveInterval *time.Duration
@@ -194,6 +195,9 @@ func (h *OpenAIResponsesAPIHandler) forwardResponsesWebsocket(
 				// 	websocketPayloadEventType(payloads[i]),
 				// 	websocketPayloadPreview(payloads[i]),
 				// )
+				if opts.beforeResponse != nil {
+					opts.beforeResponse()
+				}
 				if errWrite := writeResponsesWebsocketPayload(writer, wsTimelineLog, payloads[i], time.Now()); errWrite != nil {
 					log.Warnf(
 						"responses websocket: downstream_out write failed id=%s event=%s error=%v",
