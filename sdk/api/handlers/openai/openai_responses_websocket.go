@@ -279,9 +279,6 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 	requestLogEnabled := h != nil && h.Cfg != nil && h.Cfg.RequestLog
 	wsTimelineLog := newWebsocketTimelineLog(requestLogEnabled, websocketTimelineSourceFromContext(c))
 
-	// Size errors from an active, replayable Codex turn are handled by the stream path.
-	var allowSizeRecovery atomic.Bool
-	var codexHTTPFallback atomic.Bool
 	wsDone := make(chan struct{})
 	defer close(wsDone)
 
@@ -302,9 +299,6 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 						case <-wsDone:
 							return
 						case disconnectErr := <-disconnectCh:
-							if provider == "codex" && isResponsesWebsocketSizeError(disconnectErr) && (allowSizeRecovery.Load() || codexHTTPFallback.Load()) {
-								return
-							}
 							writer.closeForUpstreamDisconnect(disconnectErr)
 						}
 					}()
@@ -393,7 +387,6 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 		pinnedAuthID = ""
 	}
 
-requestLoop:
 	for {
 		msgType, payload, errReadMessage := conn.ReadMessage()
 		if errReadMessage != nil {
@@ -464,12 +457,6 @@ requestLoop:
 				provider := strings.ToLower(strings.TrimSpace(pinnedAuth.Provider))
 				useUpstreamWebsocketPassthrough = provider == "codex" || provider == "xai"
 			}
-		}
-		providerSetForTurn, _ := responsesWebsocketProviderSetForModel(responsesWebsocketResolvedModelName(requestModelName))
-		_, codexTurn := providerSetForTurn["codex"]
-		forceHTTP := codexHTTPFallback.Load() && codexTurn && len(providerSetForTurn) == 1
-		if forceHTTP {
-			useUpstreamWebsocketPassthrough = false
 		}
 		nativeWebsocketPassthrough := !routeOverridesModelResolution && responsesWebsocketNativePassthroughAllowed(
 			upstreamMode,
@@ -597,7 +584,6 @@ requestLoop:
 				passthroughModelName = modelName
 			}
 		} else {
-
 			requestJSON, toolCacheTurn = prepareResponsesWebsocketFallbackTurn(downstreamSessionKey, requestJSON)
 			nextLastRequest = requestJSON
 		}
@@ -607,6 +593,35 @@ requestLoop:
 		attemptedUpstreamMode := responsesWebsocketUpstreamModeUnknown
 		selectedAuthObserved := false
 		pinnedAuthAttempted := false
+		cliCtx, cliCancel := h.GetContextWithCancel(h, c, executionParent)
+		cliCtx = cliproxyexecutor.WithDownstreamWebsocket(cliCtx)
+		if nativeWebsocketPassthrough && requestRequiresCurrentUpstreamWebsocket {
+			cliCtx = cliproxyexecutor.WithRequiredUpstreamWebsocket(cliCtx)
+		}
+		cliCtx = handlers.WithExecutionSessionID(cliCtx, passthroughSessionID)
+		cliCtx = handlers.WithSelectedAuthIDCallback(cliCtx, func(authID string) {
+			authID = strings.TrimSpace(authID)
+			if authID == "" || h == nil || h.AuthManager == nil {
+				return
+			}
+			lastAttemptedAuthID = authID
+			selectedAuthObserved = true
+			pinnedAuthAttempted = pinnedAuthAttempted || (pinnedAuthID != "" && authID == pinnedAuthID)
+			selectedAuth, ok := sessionAuthByID(authID)
+			if !ok || selectedAuth == nil {
+				return
+			}
+			attemptedUpstreamMode = upstreamModeForAuth(selectedAuth)
+		})
+		if pinnedAuthID != "" && !routeOverridesModelResolution {
+			cliCtx = handlers.WithPinnedAuthID(cliCtx, pinnedAuthID)
+		}
+		dataChan, _, errChan := h.ExecuteStreamWithAuthManager(cliCtx, h.HandlerType(), modelName, requestJSON, "")
+		if !selectedAuthObserved {
+			// Plugin/alternate routes bypass auth selection. Keep canonical HTTP-mode
+			// state instead of inheriting the previous pinned websocket mode.
+			attemptedUpstreamMode = responsesWebsocketUpstreamModeHTTP
+		}
 		// A connection-scoped continuation cannot rotate credentials in place. Suppress
 		// credential errors and make the client replay the full turn on a new socket.
 		replayPinnedAuthFailure := func(errMsg *interfaces.ErrorMessage) bool {
@@ -614,107 +629,19 @@ requestLoop:
 				shouldReplayResponsesWebsocketPinnedAuthFailure(errMsg)
 		}
 
-		var completedOutput []byte
-		var completedResponseID string
-		var completedPendingToolCallIDs []string
-		var forwardErrMsg *interfaces.ErrorMessage
-		var errForward error
-		for attempt := 0; attempt < 2; attempt++ {
-			retryHTTP := false
-			cliCtx, cliCancel := h.GetContextWithCancel(h, c, executionParent)
-			cliCtx = cliproxyexecutor.WithDownstreamWebsocket(cliCtx)
-			if forceHTTP {
-				cliCtx = cliproxyexecutor.WithCodexHTTPUpstream(cliCtx)
-			}
-			if nativeWebsocketPassthrough && requestRequiresCurrentUpstreamWebsocket {
-				cliCtx = cliproxyexecutor.WithRequiredUpstreamWebsocket(cliCtx)
-			}
-			cliCtx = handlers.WithExecutionSessionID(cliCtx, passthroughSessionID)
-			cliCtx = handlers.WithSelectedAuthIDCallback(cliCtx, func(authID string) {
-				authID = strings.TrimSpace(authID)
-				if authID == "" || h == nil || h.AuthManager == nil {
-					return
-				}
-				lastAttemptedAuthID = authID
-				selectedAuthObserved = true
-				pinnedAuthAttempted = pinnedAuthAttempted || (pinnedAuthID != "" && authID == pinnedAuthID)
-				selectedAuth, ok := sessionAuthByID(authID)
-				if !ok || selectedAuth == nil {
-					return
-				}
-				attemptedUpstreamMode = upstreamModeForAuth(selectedAuth)
-				if forceHTTP && selectedAuth.Provider == "codex" {
-					attemptedUpstreamMode = responsesWebsocketUpstreamModeHTTP
-				}
-				allowSizeRecovery.Store(!forceHTTP && !routeOverridesModelResolution && selectedAuth.Provider == "codex" && attemptedUpstreamMode == responsesWebsocketUpstreamModeWS && !requestRequiresCurrentUpstreamWebsocket && responsesWebsocketHasFullInput(requestJSON))
-			})
-			if pinnedAuthID != "" && !routeOverridesModelResolution {
-				cliCtx = handlers.WithPinnedAuthID(cliCtx, pinnedAuthID)
-			}
-			dataChan, _, errChan := h.ExecuteStreamWithAuthManager(cliCtx, h.HandlerType(), modelName, requestJSON, "")
-			if !selectedAuthObserved {
-				// Plugin/alternate routes bypass auth selection. Keep canonical HTTP-mode
-				// state instead of inheriting the previous pinned websocket mode.
-				attemptedUpstreamMode = responsesWebsocketUpstreamModeHTTP
-			}
-
-			completedOutput, completedResponseID, completedPendingToolCallIDs, forwardErrMsg, errForward = h.forwardResponsesWebsocket(
-				c,
-				writer,
-				cliCancel,
-				dataChan,
-				errChan,
-				wsTimelineLog,
-				passthroughSessionID,
-				responsesWebsocketForwardOptions{
-					toolCacheTurn:  toolCacheTurn,
-					beforeResponse: func() { allowSizeRecovery.Store(false) },
-					suppressError: func(errMsg *interfaces.ErrorMessage) bool {
-						if allowSizeRecovery.Load() && errMsg != nil && isResponsesWebsocketSizeError(errMsg.Error) {
-							retryHTTP = true
-							return true
-						}
-						return replayPinnedAuthFailure(errMsg)
-					},
-				},
-			)
-			if !retryHTTP || errForward != nil {
-				allowSizeRecovery.Store(false)
-				break
-			}
-			// Preserve the client socket and pin HTTP for subsequent turns. No response event was sent.
-			codexHTTPFallback.Store(true)
-			allowSizeRecovery.Store(false)
-			forceHTTP = true
-			rememberPinnedAuth(lastAttemptedAuthID, modelName)
-			nativeWebsocketPassthrough = false
-			requestJSON, _, errMsg = normalizeResponseCreateRequest(requestJSON)
-			if errMsg != nil {
-				wsTerminateErr = errMsg.Error
-				return
-			}
-			// A no-generation prewarm must stay local when switching to HTTP.
-			if shouldHandleResponsesWebsocketPrewarmLocally(payload, nil, false) {
-				requestJSON, _ = sjson.DeleteBytes(requestJSON, "generate")
-				lastRequest = requestJSON
-				lastResponseOutput = []byte("[]")
-				lastResponseID = ""
-				lastResponsePendingToolCallIDs = nil
-				upstreamMode = responsesWebsocketUpstreamModeHTTP
-				upstreamWebsocketAuthID = ""
-				prewarmID, errWrite := writeResponsesWebsocketSyntheticPrewarm(c, writer, requestJSON, wsTimelineLog, passthroughSessionID)
-				if errWrite != nil {
-					wsTerminateErr = errWrite
-					return
-				}
-				pendingPrewarmID = prewarmID
-				continue requestLoop
-			}
-			requestJSON, toolCacheTurn = prepareResponsesWebsocketFallbackTurn(downstreamSessionKey, requestJSON)
-			nextLastRequest = requestJSON
-			log.Infof("responses websocket: retrying oversized Codex request over HTTP id=%s", passthroughSessionID)
-		}
-
+		completedOutput, completedResponseID, completedPendingToolCallIDs, forwardErrMsg, errForward := h.forwardResponsesWebsocket(
+			c,
+			writer,
+			cliCancel,
+			dataChan,
+			errChan,
+			wsTimelineLog,
+			passthroughSessionID,
+			responsesWebsocketForwardOptions{
+				toolCacheTurn: toolCacheTurn,
+				suppressError: replayPinnedAuthFailure,
+			},
+		)
 		if errForward != nil {
 			wsTerminateErr = errForward
 			switch {

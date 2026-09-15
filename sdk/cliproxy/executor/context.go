@@ -5,25 +5,6 @@ import (
 	"sync/atomic"
 )
 
-type codexHTTPUpstreamContextKey struct{}
-
-// WithCodexHTTPUpstream keeps the downstream websocket while forcing Codex HTTP transport.
-func WithCodexHTTPUpstream(ctx context.Context) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, codexHTTPUpstreamContextKey{}, true)
-}
-
-// CodexHTTPUpstream reports whether this request must bypass Codex websocket transport.
-func CodexHTTPUpstream(ctx context.Context) bool {
-	if ctx == nil {
-		return false
-	}
-	enabled, _ := ctx.Value(codexHTTPUpstreamContextKey{}).(bool)
-	return enabled
-}
-
 type downstreamWebsocketContextKey struct{}
 type requireUpstreamWebsocketContextKey struct{}
 type upstreamAttemptTrackerContextKey struct{}
