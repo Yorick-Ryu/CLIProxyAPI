@@ -264,6 +264,19 @@ routing:
 
 # Codex provider behavior.
 codex:
+  # Experimental 292-character turn-state acquisition. Missing tickets fail open.
+  # Defaults: Astra/Sol, 1h local TTL, refresh 10m early, two probes in parallel.
+  # Empty harvest proxy inherits the account proxy, then the global proxy.
+  # Account IDs restrict the experiment; no OAuth files are modified.
+  turn-state-ticket:
+    enabled: false
+    models: [gpt-6-astra, gpt-5.6-sol]
+    account-ids: []
+    harvest-proxy-url: ""
+    ttl-seconds: 3600
+    refresh-before-seconds: 600
+    probe-interval-seconds: 60
+    max-concurrent: 2
   # Default upstream WebSocket support when a Codex credential omits websockets.
   # Omitted defaults to true; explicit account true/false overrides this setting.
   # Only downstream WebSocket requests use this transport; HTTP remains HTTP.

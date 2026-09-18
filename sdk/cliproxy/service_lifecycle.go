@@ -206,6 +206,7 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 
 	s.registerModelRefreshCallback()
+	s.startCodexTicketHarvester(ctx)
 
 	select {
 	case <-ctx.Done():
@@ -231,6 +232,7 @@ func (s *Service) Shutdown(ctx context.Context) error {
 	}
 	var shutdownErr error
 	s.shutdownOnce.Do(func() {
+		s.stopCodexTicketHarvester()
 		if ctx == nil {
 			ctx = context.Background()
 		}

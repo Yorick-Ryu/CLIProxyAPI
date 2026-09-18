@@ -180,6 +180,8 @@ type AntigravityConnectionPoolConfig struct {
 
 // CodexConfig configures provider-wide Codex request behavior.
 type CodexConfig struct {
+	// TurnStateTicket enables experimental per-account/model turn-state acquisition.
+	TurnStateTicket CodexTurnStateTicketConfig `yaml:"turn-state-ticket" json:"turn-state-ticket"`
 	// WebsocketsDefault applies when a Codex credential omits websockets. Nil means true.
 	WebsocketsDefault *bool `yaml:"websockets-default,omitempty" json:"websockets-default,omitempty"`
 	// WebsocketMaxMessageBytes limits complete uncompressed upstream WS messages.
@@ -228,6 +230,19 @@ type CodexConfig struct {
 	ModelLevelCooling bool `yaml:"model-level-cooling" json:"model-level-cooling"`
 	// LiveMediaRelay terminates and relays Codex Live WebRTC media in this process.
 	LiveMediaRelay CodexLiveMediaRelayConfig `yaml:"live-media-relay" json:"live-media-relay"`
+}
+
+// CodexTurnStateTicketConfig keeps the experiment opt-in and fail-open.
+// Tickets are memory-only and never persisted in OAuth account files.
+type CodexTurnStateTicketConfig struct {
+	Enabled              bool     `yaml:"enabled" json:"enabled"`
+	Models               []string `yaml:"models" json:"models"`
+	AccountIDs           []string `yaml:"account-ids" json:"account-ids"`
+	HarvestProxyURL      string   `yaml:"harvest-proxy-url" json:"-"`
+	TTLSeconds           int      `yaml:"ttl-seconds" json:"ttl-seconds"`
+	RefreshBeforeSeconds int      `yaml:"refresh-before-seconds" json:"refresh-before-seconds"`
+	ProbeIntervalSeconds int      `yaml:"probe-interval-seconds" json:"probe-interval-seconds"`
+	MaxConcurrent        int      `yaml:"max-concurrent" json:"max-concurrent"`
 }
 
 // CodexRequestCompressionConfig configures outbound Codex OAuth request compression.

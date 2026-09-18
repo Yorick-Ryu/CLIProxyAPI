@@ -95,6 +95,7 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, preserveNativeOutput, opts.Headers)
 	applyModelHeaderOverrides(wsHeaders, baseModel)
 	applyCodexIdentityConfuseHeaders(wsHeaders, &identityState)
+	helps.DefaultCodexTurnTickets.Apply(e.cfg, auth, baseModel, wsHeaders)
 
 	var authID, authLabel, authType, authValue string
 	authID = auth.ID

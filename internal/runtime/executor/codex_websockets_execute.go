@@ -96,6 +96,7 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, nativeRequest, opts.Headers)
 	applyModelHeaderOverrides(wsHeaders, baseModel)
 	applyCodexIdentityConfuseHeaders(wsHeaders, &identityState)
+	helps.DefaultCodexTurnTickets.Apply(e.cfg, auth, baseModel, wsHeaders)
 
 	var authID, authLabel, authType, authValue string
 	if auth != nil {
