@@ -48,6 +48,7 @@ func (m *Manager) applyCodexWebsocketsDefault(auth *Auth) {
 
 func (m *Manager) reloadCodexWebsocketsDefault() {
 	m.mu.Lock()
+	var changed []*Auth
 	for _, auth := range m.auths {
 		if auth == nil || !strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") {
 			continue
@@ -56,9 +57,20 @@ func (m *Manager) reloadCodexWebsocketsDefault() {
 		m.applyCodexWebsocketsDefault(auth)
 		if before != auth.codexWebsocketsDefaultDisabled {
 			auth.Generation++
+			changed = append(changed, auth.Clone())
 		}
 	}
 	m.mu.Unlock()
+	// Upstream scheduler sync only checks structural and registry epochs;
+	// publish changed transport preferences through its incremental update path.
+	if m.scheduler != nil {
+		for _, auth := range changed {
+			m.scheduler.upsertAuth(auth)
+		}
+	}
+	if len(changed) > 0 {
+		m.structuralEpoch.Add(1)
+	}
 	m.syncScheduler()
 }
 

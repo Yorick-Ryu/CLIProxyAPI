@@ -15,6 +15,15 @@ func TestGetStaticModelDefinitionsByChannelSupportsGeminiInteractions(t *testing
 	}
 }
 
+func TestGetStaticModelDefinitionsByChannelSupportsKimiAndKimiAI(t *testing.T) {
+	for _, channel := range []string{"kimi", "kimi-ai", "kimi.ai", "kimi.com"} {
+		models := GetStaticModelDefinitionsByChannel(channel)
+		if len(models) == 0 {
+			t.Fatalf("GetStaticModelDefinitionsByChannel(%s) returned no models", channel)
+		}
+	}
+}
+
 func TestGeminiVertexModelsUseFlashLiteReleaseID(t *testing.T) {
 	const releaseID = "gemini-3.1-flash-lite"
 	const previewID = releaseID + "-preview"
