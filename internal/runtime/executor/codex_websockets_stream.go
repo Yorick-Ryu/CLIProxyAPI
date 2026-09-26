@@ -815,6 +815,7 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
 	if errPromptCache != nil {
 		return nil, errPromptCache
 	}
+	body = helps.ApplyCodexTimezone(ctx, e.cfg, auth, body)
 	clientBody := body
 	upstreamBody, accountIdentityState := applyCodexAccountIdentityBodyForConfig(ctx, e.cfg, auth, body)
 	var identityState codexIdentityConfuseState

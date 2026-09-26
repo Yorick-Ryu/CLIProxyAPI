@@ -272,6 +272,13 @@ routing:
 
 # Codex provider behavior.
 codex:
+  # Preserve client timezone by default. Modes: off, fixed, egress.
+  # Egress queries ipwho.is through the selected request/account/global proxy;
+  # cache lifetime is 6h, failures retain the original client environment.
+  timezone:
+    mode: off
+    zone: "" # fixed mode example: America/Los_Angeles
+    # Each credential can override this via codex_timezone_mode and codex_timezone.
   # Experimental full-duplex Codex Responses WebSocket steering (default: false).
   # Keeps one upstream account/model per socket; accepted input is never replayed.
   # See STEERING.md for limitations.

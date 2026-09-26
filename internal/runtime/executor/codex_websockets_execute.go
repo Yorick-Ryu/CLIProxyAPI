@@ -83,6 +83,7 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 	if errPromptCache != nil {
 		return resp, errPromptCache
 	}
+	body = helps.ApplyCodexTimezone(ctx, e.cfg, auth, body)
 	clientBody := body
 	upstreamBody, accountIdentityState := applyCodexAccountIdentityBodyForConfig(ctx, e.cfg, auth, body)
 	var identityState codexIdentityConfuseState

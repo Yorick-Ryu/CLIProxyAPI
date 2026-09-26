@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	claudeauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/claude"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/auth/codex"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/credentialweight"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/watcher/synthesizer"
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v7/sdk/auth"
@@ -336,6 +337,10 @@ func (h *Handler) PatchAuthFileFields(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "field name is required"})
 			return
 		}
+		if strings.HasPrefix(fieldPath, "codex_timezone.") || strings.HasPrefix(fieldPath, "codex_timezone_mode.") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Codex timezone settings do not support nested fields"})
+			return
+		}
 		value, errDecode := decodeAuthFileFieldValue(rawValue)
 		if errDecode != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid field %s", fieldPath)})
@@ -384,6 +389,24 @@ func (h *Handler) PatchAuthFileFields(c *gin.Context) {
 			targetAuth.Metadata["request_retry"] = *requestRetryPatch.Value
 		}
 		changed = true
+	}
+	if _, modeTouched := touchedRoots["codex_timezone_mode"]; modeTouched {
+		if _, err := config.CodexTimezoneFromMetadata(targetAuth.Metadata); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if _, zoneTouched := touchedRoots["codex_timezone"]; zoneTouched {
+		if value := targetAuth.Metadata["codex_timezone"]; value != nil {
+			if _, ok := value.(string); !ok {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "codex_timezone must be a string"})
+				return
+			}
+		}
+		if _, err := config.CodexTimezoneFromMetadata(targetAuth.Metadata); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	if changed {
 		syncAuthFileMetadataFields(targetAuth, touchedRoots)

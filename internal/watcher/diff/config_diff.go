@@ -137,6 +137,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 		changes = append(changes, fmt.Sprintf("antigravity.connection-pool.max-idle-conns-per-host: %s -> %s", oldMaxIdle, newMaxIdle))
 	}
 
+	if !reflect.DeepEqual(oldCfg.Codex.Timezone, newCfg.Codex.Timezone) {
+		changes = append(changes, "codex.timezone: updated")
+	}
 	changes = appendOptionalBoolChange(changes, "codex.websockets-default", oldCfg.Codex.WebsocketsDefault, newCfg.Codex.WebsocketsDefault)
 	if oldCfg.Codex.WebsocketMaxMessageBytes != newCfg.Codex.WebsocketMaxMessageBytes {
 		changes = append(changes, fmt.Sprintf("codex.websocket-max-message-bytes: %d -> %d", oldCfg.Codex.WebsocketMaxMessageBytes, newCfg.Codex.WebsocketMaxMessageBytes))

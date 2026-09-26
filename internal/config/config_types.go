@@ -180,6 +180,8 @@ type AntigravityConnectionPoolConfig struct {
 
 // CodexConfig configures provider-wide Codex request behavior.
 type CodexConfig struct {
+	// Timezone controls opt-in rewriting of Codex environment timezone/date tags.
+	Timezone CodexTimezoneConfig `yaml:"timezone" json:"timezone"`
 	// WebsocketsDefault applies when a Codex credential omits websockets. Nil means true.
 	WebsocketsDefault *bool `yaml:"websockets-default,omitempty" json:"websockets-default,omitempty"`
 	// WebsocketMaxMessageBytes limits complete uncompressed upstream WS messages.
