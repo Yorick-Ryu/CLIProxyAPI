@@ -56,7 +56,9 @@ settings leave client text unchanged instead of applying the global rewrite.
 
 Only standalone `<environment_context>...</environment_context>` user text
 blocks with an existing `<timezone>` tag are changed. Existing `<current_date>`
-tags become today's date in the selected zone. Other message content and unknown
+tags are preserved verbatim, including historical dates. A date without its original
+time cannot be accurately converted across timezones; no date conversion is inferred.
+Other message content and unknown
 JSON fields are preserved. Missing tags are not inserted. HTTP, compact, serial
 WebSocket, and duplex WebSocket request preparation share this behavior.
 
@@ -70,6 +72,6 @@ selects a different cache entry. Nothing changes the host or container timezone.
 
 Fixed mode avoids the lookup dependency. Both rewriting modes can affect date
 interpretation and prefix cache reuse, and may disagree with client tools' local
-time. Existing historical environment blocks are also rewritten. This feature
+time. Historical environment timezone tags are also rewritten, but their dates are preserved. This feature
 makes no claim to improve model quality. To disable all rewriting, set the global
 `mode: off` and remove the account overrides (or set every account mode to `off`).

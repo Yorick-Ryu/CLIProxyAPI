@@ -39,7 +39,7 @@ func TestCodexTimezoneHTTPAndWebsocketPreparation(t *testing.T) {
 	}
 	for _, b := range [][]byte{wire, prepared.upstreamBody} {
 		text := gjson.GetBytes(b, "input.0.content.0.text").String()
-		if !strings.Contains(text, "<timezone>Pacific/Honolulu</timezone>") || strings.Contains(text, "Asia/Shanghai") {
+		if !strings.Contains(text, "<timezone>Pacific/Honolulu</timezone>") || strings.Contains(text, "Asia/Shanghai") || !strings.Contains(text, "<current_date>2026-09-26</current_date>") {
 			t.Fatal(text)
 		}
 	}

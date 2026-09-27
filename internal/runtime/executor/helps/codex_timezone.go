@@ -22,7 +22,6 @@ import (
 
 var environmentBlock = regexp.MustCompile(`(?s)^\s*<environment_context>[^<]*(?:<[^>]+>[^<]*)*</environment_context>\s*$`)
 var timezoneTag = regexp.MustCompile(`<timezone>[^<>]*</timezone>`)
-var dateTag = regexp.MustCompile(`<current_date>[^<>]*</current_date>`)
 
 // environmentTexts selects only standalone user environment blocks, never tool output or instructions.
 func environmentTexts(body []byte) map[string]string {
@@ -58,16 +57,16 @@ func environmentTexts(body []byte) map[string]string {
 	return out
 }
 
-// rewriteTimezone changes only selected string values and preserves all other JSON fields.
-func rewriteTimezone(body []byte, texts map[string]string, zone string, now time.Time) []byte {
-	loc, err := time.LoadLocation(zone)
+// rewriteTimezone changes timezone tags only. Date-only client metadata lacks the
+// original instant required for timezone conversion, so historical dates are preserved.
+func rewriteTimezone(body []byte, texts map[string]string, zone string) []byte {
+	_, err := time.LoadLocation(zone)
 	if err != nil || zone == "" || zone == "Local" {
 		return body
 	}
 	out := body
 	for path, text := range texts {
 		next := timezoneTag.ReplaceAllString(text, "<timezone>"+zone+"</timezone>")
-		next = dateTag.ReplaceAllString(next, "<current_date>"+now.In(loc).Format("2006-01-02")+"</current_date>")
 		if next == text {
 			continue
 		}
@@ -106,7 +105,7 @@ func ApplyCodexTimezone(ctx context.Context, cfg *config.Config, auth *cliproxya
 	if policy.Mode == "egress" {
 		zone = codexTimezoneCache.resolve(ctx, cfg, auth)
 	}
-	return rewriteTimezone(body, texts, zone, time.Now())
+	return rewriteTimezone(body, texts, zone)
 }
 
 type timezoneEntry struct {

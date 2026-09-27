@@ -25,10 +25,9 @@ func timezoneBody(t *testing.T, text string) []byte {
 func TestCodexTimezoneRewrite(t *testing.T) {
 	text := "<environment_context>\n<current_date>2026-09-26</current_date>\n<timezone>Asia/Shanghai</timezone>\n<cwd>/work</cwd>\n</environment_context>"
 	body := timezoneBody(t, text)
-	now := time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
-	out := rewriteTimezone(body, environmentTexts(body), "Pacific/Honolulu", now)
+	out := rewriteTimezone(body, environmentTexts(body), "Pacific/Honolulu")
 	got := gjson.GetBytes(out, "input.0.content.0.text").String()
-	if !strings.Contains(got, "<timezone>Pacific/Honolulu</timezone>") || !strings.Contains(got, "<current_date>2026-09-25</current_date>") || !strings.Contains(got, "<cwd>/work</cwd>") {
+	if !strings.Contains(got, "<timezone>Pacific/Honolulu</timezone>") || !strings.Contains(got, "<current_date>2026-09-26</current_date>") || !strings.Contains(got, "<cwd>/work</cwd>") {
 		t.Fatal(got)
 	}
 	if !gjson.GetBytes(out, "unknown.keep").Bool() || gjson.GetBytes(out, "input.0.id").String() != "keep-id" {
@@ -58,7 +57,7 @@ func TestCodexTimezoneRewrite(t *testing.T) {
 	if len(environmentTexts(b)) != 1 {
 		t.Fatal("string content not selected")
 	}
-	out = rewriteTimezone(b, environmentTexts(b), "Asia/Shanghai", now)
+	out = rewriteTimezone(b, environmentTexts(b), "Asia/Shanghai")
 	if string(out) != string(b) {
 		t.Fatal("unchanged body reserialized")
 	}
@@ -183,4 +182,37 @@ func TestCodexTimezoneAccountOverrides(t *testing.T) {
 	cfg.Codex.Timezone.Mode = "off"
 	check("fixed", "Asia/Tokyo", "Asia/Tokyo")
 	check("inherit", "", "Asia/Shanghai")
+}
+
+func TestCodexTimezonePreservesHistoricalDatesAcrossRegions(t *testing.T) {
+	for _, zone := range []string{"Asia/Singapore", "America/Los_Angeles", "Pacific/Honolulu", "Pacific/Kiritimati"} {
+		t.Run(zone, func(t *testing.T) {
+			texts := []string{
+				"<environment_context><current_date>2001-01-01</current_date><timezone>Asia/Shanghai</timezone></environment_context>",
+				"<environment_context><current_date>2024-02-29</current_date><timezone>Asia/Shanghai</timezone></environment_context>",
+				"<environment_context><current_date>2099-12-31</current_date><timezone>Asia/Shanghai</timezone></environment_context>",
+				"<environment_context><timezone>Asia/Shanghai</timezone></environment_context>",
+			}
+			input := []any{}
+			for _, text := range texts {
+				input = append(input, map[string]any{"role": "user", "content": text})
+			}
+			body, err := json.Marshal(map[string]any{"input": input})
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg := &config.Config{Codex: config.CodexConfig{Timezone: config.CodexTimezoneConfig{Mode: "fixed", Zone: zone}}}
+			out := ApplyCodexTimezone(context.Background(), cfg, nil, body)
+			for i, item := range gjson.GetBytes(out, "input").Array() {
+				want := strings.ReplaceAll(texts[i], "Asia/Shanghai", zone)
+				if got := item.Get("content").String(); got != want {
+					t.Fatalf("message %d: got %q want %q", i, got, want)
+				}
+			}
+			again := ApplyCodexTimezone(context.Background(), cfg, nil, out)
+			if string(again) != string(out) {
+				t.Fatal("repeated rewrite changed bytes")
+			}
+		})
+	}
 }
