@@ -12,10 +12,10 @@ import (
 	"sync"
 
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/home"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -64,13 +64,13 @@ func RewriteCodexSpawnAgentDescription(ctx context.Context, headers http.Header,
 }
 
 // RewriteCodexMultiAgentV2Input converts official Codex multi-agent input into
-// standard Responses API messages when multi-agent v2 optimization is enabled.
-// When isCompat is true, it proactively removes non-standard metadata fields
-// (author, recipient, internal_chat_message_metadata_passthrough) from agent_message
-// and regular message items, even if optimize-multi-agent-v2 is disabled.
+// standard Responses API messages when multi-agent v2 optimization or model
+// compatibility mode is enabled. When isCompat is true, it converts agent_message
+// items to portable message/user input and proactively removes non-standard metadata
+// fields (author, recipient, internal_chat_message_metadata_passthrough).
 func RewriteCodexMultiAgentV2Input(ctx context.Context, headers http.Header, payload []byte, cfg *config.Config, isCompat ...bool) []byte {
 	compatMode := len(isCompat) > 0 && isCompat[0]
-	optimizeEnabled := cfg != nil && cfg.Codex.OptimizeMultiAgentV2 && (compatMode || isCodexMultiAgentClient(codexClientUserAgent(ctx, headers)))
+	optimizeEnabled := compatMode || (cfg != nil && cfg.Codex.OptimizeMultiAgentV2 && isCodexMultiAgentClient(codexClientUserAgent(ctx, headers)))
 	if !compatMode && !optimizeEnabled {
 		return payload
 	}
@@ -101,6 +101,10 @@ func TranslateRequestWithCodexMultiAgentV2(ctx context.Context, headers http.Hea
 // multi-agent input while preserving request-scoped translation metadata.
 func TranslateRequestEnvelopeWithCodexMultiAgentV2(ctx context.Context, headers http.Header, cfg *config.Config, from, to sdktranslator.Format, req sdktranslator.RequestEnvelope) sdktranslator.RequestEnvelope {
 	if from == sdktranslator.FormatOpenAIResponse {
+		if cfg != nil && cfg.OAuthOnlyFields["codex.optimize-multi-agent-v2"] {
+			// OAuth-only tool preparation is deferred until credential selection.
+			req.Body, _ = PrepareCodexMultiAgentV2Tools(ctx, headers, req.Body, cfg.Codex.OptimizeMultiAgentV2, cfg.Home.Enabled)
+		}
 		req.Body = RewriteCodexOrphanDelegationInputForConfig(ctx, headers, req.Body, cfg)
 		if to != sdktranslator.FormatCodex && to != sdktranslator.FormatOpenAIResponse {
 			req.Body = RewriteCodexMultiAgentV2Input(ctx, headers, req.Body, cfg)

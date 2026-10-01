@@ -34,7 +34,7 @@ codex-header-defaults:
 	}
 }
 
-func TestLoadConfigOptional_CodexIdentityConfuse(t *testing.T) {
+func TestLoadConfigOptional_CodexOptions(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.yaml")
 	configYAML := []byte(`
