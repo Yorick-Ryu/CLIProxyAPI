@@ -42,7 +42,12 @@ func (auth *Auth) WebsocketsEnabled(defaultEnabled bool) bool {
 // become persistent per-account overrides. The caller holds m.mu.
 func (m *Manager) applyCodexWebsocketsDefault(auth *Auth) {
 	if auth != nil {
-		auth.codexWebsocketsDefaultDisabled = !m.runtimeConfigSnapshot().CodexWebsocketsDefault()
+		cfg := m.runtimeConfigSnapshot()
+		// Match the request-local scope applied by executorForAuth.
+		if auth.AuthKind() == AuthKindAPIKey {
+			cfg = cfg.ForAPIKey()
+		}
+		auth.codexWebsocketsDefaultDisabled = !cfg.CodexWebsocketsDefault()
 	}
 }
 

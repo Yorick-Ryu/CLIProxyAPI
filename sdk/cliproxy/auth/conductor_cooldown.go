@@ -161,7 +161,8 @@ func (m *Manager) setConfigSnapshotLocked(cfg *internalconfig.Config) bool {
 		m.homeSessionAliases.clear()
 	}
 	m.runtimeConfig.Store(cfg)
-	if previousCfg.CodexWebsocketsDefault() != cfg.CodexWebsocketsDefault() {
+	if previousCfg.CodexWebsocketsDefault() != cfg.CodexWebsocketsDefault() ||
+		previousCfg.ForAPIKey().CodexWebsocketsDefault() != cfg.ForAPIKey().CodexWebsocketsDefault() {
 		m.reloadCodexWebsocketsDefault()
 	}
 	clearedCooldowns := m.clearDisabledCooldownStates(cfg)

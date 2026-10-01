@@ -43,6 +43,68 @@ func TestWebsocketsCredentialOverrides(t *testing.T) {
 	}
 }
 
+func TestCodexWebsocketsV8ScopeMigrationReload(t *testing.T) {
+	legacyRaw := []byte("codex: {websockets-default: false}\n")
+	legacy, err := config.ParseConfigBytes(legacyRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v8Raw, _, err := config.NormalizeConfigLayout(legacyRaw, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v8, err := config.ParseConfigBytes(v8Raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := NewManager(nil, nil, nil)
+	manager.SetConfig(legacy)
+	for _, id := range []string{"oauth", "api", "api-off", "oauth-on"} {
+		auth := &Auth{ID: id, Provider: "codex", Status: StatusActive}
+		if id == "api" || id == "api-off" {
+			auth.Attributes = map[string]string{"api_key": "test-key"}
+		}
+		if id == "api-off" || id == "oauth-on" {
+			auth.Metadata = map[string]any{"websockets": id == "oauth-on"}
+		}
+		if _, err := manager.Register(context.Background(), auth); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registerSchedulerModels(t, "codex", "scope-model", "oauth", "api", "api-off", "oauth-on")
+	manager.RefreshSchedulerAll()
+	for _, cfg := range []*config.Config{legacy, v8, legacy, v8} {
+		manager.SetConfig(cfg)
+		for _, id := range []string{"oauth", "api", "api-off", "oauth-on"} {
+			credential, ok := manager.GetByID(id)
+			if !ok {
+				t.Fatal("missing credential")
+			}
+			want := id == "oauth-on" || (id == "api" && cfg == v8)
+			if credential.EffectiveWebsocketsEnabled() != want {
+				t.Fatalf("%s: websocket=%t, want %t (v8=%t)", id, credential.EffectiveWebsocketsEnabled(), want, cfg == v8)
+			}
+			if id == "api" || id == "oauth" {
+				if _, exists := credential.Attributes["websockets"]; exists {
+					t.Fatal("inherited default persisted as an attribute")
+				}
+				if _, exists := credential.Metadata["websockets"]; exists {
+					t.Fatal("inherited default persisted as metadata")
+				}
+			}
+		}
+		// Excluding the explicit WS account leaves only the inherited API key
+		// eligible for WS preference after migration.
+		picked, err := manager.scheduler.pickSingle(cliproxyexecutor.WithDownstreamWebsocket(context.Background()), "codex", "scope-model", cliproxyexecutor.Options{}, map[string]struct{}{"oauth-on": {}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg == v8 && picked.ID != "api" {
+			t.Fatalf("scheduler did not refresh the scoped default: picked %s", picked.ID)
+		}
+	}
+}
+
 func TestCodexWebsocketsDefaultReloadAndScheduler(t *testing.T) {
 	ctx := cliproxyexecutor.WithDownstreamWebsocket(context.Background())
 	manager := NewManager(nil, nil, nil)
