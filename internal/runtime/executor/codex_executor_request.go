@@ -170,6 +170,7 @@ func (e *CodexExecutor) cacheHelper(ctx context.Context, from sdktranslator.Form
 	if identityState.convergence.promptCacheKeyWasConverged {
 		cache.ID = identityState.convergence.sessionID
 	}
+	rawJSON = helps.FinalizePayload(ctx, rawJSON)
 	requestBody := rawJSON
 	compressed := codexRequestCompressionEnabled(e.cfg, auth, len(rawJSON))
 	if compressed {
