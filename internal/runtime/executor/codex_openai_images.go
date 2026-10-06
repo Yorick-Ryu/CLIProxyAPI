@@ -338,7 +338,7 @@ func (e *CodexExecutor) executeDirectOpenAIImage(ctx context.Context, auth *clip
 	reporter.SetTranslatedReasoningEffort(body, "openai")
 
 	url := strings.TrimSuffix(baseURL, "/") + endpointPath
-	httpReq, body, identityState, errCache := e.cacheHelper(ctx, sdktranslator.FromString(codexOpenAIImageSourceFormat), url, auth, req, req.Payload, body, opts.Headers)
+	httpReq, body, identityState, errCache := e.prepareCachedRequest(ctx, sdktranslator.FromString(codexOpenAIImageSourceFormat), url, auth, req, req.Payload, body, opts.Headers)
 	if errCache != nil {
 		return resp, errCache
 	}
@@ -348,9 +348,9 @@ func (e *CodexExecutor) executeDirectOpenAIImage(ctx context.Context, auth *clip
 	if errPrepare != nil {
 		return resp, errPrepare
 	}
-	httpReq.Body = io.NopCloser(bytes.NewReader(body))
-	httpReq.ContentLength = int64(len(body))
-	httpReq.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil }
+	if errPrepare = e.setCodexRequestBody(httpReq, auth, body); errPrepare != nil {
+		return resp, errPrepare
+	}
 	applyCodexDirectImageHeaders(httpReq, auth, apiKey, false, e.cfg)
 	applyCodexIdentityConfuseHeaders(httpReq.Header, &identityState)
 	applyModelHeaderOverrides(httpReq.Header, model)
@@ -406,7 +406,7 @@ func (e *CodexExecutor) executeDirectOpenAIImageStream(ctx context.Context, auth
 	reporter.SetTranslatedReasoningEffort(body, "openai")
 
 	url := strings.TrimSuffix(baseURL, "/") + endpointPath
-	httpReq, body, identityState, errCache := e.cacheHelper(ctx, sdktranslator.FromString(codexOpenAIImageSourceFormat), url, auth, req, req.Payload, body, opts.Headers)
+	httpReq, body, identityState, errCache := e.prepareCachedRequest(ctx, sdktranslator.FromString(codexOpenAIImageSourceFormat), url, auth, req, req.Payload, body, opts.Headers)
 	if errCache != nil {
 		return nil, errCache
 	}
@@ -416,9 +416,9 @@ func (e *CodexExecutor) executeDirectOpenAIImageStream(ctx context.Context, auth
 	if errPrepare != nil {
 		return nil, errPrepare
 	}
-	httpReq.Body = io.NopCloser(bytes.NewReader(body))
-	httpReq.ContentLength = int64(len(body))
-	httpReq.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil }
+	if errPrepare = e.setCodexRequestBody(httpReq, auth, body); errPrepare != nil {
+		return nil, errPrepare
+	}
 	applyCodexDirectImageHeaders(httpReq, auth, apiKey, true, e.cfg)
 	applyCodexIdentityConfuseHeaders(httpReq.Header, &identityState)
 	applyModelHeaderOverrides(httpReq.Header, model)

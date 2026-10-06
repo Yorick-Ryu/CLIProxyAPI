@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -108,6 +109,17 @@ type codexIdentityReplacement struct {
 }
 
 func (e *CodexExecutor) cacheHelper(ctx context.Context, from sdktranslator.Format, url string, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, userPayload []byte, rawJSON []byte, headerSets ...http.Header) (*http.Request, []byte, codexIdentityConfuseState, error) {
+	httpReq, body, identityState, err := e.prepareCachedRequest(ctx, from, url, auth, req, userPayload, rawJSON, headerSets...)
+	if err != nil {
+		return nil, nil, codexIdentityConfuseState{}, err
+	}
+	if err = e.setCodexRequestBody(httpReq, auth, body); err != nil {
+		return nil, nil, codexIdentityConfuseState{}, err
+	}
+	return httpReq, body, identityState, nil
+}
+
+func (e *CodexExecutor) prepareCachedRequest(ctx context.Context, from sdktranslator.Format, url string, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, userPayload []byte, rawJSON []byte, headerSets ...http.Header) (*http.Request, []byte, codexIdentityConfuseState, error) {
 	rawJSON = helps.ApplyCodexTimezone(ctx, e.cfg, auth, rawJSON)
 	var headers http.Header
 	if len(headerSets) > 0 {
@@ -171,26 +183,36 @@ func (e *CodexExecutor) cacheHelper(ctx context.Context, from sdktranslator.Form
 		cache.ID = identityState.convergence.sessionID
 	}
 	rawJSON = helps.FinalizePayload(ctx, rawJSON)
-	requestBody := rawJSON
-	compressed := codexRequestCompressionEnabled(e.cfg, auth, len(rawJSON))
-	if compressed {
-		var errCompress error
-		requestBody, errCompress = compressCodexRequestBody(rawJSON)
-		if errCompress != nil {
-			return nil, nil, codexIdentityConfuseState{}, errCompress
-		}
-	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(requestBody))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
 	if err != nil {
 		return nil, nil, codexIdentityConfuseState{}, err
-	}
-	if compressed {
-		httpReq.Header.Set("Content-Encoding", "zstd")
 	}
 	if cache.ID != "" {
 		httpReq.Header.Set("Session-Id", cache.ID)
 	}
 	return httpReq, rawJSON, identityState, nil
+}
+
+func (e *CodexExecutor) setCodexRequestBody(httpReq *http.Request, auth *cliproxyauth.Auth, body []byte) error {
+	wireBody := body
+	compressed := codexRequestCompressionEnabled(e.cfg, auth, len(body))
+	if compressed {
+		var errCompress error
+		wireBody, errCompress = compressCodexRequestBody(body)
+		if errCompress != nil {
+			return errCompress
+		}
+	}
+	httpReq.Body = io.NopCloser(bytes.NewReader(wireBody))
+	httpReq.ContentLength = int64(len(wireBody))
+	httpReq.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(wireBody)), nil
+	}
+	httpReq.Header.Del("Content-Encoding")
+	if compressed {
+		httpReq.Header.Set("Content-Encoding", "zstd")
+	}
+	return nil
 }
 
 func codexRequestCompressionEnabled(cfg *config.Config, auth *cliproxyauth.Auth, bodyBytes int) bool {
