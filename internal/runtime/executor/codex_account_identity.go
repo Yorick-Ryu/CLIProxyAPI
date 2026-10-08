@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -154,42 +155,51 @@ func remapCodexAccountIdentityJSON(raw string, state codexAccountIdentityState) 
 // not synthesize fields that the client omitted.
 func applyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth, rawJSON []byte) ([]byte, codexAccountIdentityState) {
 	state := resolveCodexAccountIdentityState(ctx, auth)
-	if !state.enabled || len(rawJSON) == 0 || !gjson.ParseBytes(rawJSON).IsObject() {
+	if !state.enabled || len(rawJSON) == 0 || !util.ParseGJSONBytesNoCopy(rawJSON).IsObject() {
 		return rawJSON, state
 	}
 
-	originalSessionID := strings.TrimSpace(gjson.GetBytes(rawJSON, "client_metadata.session_id").String())
+	metadata := util.GetGJSONBytesNoCopy(rawJSON, "client_metadata")
+	metadataJSON := metadata.Raw
+	originalSessionID := strings.TrimSpace(metadata.Get("session_id").String())
 	if originalSessionID == "" {
-		originalSessionID = strings.TrimSpace(gjson.GetBytes(rawJSON, "client_metadata.session-id").String())
+		originalSessionID = strings.TrimSpace(metadata.Get("session-id").String())
 	}
 	for _, field := range codexAccountIdentityBodyFields {
-		value := gjson.GetBytes(rawJSON, field.path)
+		path := strings.TrimPrefix(field.path, "client_metadata.")
+		value := gjson.Get(metadataJSON, path)
 		if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
 			continue
 		}
-		updated, err := sjson.SetBytes(rawJSON, field.path, codexAccountIdentityUUID(state, field.kind, value.String()))
+		updated, err := sjson.Set(metadataJSON, path, codexAccountIdentityUUID(state, field.kind, value.String()))
 		if err == nil {
-			rawJSON = updated
+			metadataJSON = updated
 		}
 	}
 
-	if turnMetadata := strings.TrimSpace(gjson.GetBytes(rawJSON, "client_metadata.x-codex-turn-metadata").String()); turnMetadata != "" {
-		rawJSON, _ = sjson.SetBytes(rawJSON, "client_metadata.x-codex-turn-metadata", remapCodexAccountIdentityJSON(turnMetadata, state))
+	if turnMetadata := strings.TrimSpace(gjson.Get(metadataJSON, "x-codex-turn-metadata").String()); turnMetadata != "" {
+		metadataJSON, _ = sjson.Set(metadataJSON, "x-codex-turn-metadata", remapCodexAccountIdentityJSON(turnMetadata, state))
 	}
 
-	promptCacheKey := strings.TrimSpace(gjson.GetBytes(rawJSON, "prompt_cache_key").String())
+	var edits []helps.JSONValueReplacement
+	if metadataJSON != metadata.Raw {
+		edits = append(edits, helps.JSONValueReplacement{Value: metadata, Raw: []byte(metadataJSON)})
+	}
+	cacheValue := util.GetGJSONBytesNoCopy(rawJSON, "prompt_cache_key")
+	promptCacheKey := strings.TrimSpace(cacheValue.String())
 	if promptCacheKey != "" {
-		state.originalPromptCacheKey = promptCacheKey
+		state.originalPromptCacheKey = strings.Clone(promptCacheKey)
 		kind := "prompt-cache"
 		if originalSessionID != "" && promptCacheKey == originalSessionID {
 			kind = "session"
 		}
 		state.promptCacheKey = codexAccountIdentityUUID(state, kind, promptCacheKey)
 		if state.promptCacheKey != promptCacheKey {
-			rawJSON, _ = sjson.SetBytes(rawJSON, "prompt_cache_key", state.promptCacheKey)
+			edits = append(edits, helps.JSONValueReplacement{Value: cacheValue, Raw: []byte(`"` + state.promptCacheKey + `"`)})
 			state.promptCacheKeyWasRemapped = true
 		}
 	}
+	rawJSON, _ = helps.ReplaceJSONValues(rawJSON, edits)
 	return rawJSON, state
 }
 

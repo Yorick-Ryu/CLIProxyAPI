@@ -26,7 +26,7 @@ const (
 	apiWebsocketTimelineKey        = "API_WEBSOCKET_TIMELINE"
 	deferredAPIRequestBytesKey     = "DEFERRED_API_REQUEST_BYTES"
 	creditsUsedKey                 = "__antigravity_credits_used__"
-	maxDeferredAPIRequestBodyBytes = 32 << 20 // 32 MiB
+	maxDeferredAPIRequestBodyBytes = 64 << 10 // 64 KiB across all upstream attempts.
 )
 
 // UpstreamRequestLog captures the outbound upstream request details for logging.
@@ -149,6 +149,7 @@ func deferAPIRequest(ginCtx *gin.Context, info UpstreamRequestLog) {
 	capturedInfo.Body = bytes.Clone(info.Body[:captureLength])
 	bodyEmpty := len(info.Body) == 0
 	bodyTruncated := captureLength < len(info.Body)
+	bodyLength := len(info.Body)
 	ginCtx.Set(deferredAPIRequestBytesKey, bytesUsed+captureLength)
 	requests = append(requests, func() []byte {
 		builder := newAPIRequestLogBuilder(index, capturedInfo, capturedAt)
@@ -157,7 +158,7 @@ func deferAPIRequest(ginCtx *gin.Context, info UpstreamRequestLog) {
 		} else {
 			builder.Write(capturedInfo.Body)
 			if bodyTruncated {
-				builder.WriteString(fmt.Sprintf("\n[API REQUEST BODY TRUNCATED: captured first %d bytes]", captureLength))
+				builder.WriteString(fmt.Sprintf("\n[API REQUEST BODY TRUNCATED: captured first %d of %d bytes]", captureLength, bodyLength))
 			}
 		}
 		builder.WriteString("\n\n")

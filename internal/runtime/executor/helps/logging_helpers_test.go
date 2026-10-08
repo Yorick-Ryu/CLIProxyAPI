@@ -1,6 +1,7 @@
 package helps
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -40,6 +41,28 @@ func TestRequestLoggingDoesNotMarkUpstreamAttempt(t *testing.T) {
 				t.Fatal("request logging marked an upstream attempt before transport")
 			}
 		})
+	}
+}
+
+func TestDeferredAPIRequestBodyBudgetAcrossRetries(t *testing.T) {
+	ginCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	body := bytes.Repeat([]byte("x"), 96<<10)
+	for range 2 {
+		deferAPIRequest(ginCtx, UpstreamRequestLog{Body: body})
+	}
+	clear(body)
+	used, _ := ginCtx.Get(deferredAPIRequestBytesKey)
+	if used != 64<<10 {
+		t.Fatalf("captured bytes = %v, want 64KiB total", used)
+	}
+	value, _ := ginCtx.Get(logging.DeferredAPIRequestContextKey)
+	requests := value.([]logging.DeferredAPIRequest)
+	first, second := string(requests[0]()), string(requests[1]())
+	if !strings.Contains(first, strings.Repeat("x", 64<<10)) || !strings.Contains(first, "captured first 65536 of 98304 bytes") {
+		t.Fatal("first attempt did not preserve the bounded prefix and truncation size")
+	}
+	if !strings.Contains(second, "captured first 0 of 98304 bytes") {
+		t.Fatal("retry exceeded the shared request body budget")
 	}
 }
 

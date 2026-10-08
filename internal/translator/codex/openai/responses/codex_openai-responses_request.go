@@ -79,12 +79,12 @@ func normalizeEmptyFunctionCallArguments(rawJSON []byte) []byte {
 		return rawJSON
 	}
 	changed := false
-	rebuilt := make([][]byte, 0, len(items))
+	rebuilt := make([]string, 0, len(items))
 	for _, item := range items {
-		itemRaw := []byte(item.Raw)
+		itemRaw := item.Raw
 		if item.IsObject() && item.Get("type").String() == "function_call" {
 			if args := item.Get("arguments"); args.Type == gjson.String && strings.TrimSpace(args.String()) == "" {
-				if updated, errSet := sjson.SetBytes(itemRaw, "arguments", "{}"); errSet == nil {
+				if updated, errSet := sjson.Set(itemRaw, "arguments", "{}"); errSet == nil {
 					itemRaw = updated
 					changed = true
 				}
@@ -95,7 +95,7 @@ func normalizeEmptyFunctionCallArguments(rawJSON []byte) []byte {
 	if !changed {
 		return rawJSON
 	}
-	updated, errSetRaw := sjson.SetRawBytes(rawJSON, "input", translatorcommon.JoinRawArray(rebuilt))
+	updated, errSetRaw := sjson.SetRawBytes(rawJSON, "input", []byte("["+strings.Join(rebuilt, ",")+"]"))
 	if errSetRaw != nil {
 		return rawJSON
 	}
