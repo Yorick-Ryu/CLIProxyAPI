@@ -537,7 +537,11 @@ func applyCodexCloakingHeaders(headers http.Header, cfg *config.Config, auth *cl
 	if headers == nil || cfg == nil || isCodexCloakingDisabled(cfg, auth) {
 		return
 	}
-	headers.Set("User-Agent", codexUserAgent)
+	userAgent, _ := codexHeaderDefaults(cfg, auth)
+	if userAgent == "" {
+		userAgent = codexUserAgent
+	}
+	headers.Set("User-Agent", userAgent)
 	headers.Set("Originator", codexOriginator)
 }
 
