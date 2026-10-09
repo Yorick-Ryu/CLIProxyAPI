@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 	"github.com/tidwall/gjson"
 )
 
@@ -197,5 +201,133 @@ func TestCodexAccountIdentityLeavesAPIKeyAndMissingFieldsUntouched(t *testing.T)
 	apiKeyBody, apiKeyState := applyCodexAccountIdentityBody(codexAccountIdentityTestContext("caller"), apiKeyAuth, body)
 	if apiKeyState.enabled || string(apiKeyBody) != string(body) {
 		t.Fatal("Codex API-key upstreams must remain untouched")
+	}
+	childBody := []byte(`{"client_metadata":{"x-codex-parent-thread-id":"parent","x-openai-subagent":"review"}}`)
+	untouched, apiKeyState := applyCodexAccountIdentityBody(codexAccountIdentityTestContext("caller"), apiKeyAuth, childBody)
+	headers := http.Header{"X-Codex-Parent-Thread-Id": {"parent"}, "X-Openai-Subagent": {"review"}}
+	applyCodexAccountIdentityHeaders(headers, &apiKeyState)
+	if string(untouched) != string(childBody) || headers.Get("X-Codex-Parent-Thread-Id") != "parent" || headers.Get("X-OpenAI-Subagent") != "review" {
+		t.Fatal("API-key child identities must remain untouched")
+	}
+}
+
+func TestCodexChildIdentityOnWire(t *testing.T) {
+	for _, transport := range []string{"http", "ws"} {
+		for _, stream := range []bool{false, true} {
+			for _, source := range []string{"both", "header_only", "body_only", "absent"} {
+				t.Run(fmt.Sprintf("%s/stream%v/%s", transport, stream, source), func(t *testing.T) {
+					type requestCapture struct {
+						headers http.Header
+						body    []byte
+					}
+					captured := make(chan requestCapture, 1)
+					completed := []byte(`{"type":"response.completed","response":{"id":"resp_child","status":"completed","output":[]}}`)
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						if transport == "ws" {
+							upgrader := websocket.Upgrader{}
+							conn, err := upgrader.Upgrade(w, r, nil)
+							if err != nil {
+								t.Error(err)
+								return
+							}
+							defer func() { _ = conn.Close() }()
+							_, body, err := conn.ReadMessage()
+							if err != nil {
+								t.Error(err)
+								return
+							}
+							captured <- requestCapture{r.Header.Clone(), body}
+							if err = conn.WriteMessage(websocket.TextMessage, completed); err != nil {
+								t.Error(err)
+							}
+							return
+						}
+						body, err := io.ReadAll(r.Body)
+						if err != nil {
+							t.Error(err)
+							return
+						}
+						captured <- requestCapture{r.Header.Clone(), body}
+						w.Header().Set("Content-Type", "text/event-stream")
+						_, _ = fmt.Fprintf(w, "data: %s\n\n", completed)
+					}))
+					defer server.Close()
+					cfg := &config.Config{
+						Codex:               config.CodexConfig{IdentityConvergence: true},
+						CodexHeaderDefaults: config.CodexHeaderDefaults{UserAgent: "codex-tui/0.162.0 (Mac OS 27.0.1; arm64)"},
+					}
+					var executor cliproxyauth.ProviderExecutor = NewCodexExecutor(cfg)
+					if transport == "ws" {
+						executor = NewCodexWebsocketsExecutor(cfg)
+					}
+					auth := &cliproxyauth.Auth{ID: "child-wire", Provider: "codex", Attributes: map[string]string{"base_url": server.URL}, Metadata: map[string]any{"account_id": "synthetic-account", "access_token": "synthetic-token"}}
+					ctx := codexAccountIdentityTestContext("synthetic-caller")
+					parentBody, _ := applyCodexAccountIdentityBody(ctx, auth, []byte(`{"client_metadata":{"thread_id":"parent-thread"}}`))
+					parent := gjson.GetBytes(parentBody, "client_metadata.thread_id").String()
+					metadata := map[string]string{"session_id": "parent-thread", "thread_id": "child-thread"}
+					hasBody := source == "both" || source == "body_only"
+					hasHeaders := source == "both" || source == "header_only"
+					if hasBody {
+						metadata["x-codex-parent-thread-id"] = "parent-thread"
+						metadata["x-openai-subagent"] = "review"
+						metadata["x-codex-turn-metadata"] = `{"parent_thread_id":"parent-thread","x-codex-parent-thread-id":"parent-thread","thread_id":"child-thread"}`
+					}
+					body, err := json.Marshal(map[string]any{"model": "gpt-5.5", "input": []any{}, "prompt_cache_key": "parent-thread", "client_metadata": metadata})
+					if err != nil {
+						t.Fatal(err)
+					}
+					headers := http.Header{"User-Agent": {"Go-http-client/1.1"}, "Session-Id": {"parent-thread"}, "Thread-Id": {"child-thread"}}
+					if hasHeaders {
+						headers.Set("X-Codex-Parent-Thread-Id", "parent-thread")
+						headers.Set("X-OpenAI-Subagent", "review")
+					}
+					req := cliproxyexecutor.Request{Model: "gpt-5.5", Payload: body}
+					opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatCodex, Headers: headers, Stream: stream}
+					if stream {
+						result, err := executor.ExecuteStream(ctx, auth, req, opts)
+						if err != nil {
+							t.Fatal(err)
+						}
+						for chunk := range result.Chunks {
+							if chunk.Err != nil {
+								t.Fatal(chunk.Err)
+							}
+						}
+					} else if _, err := executor.Execute(ctx, auth, req, opts); err != nil {
+						t.Fatal(err)
+					}
+					got := <-captured
+					if got.headers.Get("User-Agent") != cfg.CodexHeaderDefaults.UserAgent {
+						t.Fatal("configured UA must replace the intermediary's Go UA")
+					}
+					child := got.headers.Get("Thread-Id")
+					if parent == "parent-thread" || child == "" || child == "child-thread" || child == parent || got.headers.Get("Session-Id") != parent {
+						t.Fatal("child and parent thread relationship lost")
+					}
+					if hasHeaders {
+						if got.headers.Get("X-Codex-Parent-Thread-Id") != parent || got.headers.Get("X-OpenAI-Subagent") != "review" {
+							t.Fatal("independent parent or subagent header dropped or incorrectly mapped")
+						}
+						if headers.Get("X-Codex-Parent-Thread-Id") != "parent-thread" {
+							t.Fatal("incoming headers mutated")
+						}
+					} else if got.headers.Get("X-Codex-Parent-Thread-Id") != "" || got.headers.Get("X-OpenAI-Subagent") != "" {
+						t.Fatal("missing child headers must not be synthesized")
+					}
+					alias := gjson.GetBytes(got.body, "client_metadata.x-codex-parent-thread-id")
+					if hasBody {
+						nested := gjson.Parse(gjson.GetBytes(got.body, "client_metadata.x-codex-turn-metadata").String())
+						if alias.String() != parent || nested.Get("parent_thread_id").String() != parent || nested.Get("x-codex-parent-thread-id").String() != parent || nested.Get("thread_id").String() != child {
+							t.Fatal("body aliases and nested parent metadata must match the parent thread")
+						}
+						if gjson.GetBytes(got.body, "client_metadata.x-openai-subagent").String() != "review" {
+							t.Fatal("subagent label changed")
+						}
+					} else if alias.Exists() {
+						t.Fatal("missing body parent must not be synthesized")
+					}
+				})
+			}
+		}
 	}
 }

@@ -130,6 +130,7 @@ var codexAccountIdentityBodyFields = []struct {
 	{path: "client_metadata.root_turn_id", kind: "turn"},
 	{path: "client_metadata.parent_turn_id", kind: "turn"},
 	{path: "client_metadata.parent_thread_id", kind: "thread"},
+	{path: "client_metadata.x-codex-parent-thread-id", kind: "thread"},
 	{path: "client_metadata.forked_from_thread_id", kind: "thread"},
 	{path: "client_metadata.window_id", kind: "window"},
 	{path: "client_metadata.x-codex-window-id", kind: "window"},
@@ -151,6 +152,7 @@ var codexAccountIdentityTurnMetadataFields = []struct {
 	{path: "root_turn_id", kind: "turn"},
 	{path: "parent_turn_id", kind: "turn"},
 	{path: "parent_thread_id", kind: "thread"},
+	{path: "x-codex-parent-thread-id", kind: "thread"},
 	{path: "forked_from_thread_id", kind: "thread"},
 	{path: "window_id", kind: "window"},
 	{path: "x-codex-window-id", kind: "window"},
@@ -255,6 +257,7 @@ func applyCodexAccountIdentityHeaders(headers http.Header, state *codexAccountId
 	}{
 		{name: "X-Codex-Installation-Id", kind: "installation"},
 		{name: "Thread-Id", kind: "thread"},
+		{name: "X-Codex-Parent-Thread-Id", kind: "thread"},
 		{name: "X-Codex-Window-Id", kind: "window"},
 		// Native Codex uses its thread ID as the client request ID.
 		{name: "X-Client-Request-Id", kind: "thread"},
