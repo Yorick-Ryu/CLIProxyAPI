@@ -149,76 +149,64 @@ func sendRecv(t *testing.T, ws *Conn) {
 }
 
 func TestProxyDial(t *testing.T) {
-
-	s := newServer(t)
-	defer s.Close()
-
-	surl, _ := url.Parse(s.Server.URL)
-
-	cstDialer := cstDialer // make local copy for modification on next line.
-	cstDialer.Proxy = http.ProxyURL(surl)
-
-	connect := false
-	origHandler := s.Server.Config.Handler
-
-	// Capture the request Host header.
-	s.Server.Config.Handler = http.HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodConnect {
-				connect = true
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-
-			if !connect {
-				t.Log("connect not received")
-				http.Error(w, "connect not received", http.StatusMethodNotAllowed)
-				return
-			}
-			origHandler.ServeHTTP(w, r)
-		})
-
-	ws, _, err := cstDialer.Dial(s.URL, nil)
-	if err != nil {
-		t.Fatalf("Dial: %v", err)
-	}
-	defer ws.Close()
-	sendRecv(t, ws)
+	testProxyTunnelDial(t, false)
 }
 
 func TestProxyAuthorizationDial(t *testing.T) {
+	testProxyTunnelDial(t, true)
+}
+
+// CONNECT must hijack the HTTP connection and tunnel bytes. Returning a normal
+// 200 response is not a tunnel and newer net/http servers close that connection.
+func testProxyTunnelDial(t *testing.T, authenticated bool) {
 	s := newServer(t)
 	defer s.Close()
-
-	surl, _ := url.Parse(s.Server.URL)
-	surl.User = url.UserPassword("username", "password")
-
-	cstDialer := cstDialer // make local copy for modification on next line.
-	cstDialer.Proxy = http.ProxyURL(surl)
-
-	connect := false
-	origHandler := s.Server.Config.Handler
-
-	// Capture the request Host header.
-	s.Server.Config.Handler = http.HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
-			proxyAuth := r.Header.Get("Proxy-Authorization")
-			expectedProxyAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte("username:password"))
-			if r.Method == http.MethodConnect && proxyAuth == expectedProxyAuth {
-				connect = true
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-
-			if !connect {
-				t.Log("connect with proxy authorization not received")
-				http.Error(w, "connect with proxy authorization not received", http.StatusMethodNotAllowed)
-				return
-			}
-			origHandler.ServeHTTP(w, r)
-		})
-
-	ws, _, err := cstDialer.Dial(s.URL, nil)
+	target, _ := url.Parse(s.Server.URL)
+	expectedAuth := ""
+	if authenticated {
+		expectedAuth = "Basic " + base64.StdEncoding.EncodeToString([]byte("username:password"))
+	}
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect || r.Host != target.Host || r.Header.Get("Proxy-Authorization") != expectedAuth {
+			t.Error("invalid CONNECT request or proxy authorization")
+			http.Error(w, "invalid CONNECT request", http.StatusBadRequest)
+			return
+		}
+		upstream, err := net.Dial("tcp", target.Host)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer upstream.Close()
+		client, rw, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer client.Close()
+		_, _ = rw.WriteString("HTTP/1.1 200 Connection Established\r\n\r\n")
+		if err := rw.Flush(); err != nil {
+			t.Error(err)
+			return
+		}
+		done := make(chan struct{})
+		go func() {
+			_, _ = io.Copy(upstream, rw)
+			_ = upstream.Close()
+			close(done)
+		}()
+		_, _ = io.Copy(client, upstream)
+		_ = client.Close()
+		<-done
+	}))
+	defer proxy.Close()
+	proxyURL, _ := url.Parse(proxy.URL)
+	if authenticated {
+		proxyURL.User = url.UserPassword("username", "password")
+	}
+	dialer := cstDialer
+	dialer.Proxy = http.ProxyURL(proxyURL)
+	ws, _, err := dialer.Dial(s.URL, nil)
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
