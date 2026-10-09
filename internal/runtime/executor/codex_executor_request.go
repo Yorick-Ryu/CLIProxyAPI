@@ -429,6 +429,7 @@ func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, toke
 	misc.EnsureHeader(r.Header, ginHeaders, "Thread-Id", "")
 	misc.EnsureHeader(r.Header, ginHeaders, "X-Codex-Parent-Thread-Id", "")
 	misc.EnsureHeader(r.Header, ginHeaders, "X-OpenAI-Subagent", "")
+	misc.EnsureHeader(r.Header, ginHeaders, "X-Codex-Guardian", "")
 	misc.EnsureHeader(r.Header, ginHeaders, "Session-Id", "")
 	misc.EnsureHeader(r.Header, ginHeaders, "X-Openai-Internal-Codex-Responses-Lite", "")
 
@@ -470,8 +471,8 @@ func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, toke
 
 const codexRoutingHintHeader = "X-Codex-Routing-Hint"
 
-// applyCodexRoutingHint sends the routing hint native Codex attaches to every
-// ChatGPT-backend Responses request: "model=<slug>" plus ";tier=<service_tier>"
+// applyCodexRoutingHint sends the routing hint native Codex attaches to
+// ChatGPT-backend Responses requests except Guardian reviewers: "model=<slug>" plus ";tier=<service_tier>"
 // when the body requests a tier (openai/codex rust-v0.155.0,
 // codex-rs/core/src/client.rs build_routing_hint_header). Without it, a
 // translated request carries service_tier=priority only in the body. Whether
@@ -493,6 +494,10 @@ func applyCodexRoutingHint(ctx context.Context, headers http.Header, auth *clipr
 	deleteHeaderCaseInsensitive(headers, codexRoutingHintHeader)
 	if operatorHint := codexOperatorHeaderValue(ctx, auth, clientHeaders, codexRoutingHintHeader); operatorHint != "" {
 		headers.Set(codexRoutingHintHeader, operatorHint)
+		return
+	}
+	// Native Codex omits the automatic routing hint for Guardian reviewers.
+	if headers.Get("X-Codex-Guardian") == "reviewer" {
 		return
 	}
 	model := strings.TrimSpace(baseModel)

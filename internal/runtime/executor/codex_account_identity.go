@@ -187,10 +187,6 @@ func applyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth,
 
 	metadata := util.GetGJSONBytesNoCopy(rawJSON, "client_metadata")
 	metadataJSON := metadata.Raw
-	originalSessionID := strings.TrimSpace(metadata.Get("session_id").String())
-	if originalSessionID == "" {
-		originalSessionID = strings.TrimSpace(metadata.Get("session-id").String())
-	}
 	for _, field := range codexAccountIdentityBodyFields {
 		path := strings.TrimPrefix(field.path, "client_metadata.")
 		value := gjson.Get(metadataJSON, path)
@@ -215,11 +211,9 @@ func applyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth,
 	promptCacheKey := strings.TrimSpace(cacheValue.String())
 	if promptCacheKey != "" {
 		state.originalPromptCacheKey = strings.Clone(promptCacheKey)
-		kind := "prompt-cache"
-		if originalSessionID != "" && promptCacheKey == originalSessionID {
-			kind = "session"
-		}
-		state.promptCacheKey = codexAccountIdentityUUID(state, kind, promptCacheKey)
+		// Forks can inherit a parent's cache key while carrying their own session
+		// identity. The mapping must not depend on the current request's session.
+		state.promptCacheKey = codexAccountIdentityUUID(state, "session", promptCacheKey)
 		if state.promptCacheKey != promptCacheKey {
 			edits = append(edits, helps.JSONValueReplacement{Value: cacheValue, Raw: []byte(`"` + state.promptCacheKey + `"`)})
 			state.promptCacheKeyWasRemapped = true

@@ -91,6 +91,108 @@ func codexAccountIdentityTestContext(apiKey string) context.Context {
 	return context.WithValue(context.Background(), "gin", ginContext)
 }
 
+func TestCodexGuardianAndForkOnWire(t *testing.T) {
+	for _, transport := range []string{"http", "ws"} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream%v", transport, stream), func(t *testing.T) {
+				type capture struct {
+					headers http.Header
+					body    []byte
+				}
+				captured := make(chan capture, 1)
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					completed := []byte(`{"type":"response.completed","response":{"id":"resp_fixture","status":"completed","output":[]}}`)
+					if transport == "ws" {
+						conn, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+						if err != nil {
+							t.Error(err)
+							return
+						}
+						defer conn.Close()
+						_, body, err := conn.ReadMessage()
+						if err != nil {
+							t.Error(err)
+							return
+						}
+						captured <- capture{r.Header.Clone(), body}
+						_ = conn.WriteMessage(websocket.TextMessage, completed)
+					} else {
+						body, err := io.ReadAll(r.Body)
+						if err != nil {
+							t.Error(err)
+							return
+						}
+						captured <- capture{r.Header.Clone(), body}
+						w.Header().Set("Content-Type", "text/event-stream")
+						_, _ = fmt.Fprintf(w, "data: %s\n\n", completed)
+					}
+				}))
+				defer server.Close()
+				cfg := &config.Config{Codex: config.CodexConfig{IdentityConvergence: true}}
+				var executor cliproxyauth.ProviderExecutor = NewCodexExecutor(cfg)
+				if transport == "ws" {
+					executor = NewCodexWebsocketsExecutor(cfg)
+				}
+				auth := codexOAuthTestAuth(server.URL)
+				auth.ID = "guardian-fork-wire"
+				ctx := codexAccountIdentityTestContext("fixture-caller")
+				var sharedCache string
+				// The fork arrives first: no prior parent request or process cache is needed.
+				for _, tc := range []struct{ guardian, thread string }{{"reviewer", "fork"}, {"", "parent"}, {"classifier", "another-fork"}} {
+					body, err := json.Marshal(map[string]any{"model": "gpt-5.5", "input": []any{}, "prompt_cache_key": "parent", "client_metadata": map[string]string{"session_id": tc.thread, "thread_id": tc.thread, "parent_response_id": "resp_upstream_opaque"}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					headers := http.Header{"Session-Id": {"parent"}, "Thread-Id": {tc.thread}}
+					if tc.guardian != "" {
+						headers.Set("X-Codex-Guardian", tc.guardian)
+					}
+					req := cliproxyexecutor.Request{Model: "gpt-5.5", Payload: body}
+					opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatCodex, Headers: headers, Stream: stream}
+					if stream {
+						result, err := executor.ExecuteStream(ctx, auth, req, opts)
+						if err != nil {
+							t.Fatal(err)
+						}
+						for chunk := range result.Chunks {
+							if chunk.Err != nil {
+								t.Fatal(chunk.Err)
+							}
+						}
+					} else if _, err := executor.Execute(ctx, auth, req, opts); err != nil {
+						t.Fatal(err)
+					}
+					got := <-captured
+					cache := gjson.GetBytes(got.body, "prompt_cache_key").String()
+					if sharedCache == "" {
+						sharedCache = cache
+					}
+					if cache == "" || cache == "parent" || cache != sharedCache || got.headers.Get("Session-Id") != cache {
+						t.Fatal("parent and forks lost their shared cache routing identity")
+					}
+					thread := gjson.GetBytes(got.body, "client_metadata.thread_id").String()
+					if got.headers.Get("Thread-Id") != thread || gjson.GetBytes(got.body, "client_metadata.session_id").String() != thread || (thread == cache) != (tc.thread == "parent") {
+						t.Fatal("fork must retain its own session/thread identity")
+					}
+					if gjson.GetBytes(got.body, "client_metadata.parent_response_id").String() != "resp_upstream_opaque" {
+						t.Fatal("upstream response reference must not be remapped")
+					}
+					if got.headers.Get("X-Codex-Guardian") != tc.guardian {
+						t.Fatal("guardian header lost or synthesized")
+					}
+					wantHint := "model=gpt-5.5"
+					if tc.guardian == "reviewer" {
+						wantHint = ""
+					}
+					if got.headers.Get(codexRoutingHintHeader) != wantHint {
+						t.Fatalf("guardian %q routing hint = %q, want %q", tc.guardian, got.headers.Get(codexRoutingHintHeader), wantHint)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestCodexAccountIdentityScopesByCallerCredentialAndRawIdentity(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"prompt_cache_key":"client-session-a","client_metadata":{"session_id":"client-session-a","thread_id":"client-thread-a","x-codex-installation-id":"client-install-a","x-codex-window-id":"client-window-a","x-codex-turn-metadata":"{\"installation_id\":\"client-install-a\",\"session_id\":\"client-session-a\",\"thread_id\":\"client-thread-a\",\"turn_id\":\"client-turn-a\",\"window_id\":\"client-window-a\"}"}}`)

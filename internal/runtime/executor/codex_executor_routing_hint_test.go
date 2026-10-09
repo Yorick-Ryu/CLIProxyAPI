@@ -193,6 +193,16 @@ func TestCodexExecutorOperatorRoutingHintRuleWins(t *testing.T) {
 
 func TestApplyCodexRoutingHint(t *testing.T) {
 	oauth := codexOAuthTestAuth("")
+	t.Run("guardian reviewer keeps explicit operator routing", func(t *testing.T) {
+		operator := codexOAuthTestAuth("")
+		operator.Attributes["header:x-codex-routing-hint"] = "model=operator"
+		headers := http.Header{}
+		headers.Set("X-Codex-Guardian", "reviewer")
+		applyCodexRoutingHint(context.Background(), headers, operator, "gpt-5.5", []byte(`{}`), nil)
+		if got := headers.Get(codexRoutingHintHeader); got != "model=operator" {
+			t.Fatalf("routing hint = %q, want explicit operator override", got)
+		}
+	})
 
 	t.Run("replaces a hint that did not come from an operator rule", func(t *testing.T) {
 		headers := http.Header{}

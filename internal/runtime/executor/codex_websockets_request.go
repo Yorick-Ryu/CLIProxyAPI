@@ -89,6 +89,7 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
 	misc.EnsureHeader(headers, ginHeaders, "Thread-Id", "")
 	misc.EnsureHeader(headers, ginHeaders, "X-Codex-Parent-Thread-Id", "")
 	misc.EnsureHeader(headers, ginHeaders, "X-OpenAI-Subagent", "")
+	misc.EnsureHeader(headers, ginHeaders, "X-Codex-Guardian", "")
 	misc.EnsureHeader(headers, ginHeaders, "X-Codex-Window-Id", "")
 	misc.EnsureHeader(headers, ginHeaders, "x-responsesapi-include-timing-metrics", "")
 	misc.EnsureHeader(headers, ginHeaders, "Version", "")

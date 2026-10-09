@@ -11,17 +11,13 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-// The pre-batching implementation is an oracle for byte-for-byte compatibility.
+// The unbatched implementation checks byte-for-byte JSON editing compatibility.
 func legacyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth, rawJSON []byte) ([]byte, codexAccountIdentityState) {
 	state := resolveCodexAccountIdentityState(ctx, auth)
 	if !state.enabled || len(rawJSON) == 0 || !gjson.ParseBytes(rawJSON).IsObject() {
 		return rawJSON, state
 	}
 
-	originalSessionID := strings.TrimSpace(gjson.GetBytes(rawJSON, "client_metadata.session_id").String())
-	if originalSessionID == "" {
-		originalSessionID = strings.TrimSpace(gjson.GetBytes(rawJSON, "client_metadata.session-id").String())
-	}
 	for _, field := range codexAccountIdentityBodyFields {
 		value := gjson.GetBytes(rawJSON, field.path)
 		if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
@@ -40,11 +36,7 @@ func legacyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth
 	promptCacheKey := strings.TrimSpace(gjson.GetBytes(rawJSON, "prompt_cache_key").String())
 	if promptCacheKey != "" {
 		state.originalPromptCacheKey = promptCacheKey
-		kind := "prompt-cache"
-		if originalSessionID != "" && promptCacheKey == originalSessionID {
-			kind = "session"
-		}
-		state.promptCacheKey = codexAccountIdentityUUID(state, kind, promptCacheKey)
+		state.promptCacheKey = codexAccountIdentityUUID(state, "session", promptCacheKey)
 		if state.promptCacheKey != promptCacheKey {
 			rawJSON, _ = sjson.SetBytes(rawJSON, "prompt_cache_key", state.promptCacheKey)
 			state.promptCacheKeyWasRemapped = true
