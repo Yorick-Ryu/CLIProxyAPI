@@ -112,8 +112,11 @@ func testCodexNativeStreamFidelity(t *testing.T, source sdktranslator.Format) {
 						}
 						alias := headerValueCaseInsensitive(upstreamHeaders, "session_id")
 						t.Logf("upstream session alias: %q", alias)
-						if (alias == "") != native {
-							t.Errorf("session alias = %q, native = %t", alias, native)
+						if alias != "" {
+							t.Errorf("unexpected legacy session alias = %q", alias)
+						}
+						if upstreamHeaders.Get("Session-Id") == "" {
+							t.Error("CLI session header was lost")
 						}
 					}
 					t.Logf("downstream metadata: %q", metadataEvents)

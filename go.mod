@@ -122,3 +122,5 @@ require (
 	google.golang.org/protobuf v1.34.1
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
+
+replace github.com/gorilla/websocket => ./third_party/gorilla-websocket

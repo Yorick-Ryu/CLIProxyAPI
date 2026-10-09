@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +12,30 @@ import (
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/tidwall/gjson"
 )
+
+func TestCodexAccountIdentityPreservesThreadRelationsAndWindowGeneration(t *testing.T) {
+	auth := &cliproxyauth.Auth{ID: "test", Provider: "codex", Metadata: map[string]any{"account_id": "test"}}
+	for _, generation := range []string{"0", "2", "1024"} {
+		body := []byte(fmt.Sprintf(`{"client_metadata":{"thread_id":"thread-a","x-client-request-id":"thread-a","x-codex-window-id":"thread-a:%s","x-codex-turn-metadata":"{\"thread_id\":\"thread-a\",\"x-client-request-id\":\"thread-a\",\"window_id\":\"thread-a:%s\"}"}}`, generation, generation))
+		mapped, state := applyCodexAccountIdentityBody(codexAccountIdentityTestContext("caller"), auth, body)
+		thread := gjson.GetBytes(mapped, "client_metadata.thread_id").String()
+		if thread == "" || thread == "thread-a" {
+			t.Fatal("thread identity must be scoped")
+		}
+		metadata := gjson.Get(gjson.GetBytes(mapped, "client_metadata.x-codex-turn-metadata").String(), "@this")
+		if gjson.GetBytes(mapped, "client_metadata.x-client-request-id").String() != thread || metadata.Get("x-client-request-id").String() != thread {
+			t.Fatal("request identity lost its relationship with the thread")
+		}
+		if gjson.GetBytes(mapped, "client_metadata.x-codex-window-id").String() != thread+":"+generation || metadata.Get("window_id").String() != thread+":"+generation {
+			t.Fatal("window generation or thread prefix changed")
+		}
+		headers := http.Header{"Thread-Id": {"thread-a"}, "X-Client-Request-Id": {"independent-request"}, "X-Codex-Window-Id": {"thread-a:" + generation}}
+		applyCodexAccountIdentityHeaders(headers, &state)
+		if headers.Get("X-Client-Request-Id") == thread || headers.Get("X-Codex-Window-Id") != thread+":"+generation {
+			t.Fatal("distinct input identities must remain distinct, with window syntax preserved")
+		}
+	}
+}
 
 func codexAccountIdentityTestContext(apiKey string) context.Context {
 	recorder := httptest.NewRecorder()

@@ -2,6 +2,8 @@ package executor
 
 import (
 	"context"
+	"fmt"
+	"github.com/gorilla/websocket"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +15,71 @@ import (
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 	"github.com/tidwall/gjson"
 )
+
+func TestCodexNativeInstructionsOnWire(t *testing.T) {
+	for _, transport := range []string{"http", "ws"} {
+		for _, stream := range []bool{false, true} {
+			for _, instructions := range []string{"", `,"instructions":"Follow the client instructions"`} {
+				t.Run(fmt.Sprintf("%s/stream%v/present%v", transport, stream, instructions != ""), func(t *testing.T) {
+					captured := make(chan []byte, 1)
+					completed := []byte(`{"type":"response.completed","response":{"id":"resp_test","status":"completed","output":[]}}`)
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						if transport == "ws" {
+							upgrader := websocket.Upgrader{EnableCompression: true}
+							conn, err := upgrader.Upgrade(w, r, nil)
+							if err != nil {
+								t.Error(err)
+								return
+							}
+							defer conn.Close()
+							_, body, err := conn.ReadMessage()
+							if err != nil {
+								t.Error(err)
+								return
+							}
+							captured <- body
+							_ = conn.WriteMessage(websocket.TextMessage, completed)
+							return
+						}
+						body, _ := io.ReadAll(r.Body)
+						captured <- body
+						w.Header().Set("Content-Type", "text/event-stream")
+						_, _ = fmt.Fprintf(w, "data: %s\n\n", completed)
+					}))
+					defer server.Close()
+					var executor cliproxyauth.ProviderExecutor = NewCodexExecutor(&config.Config{})
+					if transport == "ws" {
+						executor = NewCodexWebsocketsExecutor(&config.Config{})
+					}
+					auth := &cliproxyauth.Auth{Attributes: map[string]string{"base_url": server.URL, "api_key": "test"}}
+					req := cliproxyexecutor.Request{Model: "gpt-5.5", Payload: []byte(`{"model":"gpt-5.5","input":[]` + instructions + `}`)}
+					opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatCodex, Headers: http.Header{"User-Agent": {"codex_exec/0.162.0"}}}
+					if stream {
+						result, err := executor.ExecuteStream(context.Background(), auth, req, opts)
+						if err != nil {
+							t.Fatal(err)
+						}
+						for chunk := range result.Chunks {
+							if chunk.Err != nil {
+								t.Fatal(chunk.Err)
+							}
+						}
+					} else if _, err := executor.Execute(context.Background(), auth, req, opts); err != nil {
+						t.Fatal(err)
+					}
+					body := <-captured
+					got := gjson.GetBytes(body, "instructions")
+					if instructions == "" && got.Exists() {
+						t.Fatalf("synthesized instructions: %s", got.Raw)
+					}
+					if instructions != "" && got.String() != "Follow the client instructions" {
+						t.Fatalf("lost supplied instructions: %s", got.Raw)
+					}
+				})
+			}
+		}
+	}
+}
 
 func TestCodexExecutorExecuteNormalizesNullInstructions(t *testing.T) {
 	var gotPath string

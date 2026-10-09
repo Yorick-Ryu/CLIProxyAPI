@@ -78,8 +78,8 @@ func TestCodexIdentityConvergenceUsesStableAccountDeviceAndSession(t *testing.T)
 		"X-Codex-Turn-Metadata": []string{`{"installation_id":"client-install-a","session_id":"client-session-a","thread_id":"client-session-a","turn_id":"client-turn-a","window_id":"client-session-a:0"}`},
 	}
 	applyCodexIdentityConvergenceHeaders(headers, &first)
-	if got, want := headers.Get("X-Codex-Installation-Id"), first.installationID; got != want {
-		t.Fatalf("X-Codex-Installation-Id = %q, want %q", got, want)
+	if got := headers.Get("X-Codex-Installation-Id"); got != "" {
+		t.Fatalf("unexpected synthesized X-Codex-Installation-Id = %q", got)
 	}
 	if got, want := headers.Get("Session-Id"), first.sessionID; got != want {
 		t.Fatalf("Session-Id = %q, want %q", got, want)

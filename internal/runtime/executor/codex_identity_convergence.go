@@ -222,7 +222,11 @@ func applyCodexIdentityConvergenceHeaders(headers http.Header, state *codexIdent
 		return
 	}
 
-	headers.Set("X-Codex-Installation-Id", state.installationID)
+	// Keep explicit installation headers consistent without creating a header
+	// that native Codex only sends inside client metadata.
+	if headerValueCaseInsensitive(headers, "X-Codex-Installation-Id") != "" {
+		setHeaderCasePreserved(headers, "X-Codex-Installation-Id", state.installationID)
+	}
 	if state.mode == codexIdentityConvergenceDevice {
 		if rawTurnMetadata := strings.TrimSpace(headers.Get("X-Codex-Turn-Metadata")); rawTurnMetadata != "" {
 			headers.Set("X-Codex-Turn-Metadata", rewriteCodexIdentityConvergenceTurnMetadata(rawTurnMetadata, *state))

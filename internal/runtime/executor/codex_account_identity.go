@@ -85,6 +85,16 @@ func codexAccountIdentityUUID(state codexAccountIdentityState, kind, raw string)
 	if !state.enabled || state.namespace == "" || raw == "" {
 		return raw
 	}
+	// Codex window IDs encode the thread and context-window generation.
+	// Scope the thread without discarding the generation or its wire format.
+	if kind == "window" {
+		if separator := strings.LastIndexByte(raw, ':'); separator > 0 && separator < len(raw)-1 {
+			generation := raw[separator+1:]
+			if strings.IndexFunc(generation, func(r rune) bool { return r < '0' || r > '9' }) == -1 {
+				return codexAccountIdentityUUID(state, "thread", raw[:separator]) + ":" + generation
+			}
+		}
+	}
 	name := strings.Join([]string{
 		"cli-proxy-api",
 		"codex-account-identity",
@@ -113,7 +123,7 @@ var codexAccountIdentityBodyFields = []struct {
 	{path: "client_metadata.turn-id", kind: "turn"},
 	{path: "client_metadata.window_id", kind: "window"},
 	{path: "client_metadata.x-codex-window-id", kind: "window"},
-	{path: "client_metadata.x-client-request-id", kind: "request"},
+	{path: "client_metadata.x-client-request-id", kind: "thread"},
 }
 
 var codexAccountIdentityTurnMetadataFields = []struct {
@@ -130,7 +140,7 @@ var codexAccountIdentityTurnMetadataFields = []struct {
 	{path: "turn-id", kind: "turn"},
 	{path: "window_id", kind: "window"},
 	{path: "x-codex-window-id", kind: "window"},
-	{path: "x-client-request-id", kind: "request"},
+	{path: "x-client-request-id", kind: "thread"},
 }
 
 func remapCodexAccountIdentityJSON(raw string, state codexAccountIdentityState) string {
@@ -232,7 +242,8 @@ func applyCodexAccountIdentityHeaders(headers http.Header, state *codexAccountId
 		{name: "X-Codex-Installation-Id", kind: "installation"},
 		{name: "Thread-Id", kind: "thread"},
 		{name: "X-Codex-Window-Id", kind: "window"},
-		{name: "X-Client-Request-Id", kind: "request"},
+		// Native Codex uses its thread ID as the client request ID.
+		{name: "X-Client-Request-Id", kind: "thread"},
 	} {
 		raw := strings.TrimSpace(headerValueCaseInsensitive(headers, field.name))
 		if raw != "" {

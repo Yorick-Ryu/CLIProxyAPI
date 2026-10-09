@@ -25,9 +25,10 @@ func TestPrepareCodexWebsocketStreamPreservesAccountIdentity(t *testing.T) {
 		prepared, err := exec.prepareCodexWebsocketStream(codexAccountIdentityTestContext(caller), auth,
 			cliproxyexecutor.Request{Model: "gpt-6-astra", Payload: body},
 			cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("codex"), Headers: http.Header{
-				"Session-Id":        {"client-session"},
-				"Thread-Id":         {"client-thread"},
-				"X-Codex-Window-Id": {"client-thread:2"},
+				"Session-Id":          {"client-session"},
+				"Thread-Id":           {"client-thread"},
+				"X-Client-Request-Id": {"client-thread"},
+				"X-Codex-Window-Id":   {"client-thread:2"},
 			}})
 		if err != nil {
 			t.Fatal(err)
@@ -70,8 +71,17 @@ func TestPrepareCodexWebsocketStreamPreservesAccountIdentity(t *testing.T) {
 			t.Fatal("session leaked across caller or account boundary")
 		}
 	}
-	device := headerValueCaseInsensitive(first.wsHeaders, "x-codex-installation-id")
-	if device == "" || device == "client-device" || device != gjson.GetBytes(first.upstreamBody, "client_metadata.x-codex-installation-id").String() {
-		t.Fatal("converged device must match between headers and body")
+	if first.wsHeaders.Get("X-Client-Request-Id") != first.wsHeaders.Get("Thread-Id") {
+		t.Fatal("client request and thread headers must retain their shared identity")
+	}
+	if first.wsHeaders.Get("X-Codex-Window-Id") != first.wsHeaders.Get("Thread-Id")+":2" {
+		t.Fatal("window header must retain the mapped thread and context generation")
+	}
+	device := gjson.GetBytes(first.upstreamBody, "client_metadata.x-codex-installation-id").String()
+	if device == "" || device == "client-device" {
+		t.Fatal("body installation ID must still converge")
+	}
+	if headerValueCaseInsensitive(first.wsHeaders, "x-codex-installation-id") != "" {
+		t.Fatal("installation convergence must not synthesize an extra header")
 	}
 }

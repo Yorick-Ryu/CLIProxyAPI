@@ -37,7 +37,7 @@ func (e *CodexExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.Auth
 	body = helps.SetStringIfDifferent(body, "model", baseModel)
 	body = helps.DeleteTopLevelJSONFields(body, "previous_response_id", "generate", "prompt_cache_retention", "safety_identifier", "stream_options")
 	body = helps.SetBoolIfDifferent(body, "stream", false)
-	body = normalizeCodexInstructions(body, helps.IsNativeCodexRequest(req.Payload, opts))
+	body = normalizeCodexInstructions(body, helps.PreserveCodexInstructions(req.Payload, opts))
 
 	body = helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslatedForPayload, req, opts)(body)
 	enc, err := tokenizerForCodexModel(baseModel)

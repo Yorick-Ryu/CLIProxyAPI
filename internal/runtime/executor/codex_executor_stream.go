@@ -67,7 +67,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 		body, _ = sjson.SetBytes(body, "stream_options.reasoning_summary_delivery", reasoningSummaryDelivery.Value())
 	}
 	body = helps.SetStringIfDifferent(body, "model", baseModel)
-	body = normalizeCodexInstructions(body, preserveNativeOutput)
+	body = normalizeCodexInstructions(body, helps.PreserveCodexInstructions(req.Payload, opts))
 	body, err = helps.EnsureCodexWebSearchHistoryTool(body, auth, opts.Headers)
 	if err != nil {
 		return nil, err

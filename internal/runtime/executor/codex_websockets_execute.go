@@ -58,7 +58,7 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 	body = helps.SetStringIfDifferent(body, "model", baseModel)
 	body = helps.SetBoolIfDifferent(body, "stream", true)
 	body = helps.DeleteTopLevelJSONFields(body, "prompt_cache_retention", "safety_identifier")
-	body = normalizeCodexInstructions(body, nativeRequest)
+	body = normalizeCodexInstructions(body, helps.PreserveCodexInstructions(req.Payload, opts))
 	body, err = helps.EnsureCodexWebSearchHistoryTool(body, auth, opts.Headers)
 	if err != nil {
 		return resp, err
