@@ -171,3 +171,46 @@ func TestCodexWebsocketsDefaultReloadAndScheduler(t *testing.T) {
 		}
 	}
 }
+
+func TestCodexLoadPreservesWebsocketDefaultAndCredentialVersion(t *testing.T) {
+	ctx := context.Background()
+	store := &issue6416MockStore{records: map[string]*Auth{
+		"inherited": {ID: "inherited", Provider: "codex", Metadata: map[string]any{"access_token": "test-old"}},
+		"explicit":  {ID: "explicit", Provider: "codex", Metadata: map[string]any{"access_token": "test-explicit", "websockets": true}},
+	}}
+	manager := NewManager(store, nil, nil)
+	disabled := false
+	manager.SetConfig(&config.Config{Codex: config.CodexConfig{WebsocketsDefault: &disabled}})
+	check := func(wantVersion uint64) {
+		t.Helper()
+		if err := manager.Load(ctx); err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range []string{"inherited", "explicit"} {
+			auth, ok := manager.GetByID(id)
+			if !ok {
+				t.Fatalf("missing %s", id)
+			}
+			want := uint64(1)
+			if id == "inherited" {
+				want = wantVersion
+				if _, persisted := auth.Metadata["websockets"]; persisted {
+					t.Fatal("inherited websocket default persisted")
+				}
+			}
+			if auth.CredentialVersion != want {
+				t.Fatalf("%s credential version = %d, want %d", id, auth.CredentialVersion, want)
+			}
+			if auth.EffectiveWebsocketsEnabled() != (id == "explicit") {
+				t.Fatalf("%s lost websocket preference during load", id)
+			}
+		}
+	}
+	check(1)
+	check(1)
+	store.mu.Lock()
+	store.records["inherited"].Metadata["access_token"] = "test-new"
+	store.mu.Unlock()
+	check(2)
+	check(2)
+}
