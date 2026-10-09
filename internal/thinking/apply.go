@@ -967,7 +967,7 @@ func extractCodexUsageConfig(body []byte) ThinkingConfig {
 	if len(body) == 0 || !gjson.ValidBytes(body) {
 		return ThinkingConfig{}
 	}
-	if config := extractConfigurationUpdateConfig(body); hasThinkingConfig(config) {
+	if config := extractConfigurationUpdateConfigFromValidJSON(body); hasThinkingConfig(config) {
 		return config
 	}
 	return extractCodexConfig(body)
