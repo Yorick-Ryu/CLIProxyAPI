@@ -11,6 +11,7 @@ import (
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"github.com/tiktoken-go/tokenizer"
 )
 
@@ -32,7 +33,11 @@ func (e *CodexExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.Auth
 	}
 
 	body = helps.SetStringIfDifferent(body, "model", baseModel)
-	body = helps.DeleteTopLevelJSONFields(body, "previous_response_id", "generate", "prompt_cache_retention", "safety_identifier", "stream_options")
+	body, _ = sjson.DeleteBytes(body, "previous_response_id")
+	body, _ = sjson.DeleteBytes(body, "generate")
+	body, _ = sjson.DeleteBytes(body, "prompt_cache_retention")
+	body, _ = sjson.DeleteBytes(body, "safety_identifier")
+	body, _ = sjson.DeleteBytes(body, "stream_options")
 	body = helps.SetBoolIfDifferent(body, "stream", false)
 	body = normalizeCodexInstructions(body, helps.IsNativeCodexRequest(req.Payload, opts))
 

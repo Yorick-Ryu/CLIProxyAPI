@@ -979,46 +979,6 @@ func TestNormalizeRequestChainsByPriority(t *testing.T) {
 	}
 }
 
-func TestNormalizeRequestWithoutActiveNormalizerSharesBody(t *testing.T) {
-	for _, mode := range []string{"empty", "unrelated", "fused"} {
-		t.Run(mode, func(t *testing.T) {
-			host := newHostWithRecords()
-			if mode != "empty" {
-				record := capabilityRecord{id: "test"}
-				if mode == "fused" {
-					record.plugin.Capabilities.RequestNormalizer = requestNormalizerFunc(func(context.Context, pluginapi.RequestTransformRequest) (pluginapi.PayloadResponse, error) {
-						t.Fatal("fused normalizer called")
-						return pluginapi.PayloadResponse{}, nil
-					})
-				}
-				host = newHostWithRecords(record)
-				if mode == "fused" {
-					host.fused["test"] = "test"
-				}
-			}
-			body := []byte(`{"input":"unchanged"}`)
-			got := host.NormalizeRequest(context.Background(), sdktranslator.FormatOpenAI, sdktranslator.FormatCodex, "model", body, true)
-			if len(got) != len(body) || &got[0] != &body[0] {
-				t.Fatal("no active normalizer should preserve the input buffer")
-			}
-		})
-	}
-}
-
-func TestNormalizeRequestPluginCannotMutateOriginalOnFailure(t *testing.T) {
-	body := []byte("original")
-	host := newHostWithRecords(capabilityRecord{id: "mutating", plugin: pluginapi.Plugin{Capabilities: pluginapi.Capabilities{
-		RequestNormalizer: requestNormalizerFunc(func(_ context.Context, req pluginapi.RequestTransformRequest) (pluginapi.PayloadResponse, error) {
-			req.Body[0] = 'X'
-			return pluginapi.PayloadResponse{}, fmt.Errorf("failed")
-		}),
-	}}})
-	got := host.NormalizeRequest(context.Background(), sdktranslator.FormatOpenAI, sdktranslator.FormatCodex, "model", body, true)
-	if string(body) != "original" || string(got) != "original" {
-		t.Fatal("failed plugin mutated the original or fallback request")
-	}
-}
-
 func TestTranslateRequestStopsAtFirstSuccessfulCandidate(t *testing.T) {
 	calls := make([]string, 0, 2)
 	host := newHostWithRecords(

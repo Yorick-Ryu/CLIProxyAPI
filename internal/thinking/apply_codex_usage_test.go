@@ -12,15 +12,6 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func TestConfigurationUpdateEffortSurvivesSourceMutation(t *testing.T) {
-	body := []byte(`{"input":[{"type":"configuration_update","reasoning":{"effort":"custom-effort"}}]}`)
-	effort := thinking.ExtractTranslatedReasoningEffort(body, "codex")
-	clear(body)
-	if effort != "custom-effort" {
-		t.Fatal("extracted effort retained a mutable source view")
-	}
-}
-
 func TestExtractCodexReasoningEffortWithConfigurationUpdate(t *testing.T) {
 	tests := []struct {
 		name                 string

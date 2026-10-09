@@ -1,37 +1,9 @@
 package helps
 
 import (
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
-
-// DeleteTopLevelJSONFields scans once for the requested top-level fields and
-// avoids sjson's whole-document allocation when they are absent. Names must be
-// plain field names, not paths or query expressions.
-func DeleteTopLevelJSONFields(payload []byte, paths ...string) []byte {
-	present := make(map[string]bool, len(paths))
-	for _, path := range paths {
-		present[path] = false
-	}
-	remaining := len(present)
-	util.ParseGJSONBytesNoCopy(payload).ForEach(func(key, _ gjson.Result) bool {
-		if found, wanted := present[key.String()]; wanted && !found {
-			present[key.String()] = true
-			remaining--
-		}
-		return remaining > 0
-	})
-	for _, path := range paths {
-		if !present[path] {
-			continue
-		}
-		if updated, err := sjson.DeleteBytes(payload, path); err == nil {
-			payload = updated
-		}
-	}
-	return payload
-}
 
 // SetStringIfDifferent updates path only when its value is not already the
 // canonical JSON string. Values with another JSON type are still normalized.
