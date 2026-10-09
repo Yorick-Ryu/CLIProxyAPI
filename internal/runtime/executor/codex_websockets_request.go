@@ -141,6 +141,11 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
 	if auth != nil {
 		attrs = auth.Attributes
 	}
+	if cfg != nil && auth != nil && !isAPIKey {
+		if version := strings.TrimSpace(cfg.CodexHeaderDefaults.Version); version != "" {
+			headers.Set("Version", version)
+		}
+	}
 	req := (&http.Request{Header: headers}).WithContext(ctx)
 	util.ApplyCustomHeadersFromAttrs(req, attrs, ginHeaders)
 	applyCodexCloakingHeaders(headers, cfg, auth)

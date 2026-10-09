@@ -1050,9 +1050,12 @@ oauth:
       # Headers for file-backed/OAuth Codex requests; not used by api-keys.codex entries.
       # `user-agent` applies to HTTP and websocket requests and sets the forced identity
       # while cloaking is enabled. Omit it or leave it empty to use the built-in identity.
+      # `version` overrides the client Version header; per-account headers.Version wins.
+      # Omit it or leave it empty to preserve the client version.
       # `beta-features` is a websocket fallback when the client omits the header.
       # header-defaults:
       #   user-agent: "codex_cli_rs/0.114.0 (Mac OS 14.2.0; x86_64) vscode/1.111.0"
+      #   version: "0.114.0"
       #   beta-features: "multi_agent"
 
     # Antigravity provider behavior.

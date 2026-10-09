@@ -457,6 +457,11 @@ func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, toke
 	if auth != nil {
 		attrs = auth.Attributes
 	}
+	if cfg != nil && auth != nil && !isAPIKey {
+		if version := strings.TrimSpace(cfg.CodexHeaderDefaults.Version); version != "" {
+			r.Header.Set("Version", version)
+		}
+	}
 	util.ApplyCustomHeadersFromAttrs(r, attrs, ginHeaders)
 	applyCodexCloakingHeaders(r.Header, cfg, auth)
 }

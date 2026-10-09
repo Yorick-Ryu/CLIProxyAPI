@@ -40,6 +40,7 @@ func (cfg *Config) SanitizeCodexHeaderDefaults() {
 		return
 	}
 	cfg.CodexHeaderDefaults.UserAgent = strings.TrimSpace(cfg.CodexHeaderDefaults.UserAgent)
+	cfg.CodexHeaderDefaults.Version = strings.TrimSpace(cfg.CodexHeaderDefaults.Version)
 	cfg.CodexHeaderDefaults.BetaFeatures = strings.TrimSpace(cfg.CodexHeaderDefaults.BetaFeatures)
 }
 

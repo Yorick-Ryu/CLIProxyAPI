@@ -1405,6 +1405,7 @@ func TestApplyCodexWebsocketHeadersUsesConfigDefaultsForOAuth(t *testing.T) {
 		Codex: config.CodexConfig{DisableCodexCloaking: true},
 		CodexHeaderDefaults: config.CodexHeaderDefaults{
 			UserAgent:    "my-codex-client/1.0",
+			Version:      "0.162.0",
 			BetaFeatures: "feature-a,feature-b",
 		},
 	}
@@ -1413,7 +1414,16 @@ func TestApplyCodexWebsocketHeadersUsesConfigDefaultsForOAuth(t *testing.T) {
 		Metadata: map[string]any{"email": "user@example.com"},
 	}
 
-	headers := applyCodexWebsocketHeaders(context.Background(), http.Header{}, auth, "", cfg, false)
+	ctx := contextWithGinHeaders(map[string]string{"Version": "client-version"})
+	headers := applyCodexWebsocketHeaders(ctx, http.Header{}, auth, "", cfg, false)
+	if got := headers.Get("Version"); got != "0.162.0" {
+		t.Fatalf("Version = %q, want global version", got)
+	}
+	auth.Attributes = map[string]string{"header:Version": "account-version"}
+	accountHeaders := applyCodexWebsocketHeaders(ctx, http.Header{}, auth, "", cfg, true)
+	if got := accountHeaders.Get("Version"); got != "account-version" {
+		t.Fatalf("Version = %q, want account version", got)
+	}
 
 	if got := headers.Get("User-Agent"); got != "my-codex-client/1.0" {
 		t.Fatalf("User-Agent = %s, want %s", got, "my-codex-client/1.0")
@@ -1746,6 +1756,7 @@ func TestApplyCodexHeadersUsesConfigUserAgentForOAuth(t *testing.T) {
 		Codex: config.CodexConfig{DisableCodexCloaking: true},
 		CodexHeaderDefaults: config.CodexHeaderDefaults{
 			UserAgent:    "config-ua",
+			Version:      "0.162.0",
 			BetaFeatures: "config-beta",
 		},
 	}
@@ -1755,9 +1766,18 @@ func TestApplyCodexHeadersUsesConfigUserAgentForOAuth(t *testing.T) {
 	}
 	req = req.WithContext(contextWithGinHeaders(map[string]string{
 		"User-Agent": "client-ua",
+		"Version":    "client-version",
 	}))
 
 	applyCodexHeaders(req, auth, "oauth-token", true, cfg)
+	if got := req.Header.Get("Version"); got != "0.162.0" {
+		t.Fatalf("Version = %q, want global version", got)
+	}
+	auth.Attributes = map[string]string{"header:Version": "account-version"}
+	applyCodexHeaders(req, auth, "oauth-token", true, cfg)
+	if got := req.Header.Get("Version"); got != "account-version" {
+		t.Fatalf("Version = %q, want account version", got)
+	}
 
 	if got := req.Header.Get("User-Agent"); got != "config-ua" {
 		t.Fatalf("User-Agent = %s, want %s", got, "config-ua")
