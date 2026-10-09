@@ -56,6 +56,10 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 	body = helps.SetBoolIfDifferent(body, "stream", true)
 	body = helps.DeleteTopLevelJSONFields(body, "prompt_cache_retention", "safety_identifier")
 	body = normalizeCodexInstructions(body, nativeRequest)
+	body, err = helps.EnsureCodexWebSearchHistoryTool(body, auth, opts.Headers)
+	if err != nil {
+		return resp, err
+	}
 	if e.cfg == nil || e.cfg.DisableImageGeneration == config.DisableImageGenerationOff {
 		body = ensureImageGenerationTool(body, baseModel, auth, opts.Headers)
 	}

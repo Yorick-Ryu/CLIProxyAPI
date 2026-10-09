@@ -57,6 +57,10 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 	body = helps.SetBoolIfDifferent(body, "stream", true)
 	body = helps.DeleteTopLevelJSONFields(body, "previous_response_id", "generate", "prompt_cache_retention", "safety_identifier", "stream_options")
 	body = normalizeCodexInstructions(body, helps.IsNativeCodexRequest(req.Payload, opts))
+	body, err = helps.EnsureCodexWebSearchHistoryTool(body, auth, opts.Headers)
+	if err != nil {
+		return resp, err
+	}
 	if e.cfg == nil || e.cfg.DisableImageGeneration == config.DisableImageGenerationOff {
 		body = ensureImageGenerationTool(body, baseModel, auth, opts.Headers)
 	}
