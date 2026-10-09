@@ -61,6 +61,10 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 	body, _ = sjson.DeleteBytes(body, "safety_identifier")
 	body, _ = sjson.DeleteBytes(body, "stream_options")
 	body = normalizeCodexInstructions(body, helps.IsNativeCodexRequest(req.Payload, opts))
+	body, err = helps.EnsureCodexWebSearchHistoryTool(body, auth, opts.Headers)
+	if err != nil {
+		return resp, err
+	}
 	if e.cfg == nil || e.cfg.DisableImageGeneration == config.DisableImageGenerationOff {
 		body = ensureImageGenerationTool(body, baseModel, auth, opts.Headers)
 	}
