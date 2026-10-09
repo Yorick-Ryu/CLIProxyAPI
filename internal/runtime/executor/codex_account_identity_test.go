@@ -138,7 +138,11 @@ func TestCodexGuardianAndForkOnWire(t *testing.T) {
 				ctx := codexAccountIdentityTestContext("fixture-caller")
 				var sharedCache string
 				// The fork arrives first: no prior parent request or process cache is needed.
-				for _, tc := range []struct{ guardian, thread string }{{"reviewer", "fork"}, {"", "parent"}, {"classifier", "another-fork"}} {
+				for _, tc := range []struct{ guardian, thread, wantHint string }{
+					{"reviewer", "fork", ""},
+					{"", "parent", "model=gpt-5.5"},
+					{"classifier", "another-fork", ""},
+				} {
 					body, err := json.Marshal(map[string]any{"model": "gpt-5.5", "input": []any{}, "prompt_cache_key": "parent", "client_metadata": map[string]string{"session_id": tc.thread, "thread_id": tc.thread, "parent_response_id": "resp_upstream_opaque"}})
 					if err != nil {
 						t.Fatal(err)
@@ -180,12 +184,11 @@ func TestCodexGuardianAndForkOnWire(t *testing.T) {
 					if got.headers.Get("X-Codex-Guardian") != tc.guardian {
 						t.Fatal("guardian header lost or synthesized")
 					}
-					wantHint := "model=gpt-5.5"
-					if tc.guardian == "reviewer" {
-						wantHint = ""
+					if got.headers.Get(codexRoutingHintHeader) != tc.wantHint {
+						t.Fatalf("guardian %q routing hint = %q, want %q", tc.guardian, got.headers.Get(codexRoutingHintHeader), tc.wantHint)
 					}
-					if got.headers.Get(codexRoutingHintHeader) != wantHint {
-						t.Fatalf("guardian %q routing hint = %q, want %q", tc.guardian, got.headers.Get(codexRoutingHintHeader), wantHint)
+					if tc.wantHint == "" && got.headers.Values(codexRoutingHintHeader) != nil {
+						t.Fatalf("guardian %q must omit the routing hint header", tc.guardian)
 					}
 				}
 			})
