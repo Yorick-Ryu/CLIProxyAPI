@@ -85,6 +85,12 @@ func codexAccountIdentityUUID(state codexAccountIdentityState, kind, raw string)
 	if !state.enabled || state.namespace == "" || raw == "" {
 		return raw
 	}
+	// Session and thread IDs can refer to the same CLI identity. Keep the
+	// existing session namespace (and prompt cache keys) stable while preserving
+	// equal input IDs across session, thread, and request metadata.
+	if kind == "thread" {
+		kind = "session"
+	}
 	// Codex window IDs encode the thread and context-window generation.
 	// Scope the thread without discarding the generation or its wire format.
 	if kind == "window" {
@@ -121,6 +127,10 @@ var codexAccountIdentityBodyFields = []struct {
 	{path: "client_metadata.thread-id", kind: "thread"},
 	{path: "client_metadata.turn_id", kind: "turn"},
 	{path: "client_metadata.turn-id", kind: "turn"},
+	{path: "client_metadata.root_turn_id", kind: "turn"},
+	{path: "client_metadata.parent_turn_id", kind: "turn"},
+	{path: "client_metadata.parent_thread_id", kind: "thread"},
+	{path: "client_metadata.forked_from_thread_id", kind: "thread"},
 	{path: "client_metadata.window_id", kind: "window"},
 	{path: "client_metadata.x-codex-window-id", kind: "window"},
 	{path: "client_metadata.x-client-request-id", kind: "thread"},
@@ -138,6 +148,10 @@ var codexAccountIdentityTurnMetadataFields = []struct {
 	{path: "thread-id", kind: "thread"},
 	{path: "turn_id", kind: "turn"},
 	{path: "turn-id", kind: "turn"},
+	{path: "root_turn_id", kind: "turn"},
+	{path: "parent_turn_id", kind: "turn"},
+	{path: "parent_thread_id", kind: "thread"},
+	{path: "forked_from_thread_id", kind: "thread"},
 	{path: "window_id", kind: "window"},
 	{path: "x-codex-window-id", kind: "window"},
 	{path: "x-client-request-id", kind: "thread"},

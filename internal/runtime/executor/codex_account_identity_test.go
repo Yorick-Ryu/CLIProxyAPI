@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,47 @@ import (
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/tidwall/gjson"
 )
+
+func TestCodexAccountIdentityPreservesSessionAndTurnLineage(t *testing.T) {
+	auth := &cliproxyauth.Auth{ID: "test", Provider: "codex", Metadata: map[string]any{"account_id": "test-account"}}
+	ctx := codexAccountIdentityTestContext("caller")
+	mapRequest := func(thread, turn, root, parent string) ([]byte, http.Header) {
+		t.Helper()
+		meta := map[string]string{"session_id": "root-thread", "thread_id": thread, "turn_id": turn, "root_turn_id": root, "parent_turn_id": parent, "parent_thread_id": "root-thread", "forked_from_thread_id": "root-thread", "window_id": thread + ":3"}
+		raw, _ := json.Marshal(meta)
+		body, _ := json.Marshal(map[string]any{"prompt_cache_key": "root-thread", "client_metadata": map[string]string{"session_id": "root-thread", "thread_id": thread, "turn_id": turn, "root_turn_id": root, "parent_turn_id": parent, "x-codex-window-id": thread + ":3", "x-codex-turn-metadata": string(raw)}})
+		mapped, state := applyCodexAccountIdentityBody(ctx, auth, body)
+		headers := http.Header{"Session-Id": {"root-thread"}, "Thread-Id": {thread}, "X-Client-Request-Id": {thread}, "X-Codex-Window-Id": {thread + ":3"}, "X-Codex-Turn-Metadata": {string(raw)}}
+		applyCodexAccountIdentityHeaders(headers, &state)
+		return mapped, headers
+	}
+	parent, headers := mapRequest("root-thread", "root-turn", "root-turn", "root-turn")
+	session := headers.Get("Session-Id")
+	if session != headers.Get("Thread-Id") || session != headers.Get("X-Client-Request-Id") || headers.Get("X-Codex-Window-Id") != session+":3" {
+		t.Fatal("session/thread/request/window relationship lost")
+	}
+	if session != gjson.GetBytes(parent, "prompt_cache_key").String() {
+		t.Fatal("cache key differs from session")
+	}
+	turn := gjson.GetBytes(parent, "client_metadata.turn_id").String()
+	if turn == "root-turn" || turn != gjson.GetBytes(parent, "client_metadata.root_turn_id").String() {
+		t.Fatal("root turn relation lost")
+	}
+	child, childHeaders := mapRequest("child-thread", "child-turn", "root-turn", "root-turn")
+	childMeta := gjson.Parse(childHeaders.Get("X-Codex-Turn-Metadata"))
+	if childHeaders.Get("Session-Id") != session || childHeaders.Get("Thread-Id") == session {
+		t.Fatal("child session/thread distinction lost")
+	}
+	if childMeta.Get("root_turn_id").String() != turn || childMeta.Get("parent_turn_id").String() != turn || childMeta.Get("turn_id").String() == turn {
+		t.Fatal("child turn lineage lost")
+	}
+	if childMeta.Get("parent_thread_id").String() != session || childMeta.Get("forked_from_thread_id").String() != session {
+		t.Fatal("parent thread lineage lost")
+	}
+	if childHeaders.Get("X-Codex-Turn-Metadata") != gjson.GetBytes(child, "client_metadata.x-codex-turn-metadata").String() {
+		t.Fatal("header/body metadata differs")
+	}
+}
 
 func TestCodexAccountIdentityPreservesThreadRelationsAndWindowGeneration(t *testing.T) {
 	auth := &cliproxyauth.Auth{ID: "test", Provider: "codex", Metadata: map[string]any{"account_id": "test"}}
