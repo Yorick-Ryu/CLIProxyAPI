@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - beiapi-production
+      - dmit/v8.0.22-json-opt
   workflow_dispatch:
 
 concurrency:
