@@ -63,7 +63,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 	body, _ = sjson.DeleteBytes(body, "prompt_cache_retention")
 	body, _ = sjson.DeleteBytes(body, "safety_identifier")
 	body, _ = sjson.DeleteBytes(body, "stream_options")
-	body = normalizeCodexInstructions(body, helps.IsNativeCodexRequest(req.Payload, opts))
+	body = normalizeCodexInstructions(body, helps.PreserveCodexInstructions(req.Payload, opts))
 	body, err = helps.EnsureCodexWebSearchHistoryTool(body, auth, opts.Headers)
 	if err != nil {
 		return resp, err
@@ -108,7 +108,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 		AuthType:  authType,
 		AuthValue: authValue,
 	})
-	httpClient := helps.NewUtlsHTTPClient(ctx, e.cfg, auth, 0)
+	httpClient := helps.NewCodexHTTPClient(ctx, e.cfg, auth, 0)
 	httpClient = reporter.TrackHTTPClient(httpClient)
 	httpResp, err := httpClient.Do(httpReq)
 	if err != nil {
@@ -251,7 +251,7 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
 	ctx = helps.WithPayloadFinalizer(ctx, helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslated, req, opts))
 	body = helps.SetStringIfDifferent(body, "model", baseModel)
 	body, _ = sjson.DeleteBytes(body, "stream")
-	body = normalizeCodexInstructions(body, helps.IsNativeCodexRequest(req.Payload, opts))
+	body = normalizeCodexInstructions(body, helps.PreserveCodexInstructions(req.Payload, opts))
 	body = sanitizeOpenAIResponsesReasoningEncryptedContentWithCompat(ctx, "codex executor", body, isCompat)
 	body = normalizeCodexParallelToolCalls(body, opts.Headers)
 	body = helps.NormalizeCodexToolSchemas(body)
@@ -285,7 +285,7 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
 		AuthType:  authType,
 		AuthValue: authValue,
 	})
-	httpClient := helps.NewUtlsHTTPClient(ctx, e.cfg, auth, 0)
+	httpClient := helps.NewCodexHTTPClient(ctx, e.cfg, auth, 0)
 	httpClient = reporter.TrackHTTPClient(httpClient)
 	httpResp, err := httpClient.Do(httpReq)
 	if err != nil {

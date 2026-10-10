@@ -5,6 +5,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential git && rm -rf /var/lib/apt/lists/*
 
 COPY go.mod go.sum ./
+COPY third_party/gorilla-websocket ./third_party/gorilla-websocket
 
 RUN go mod download
 
@@ -13,6 +14,8 @@ COPY . .
 ARG VERSION=dev
 ARG COMMIT=none
 ARG BUILD_DATE=unknown
+
+RUN cd third_party/gorilla-websocket && go test -race ./...
 
 RUN CGO_ENABLED=1 GOOS=linux go build -buildvcs=false -ldflags="-s -w -X 'main.Version=${VERSION}' -X 'main.Commit=${COMMIT}' -X 'main.BuildDate=${BUILD_DATE}'" -o ./CLIProxyAPI ./cmd/server/
 

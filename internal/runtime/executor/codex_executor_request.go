@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	codexUserAgent             = "codex-tui/0.154.0 (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; 0.154.0)"
+	codexUserAgent             = "codex-tui/0.162.0 (Mac OS 27.0.1; arm64) ghostty/1.3.1 (codex-tui; 0.162.0)"
 	codexOriginator            = "codex-tui"
 	codexDefaultImageToolModel = "gpt-image-2"
 	codexResponsesLiteHeader   = "X-OpenAI-Internal-Codex-Responses-Lite"
@@ -90,7 +90,7 @@ func (e *CodexExecutor) HttpRequest(ctx context.Context, auth *cliproxyauth.Auth
 	if err := e.PrepareRequest(httpReq, auth); err != nil {
 		return nil, err
 	}
-	httpClient := helps.NewUtlsHTTPClient(ctx, e.cfg, auth, 0)
+	httpClient := helps.NewCodexHTTPClient(ctx, e.cfg, auth, 0)
 	return httpClient.Do(httpReq)
 }
 
@@ -427,6 +427,9 @@ func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, toke
 	misc.EnsureHeader(r.Header, ginHeaders, "X-Client-Request-Id", "")
 	misc.EnsureHeader(r.Header, ginHeaders, "X-Codex-Window-Id", "")
 	misc.EnsureHeader(r.Header, ginHeaders, "Thread-Id", "")
+	misc.EnsureHeader(r.Header, ginHeaders, "X-Codex-Parent-Thread-Id", "")
+	misc.EnsureHeader(r.Header, ginHeaders, "X-OpenAI-Subagent", "")
+	misc.EnsureHeader(r.Header, ginHeaders, "X-Codex-Guardian", "")
 	misc.EnsureHeader(r.Header, ginHeaders, "Session-Id", "")
 	misc.EnsureHeader(r.Header, ginHeaders, "X-Openai-Internal-Codex-Responses-Lite", "")
 
@@ -457,15 +460,20 @@ func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, toke
 	if auth != nil {
 		attrs = auth.Attributes
 	}
+	if cfg != nil && auth != nil && !isAPIKey {
+		if version := strings.TrimSpace(cfg.CodexHeaderDefaults.Version); version != "" {
+			r.Header.Set("Version", version)
+		}
+	}
 	util.ApplyCustomHeadersFromAttrs(r, attrs, ginHeaders)
 	applyCodexCloakingHeaders(r.Header, cfg, auth)
 }
 
 const codexRoutingHintHeader = "X-Codex-Routing-Hint"
 
-// applyCodexRoutingHint sends the routing hint native Codex attaches to every
-// ChatGPT-backend Responses request: "model=<slug>" plus ";tier=<service_tier>"
-// when the body requests a tier (openai/codex rust-v0.155.0,
+// applyCodexRoutingHint sends the routing hint native Codex attaches to
+// ordinary ChatGPT-backend Responses requests: "model=<slug>" plus
+// ";tier=<service_tier>" when the body requests a tier (openai/codex rust-v0.155.0,
 // codex-rs/core/src/client.rs build_routing_hint_header). Without it, a
 // translated request carries service_tier=priority only in the body. Whether
 // the backend needs the header to grant priority is undocumented.
@@ -486,6 +494,11 @@ func applyCodexRoutingHint(ctx context.Context, headers http.Header, auth *clipr
 	deleteHeaderCaseInsensitive(headers, codexRoutingHintHeader)
 	if operatorHint := codexOperatorHeaderValue(ctx, auth, clientHeaders, codexRoutingHintHeader); operatorHint != "" {
 		headers.Set(codexRoutingHintHeader, operatorHint)
+		return
+	}
+	// Native Codex 0.162 omits this hint for both Guardian request types.
+	switch headers.Get("X-Codex-Guardian") {
+	case "reviewer", "classifier":
 		return
 	}
 	model := strings.TrimSpace(baseModel)
@@ -537,7 +550,11 @@ func applyCodexCloakingHeaders(headers http.Header, cfg *config.Config, auth *cl
 	if headers == nil || cfg == nil || isCodexCloakingDisabled(cfg, auth) {
 		return
 	}
-	headers.Set("User-Agent", codexUserAgent)
+	userAgent, _ := codexHeaderDefaults(cfg, auth)
+	if userAgent == "" {
+		userAgent = codexUserAgent
+	}
+	headers.Set("User-Agent", userAgent)
 	headers.Set("Originator", codexOriginator)
 }
 

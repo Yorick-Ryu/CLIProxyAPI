@@ -18,3 +18,15 @@ func IsNativeCodexRequest(body []byte, opts cliproxyexecutor.Options) bool {
 	}
 	return util.IsCodexResponsesLiteRequest(body, opts.Headers)
 }
+
+// PreserveCodexInstructions recognizes native Responses clients independently of
+// the Responses Lite output dialect. Empty native instructions are omitted on wire.
+func PreserveCodexInstructions(body []byte, opts cliproxyexecutor.Options) bool {
+	if IsNativeCodexRequest(body, opts) {
+		return true
+	}
+	if opts.SourceFormat != sdktranslator.FormatCodex && opts.SourceFormat != sdktranslator.FormatOpenAIResponse {
+		return false
+	}
+	return IsCodexUserAgent(opts.Headers)
+}

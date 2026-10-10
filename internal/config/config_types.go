@@ -134,11 +134,14 @@ type ClaudeHeaderDefaults struct {
 	StabilizeDeviceProfile *bool  `yaml:"stabilize-device-profile,omitempty" json:"stabilize-device-profile,omitempty"`
 }
 
-// CodexHeaderDefaults configures fallback header values injected into Codex
-// model requests for OAuth/file-backed auth when the client omits them.
-// UserAgent applies to HTTP and websocket requests; BetaFeatures only applies to websockets.
+// CodexHeaderDefaults configures headers for OAuth/file-backed Codex requests.
+// UserAgent applies to HTTP and websocket requests and is the forced identity
+// when cloaking is enabled; an empty value uses the built-in identity.
+// Version overrides the client's version unless a credential custom header overrides it.
+// BetaFeatures is a websocket fallback when the client omits it.
 type CodexHeaderDefaults struct {
 	UserAgent    string `yaml:"user-agent" json:"user-agent"`
+	Version      string `yaml:"version" json:"version"`
 	BetaFeatures string `yaml:"beta-features" json:"beta-features"`
 }
 

@@ -71,7 +71,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 		body, _ = sjson.SetBytes(body, "stream_options.reasoning_summary_delivery", reasoningSummaryDelivery.Value())
 	}
 	body = helps.SetStringIfDifferent(body, "model", baseModel)
-	body = normalizeCodexInstructions(body, preserveNativeOutput)
+	body = normalizeCodexInstructions(body, helps.PreserveCodexInstructions(req.Payload, opts))
 	body, err = helps.EnsureCodexWebSearchHistoryTool(body, auth, opts.Headers)
 	if err != nil {
 		return nil, err
@@ -117,7 +117,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 		AuthValue: authValue,
 	})
 
-	httpClient := helps.NewUtlsHTTPClient(ctx, e.cfg, auth, 0)
+	httpClient := helps.NewCodexHTTPClient(ctx, e.cfg, auth, 0)
 	httpClient = reporter.TrackHTTPClientRoundTripOnly(httpClient)
 	httpResp, err := httpClient.Do(httpReq)
 	if err != nil {

@@ -26,7 +26,8 @@ import (
 // providers that require browser-like TLS. The HTTP version follows ALPN. Each
 // request gets a dedicated connection that is closed with the response body.
 type utlsRoundTripper struct {
-	dialer proxy.Dialer
+	dialer             proxy.Dialer
+	disableCompression bool
 }
 
 type closeConnectionBody struct {
@@ -105,12 +106,13 @@ func (t *utlsRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	if err != nil {
 		return nil, err
 	}
-	return roundTripUtlsConnection(req, tlsConn)
+	return roundTripUtlsConnection(req, tlsConn, t.disableCompression)
 }
 
 // roundTripUtlsConnection selects the HTTP protocol before sending the request.
 // Empty ALPN is HTTP/1.1, including when a TLS-inspecting proxy omits ALPN.
-func roundTripUtlsConnection(req *http.Request, tlsConn *tls.UConn) (*http.Response, error) {
+func roundTripUtlsConnection(req *http.Request, tlsConn *tls.UConn, disableCompression ...bool) (*http.Response, error) {
+	noAutoCompression := len(disableCompression) > 0 && disableCompression[0]
 	closeConnection := func() error {
 		// The HTTP/1.1 transport may already have closed its non-pooled
 		// connection after reading the response or canceling the request.
@@ -123,7 +125,7 @@ func roundTripUtlsConnection(req *http.Request, tlsConn *tls.UConn) (*http.Respo
 	var err error
 	switch protocol := tlsConn.ConnectionState().NegotiatedProtocol; protocol {
 	case "h2":
-		h2Conn, errClientConn := (&http2.Transport{}).NewClientConn(tlsConn)
+		h2Conn, errClientConn := (&http2.Transport{DisableCompression: noAutoCompression}).NewClientConn(tlsConn)
 		if errClientConn != nil {
 			err = fmt.Errorf("utls: initialize HTTP/2 connection: %w", errClientConn)
 			break
@@ -135,7 +137,8 @@ func roundTripUtlsConnection(req *http.Request, tlsConn *tls.UConn) (*http.Respo
 		// transport retains net/http's cancellation and request-body handling
 		// without changing the TLS fingerprint or redialing through another path.
 		transport := &http.Transport{
-			DisableKeepAlives: true,
+			DisableKeepAlives:  true,
+			DisableCompression: noAutoCompression,
 			DialTLSContext: func(context.Context, string, string) (net.Conn, error) {
 				return tlsConn, nil
 			},
@@ -381,6 +384,14 @@ type fallbackRoundTripper struct {
 	fallback  http.RoundTripper
 }
 
+func (f *fallbackRoundTripper) CloseIdleConnections() {
+	for _, transport := range []http.RoundTripper{f.anthropic, f.chrome, f.fallback} {
+		if closer, ok := transport.(interface{ CloseIdleConnections() }); ok {
+			closer.CloseIdleConnections()
+		}
+	}
+}
+
 func (f *fallbackRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if IsAnthropicUpstreamURL(req.URL) {
 		return f.anthropic.RoundTrip(req)
@@ -395,7 +406,7 @@ func (f *fallbackRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 // fingerprints for protected hosts. It uses Claude Code's Node/OpenSSL profile
 // for Anthropic and a Chrome profile for ChatGPT, with a standard-transport
 // fallback for other hosts.
-func NewUtlsHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, timeout time.Duration) *http.Client {
+func NewUtlsHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, timeout time.Duration, disableCompression ...bool) *http.Client {
 	proxyURL := effectiveProxyURL(ctx, cfg, auth)
 
 	var ctxRoundTripper http.RoundTripper
@@ -414,6 +425,10 @@ func NewUtlsHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyau
 		chromeRT = ctxRoundTripper
 		anthropicRT = ctxRoundTripper
 		standardTransport = ctxRoundTripper
+	}
+	if len(disableCompression) > 0 && disableCompression[0] {
+		chromeRT = withoutAutomaticCompression(chromeRT)
+		standardTransport = withoutAutomaticCompression(standardTransport)
 	}
 
 	client := &http.Client{

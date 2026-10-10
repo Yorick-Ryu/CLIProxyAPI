@@ -57,8 +57,7 @@ func applyCodexPromptCacheHeadersWithContext(ctx context.Context, from sdktransl
 
 	if cache.ID != "" {
 		rawJSON = helps.SetStringIfDifferent(rawJSON, "prompt_cache_key", cache.ID)
-		setHeaderCasePreserved(headers, "session_id", cache.ID)
-		headers.Set("Conversation_id", cache.ID)
+		headers.Set("Session-Id", cache.ID)
 	}
 
 	return rawJSON, headers, nil
@@ -87,6 +86,11 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
 	misc.EnsureHeader(headers, ginHeaders, "x-codex-turn-state", "")
 	misc.EnsureHeader(headers, ginHeaders, "x-codex-turn-metadata", "")
 	misc.EnsureHeader(headers, ginHeaders, "x-client-request-id", "")
+	misc.EnsureHeader(headers, ginHeaders, "Thread-Id", "")
+	misc.EnsureHeader(headers, ginHeaders, "X-Codex-Parent-Thread-Id", "")
+	misc.EnsureHeader(headers, ginHeaders, "X-OpenAI-Subagent", "")
+	misc.EnsureHeader(headers, ginHeaders, "X-Codex-Guardian", "")
+	misc.EnsureHeader(headers, ginHeaders, "X-Codex-Window-Id", "")
 	misc.EnsureHeader(headers, ginHeaders, "x-responsesapi-include-timing-metrics", "")
 	misc.EnsureHeader(headers, ginHeaders, "Version", "")
 	if nativeRequest {
@@ -112,6 +116,7 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
 	}
 	ensureCodexWebsocketSessionHeader(headers, ginHeaders, sessionFallback)
 	if nativeRequest && isCodexCloakingDisabled(cfg, auth) {
+		deleteHeaderCaseInsensitive(headers, "session-id")
 		deleteHeaderCaseInsensitive(headers, "session_id")
 		deleteHeaderCaseInsensitive(headers, "conversation_id")
 		for key, values := range ginHeaders {
@@ -141,6 +146,11 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
 	if auth != nil {
 		attrs = auth.Attributes
 	}
+	if cfg != nil && auth != nil && !isAPIKey {
+		if version := strings.TrimSpace(cfg.CodexHeaderDefaults.Version); version != "" {
+			headers.Set("Version", version)
+		}
+	}
 	req := (&http.Request{Header: headers}).WithContext(ctx)
 	util.ApplyCustomHeadersFromAttrs(req, attrs, ginHeaders)
 	applyCodexCloakingHeaders(headers, cfg, auth)
@@ -159,10 +169,10 @@ func ensureCodexWebsocketSessionHeader(target http.Header, source http.Header, f
 	if sessionID == "" {
 		sessionID = strings.TrimSpace(fallbackValue)
 	}
+	deleteHeaderCaseInsensitive(target, "session_id")
 	if sessionID != "" {
-		setHeaderCasePreserved(target, "session_id", sessionID)
+		setHeaderCasePreserved(target, "Session-Id", sessionID)
 	}
-	deleteHeaderCaseInsensitive(target, "Session-Id")
 }
 
 func codexSessionHeaderValue(headers http.Header) string {

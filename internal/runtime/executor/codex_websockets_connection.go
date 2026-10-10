@@ -32,6 +32,7 @@ func (e *CodexWebsocketsExecutor) dialCodexWebsocket(ctx context.Context, auth *
 	dialer := newProxyAwareWebsocketDialer(ctx, e.cfg, auth)
 	dialer.HandshakeTimeout = codexResponsesWebsocketHandshakeTO
 	dialer.EnableCompression = true
+	dialer.EnableContextTakeover = true
 	if ctx == nil {
 		ctx = context.Background()
 	}

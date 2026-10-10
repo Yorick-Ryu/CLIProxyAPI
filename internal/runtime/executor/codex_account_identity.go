@@ -84,6 +84,22 @@ func codexAccountIdentityUUID(state codexAccountIdentityState, kind, raw string)
 	if !state.enabled || state.namespace == "" || raw == "" {
 		return raw
 	}
+	// Session and thread IDs can refer to the same CLI identity. Keep the
+	// existing session namespace (and prompt cache keys) stable while preserving
+	// equal input IDs across session, thread, and request metadata.
+	if kind == "thread" {
+		kind = "session"
+	}
+	// Codex window IDs encode the thread and context-window generation.
+	// Scope the thread without discarding the generation or its wire format.
+	if kind == "window" {
+		if separator := strings.LastIndexByte(raw, ':'); separator > 0 && separator < len(raw)-1 {
+			generation := raw[separator+1:]
+			if strings.IndexFunc(generation, func(r rune) bool { return r < '0' || r > '9' }) == -1 {
+				return codexAccountIdentityUUID(state, "thread", raw[:separator]) + ":" + generation
+			}
+		}
+	}
 	name := strings.Join([]string{
 		"cli-proxy-api",
 		"codex-account-identity",
@@ -110,9 +126,14 @@ var codexAccountIdentityBodyFields = []struct {
 	{path: "client_metadata.thread-id", kind: "thread"},
 	{path: "client_metadata.turn_id", kind: "turn"},
 	{path: "client_metadata.turn-id", kind: "turn"},
+	{path: "client_metadata.root_turn_id", kind: "turn"},
+	{path: "client_metadata.parent_turn_id", kind: "turn"},
+	{path: "client_metadata.parent_thread_id", kind: "thread"},
+	{path: "client_metadata.x-codex-parent-thread-id", kind: "thread"},
+	{path: "client_metadata.forked_from_thread_id", kind: "thread"},
 	{path: "client_metadata.window_id", kind: "window"},
 	{path: "client_metadata.x-codex-window-id", kind: "window"},
-	{path: "client_metadata.x-client-request-id", kind: "request"},
+	{path: "client_metadata.x-client-request-id", kind: "thread"},
 }
 
 var codexAccountIdentityTurnMetadataFields = []struct {
@@ -127,9 +148,14 @@ var codexAccountIdentityTurnMetadataFields = []struct {
 	{path: "thread-id", kind: "thread"},
 	{path: "turn_id", kind: "turn"},
 	{path: "turn-id", kind: "turn"},
+	{path: "root_turn_id", kind: "turn"},
+	{path: "parent_turn_id", kind: "turn"},
+	{path: "parent_thread_id", kind: "thread"},
+	{path: "x-codex-parent-thread-id", kind: "thread"},
+	{path: "forked_from_thread_id", kind: "thread"},
 	{path: "window_id", kind: "window"},
 	{path: "x-codex-window-id", kind: "window"},
-	{path: "x-client-request-id", kind: "request"},
+	{path: "x-client-request-id", kind: "thread"},
 }
 
 func remapCodexAccountIdentityJSON(raw string, state codexAccountIdentityState) string {
@@ -158,10 +184,6 @@ func applyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth,
 		return rawJSON, state
 	}
 
-	originalSessionID := strings.TrimSpace(gjson.GetBytes(rawJSON, "client_metadata.session_id").String())
-	if originalSessionID == "" {
-		originalSessionID = strings.TrimSpace(gjson.GetBytes(rawJSON, "client_metadata.session-id").String())
-	}
 	for _, field := range codexAccountIdentityBodyFields {
 		value := gjson.GetBytes(rawJSON, field.path)
 		if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
@@ -180,11 +202,9 @@ func applyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth,
 	promptCacheKey := strings.TrimSpace(gjson.GetBytes(rawJSON, "prompt_cache_key").String())
 	if promptCacheKey != "" {
 		state.originalPromptCacheKey = promptCacheKey
-		kind := "prompt-cache"
-		if originalSessionID != "" && promptCacheKey == originalSessionID {
-			kind = "session"
-		}
-		state.promptCacheKey = codexAccountIdentityUUID(state, kind, promptCacheKey)
+		// Forks can inherit a parent's cache key while carrying their own session
+		// identity. The mapping must not depend on the current request's session.
+		state.promptCacheKey = codexAccountIdentityUUID(state, "session", promptCacheKey)
 		if state.promptCacheKey != promptCacheKey {
 			rawJSON, _ = sjson.SetBytes(rawJSON, "prompt_cache_key", state.promptCacheKey)
 			state.promptCacheKeyWasRemapped = true
@@ -221,8 +241,10 @@ func applyCodexAccountIdentityHeaders(headers http.Header, state *codexAccountId
 	}{
 		{name: "X-Codex-Installation-Id", kind: "installation"},
 		{name: "Thread-Id", kind: "thread"},
+		{name: "X-Codex-Parent-Thread-Id", kind: "thread"},
 		{name: "X-Codex-Window-Id", kind: "window"},
-		{name: "X-Client-Request-Id", kind: "request"},
+		// Native Codex uses its thread ID as the client request ID.
+		{name: "X-Client-Request-Id", kind: "thread"},
 	} {
 		raw := strings.TrimSpace(headerValueCaseInsensitive(headers, field.name))
 		if raw != "" {

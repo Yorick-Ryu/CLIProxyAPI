@@ -12,6 +12,7 @@ func TestLoadConfigOptional_CodexHeaderDefaults(t *testing.T) {
 	configYAML := []byte(`
 codex-header-defaults:
   user-agent: "  my-codex-client/1.0  "
+  version: "  0.162.0  "
   beta-features: "  feature-a,feature-b  "
 `)
 	if err := os.WriteFile(configPath, configYAML, 0o600); err != nil {
@@ -28,6 +29,9 @@ codex-header-defaults:
 	}
 	if got := cfg.CodexHeaderDefaults.BetaFeatures; got != "feature-a,feature-b" {
 		t.Fatalf("BetaFeatures = %q, want %q", got, "feature-a,feature-b")
+	}
+	if got := cfg.CodexHeaderDefaults.Version; got != "0.162.0" {
+		t.Fatalf("Version = %q, want %q", got, "0.162.0")
 	}
 	if cfg.Codex.DisableCodexCloaking {
 		t.Fatal("DisableCodexCloaking = true, want default false")
