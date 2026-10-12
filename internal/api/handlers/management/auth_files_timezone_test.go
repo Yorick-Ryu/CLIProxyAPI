@@ -58,7 +58,7 @@ func TestPatchAuthFileTimezoneSettings(t *testing.T) {
 	if saved["codex_timezone_mode"] != "fixed" || saved["codex_timezone"] != "Asia/Tokyo" {
 		t.Fatal("settings not persisted")
 	}
-	entry := h.buildAuthFileEntry(get())
+	entry := h.buildAuthFileEntry(get(), authFileQuotaContext{})
 	if entry["codex_timezone_mode"] != "fixed" || entry["codex_timezone"] != "Asia/Tokyo" {
 		t.Fatal("account list omits timezone")
 	}

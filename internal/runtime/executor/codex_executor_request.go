@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -65,6 +66,9 @@ func (e *CodexExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Aut
 		return nil
 	}
 	apiKey, _ := codexCreds(auth)
+	if errSIWC := ensureCodexSIWCCredentials(auth, apiKey); errSIWC != nil {
+		return errSIWC
+	}
 	if strings.TrimSpace(apiKey) != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	} else {
@@ -189,7 +193,13 @@ func (e *CodexExecutor) prepareCachedRequest(ctx context.Context, from sdktransl
 		return nil, nil, codexIdentityConfuseState{}, err
 	}
 	if cache.ID != "" {
-		httpReq.Header.Set("Session-Id", cache.ID)
+		sessionID := cache.ID
+		if codexUseSIWC(auth) && accountIdentityState.promptCacheKeyWasRemapped {
+			// SIWC copies this header into X-Client-Request-Id before the
+			// account header mapping, so both must start from the original ID.
+			sessionID = accountIdentityState.originalPromptCacheKey
+		}
+		httpReq.Header.Set("Session-Id", sessionID)
 	}
 	return httpReq, rawJSON, identityState, nil
 }
@@ -410,12 +420,74 @@ func applyCodexDirectImageHeaders(r *http.Request, auth *cliproxyauth.Auth, toke
 	applyCodexHeadersFromSources(r, auth, token, stream, cfg, ginHeaders)
 }
 
+func codexSIWCUserAgent(cfg *config.Config) string {
+	agentName := config.DefaultSignInWithChatGPTIdentifier
+	if cfg != nil {
+		agentName = cfg.Codex.EffectiveSignInWithChatGPTIdentifier()
+	}
+	return fmt.Sprintf("%s (%s; %s)", agentName, runtime.GOOS, runtime.GOARCH)
+}
+
+func applyCodexSIWCRequestBodyRules(body []byte, hasExplicitInstructions bool) []byte {
+	body = helps.SetBoolIfDifferent(body, "store", false)
+	body = helps.SetBoolIfDifferent(body, "stream", true)
+	return stripCodexSIWCUnsupportedFields(body, hasExplicitInstructions)
+}
+
+func applyCodexSIWCWebsocketBodyRules(body []byte, hasExplicitInstructions bool) []byte {
+	body = helps.SetBoolIfDifferent(body, "store", false)
+	body, _ = sjson.DeleteBytes(body, "stream")
+	body, _ = sjson.DeleteBytes(body, "background")
+	return stripCodexSIWCUnsupportedFields(body, hasExplicitInstructions)
+}
+
+func applyCodexSIWCCompactBodyRules(body []byte, hasExplicitInstructions bool) []byte {
+	body, _ = sjson.DeleteBytes(body, "stream")
+	body, _ = sjson.DeleteBytes(body, "store")
+	return stripCodexSIWCUnsupportedFields(body, hasExplicitInstructions)
+}
+
+func stripCodexSIWCUnsupportedFields(body []byte, hasExplicitInstructions bool) []byte {
+	body, _ = sjson.DeleteBytes(body, "prompt_cache_retention")
+	body, _ = sjson.DeleteBytes(body, "prompt_cache_options")
+	body, _ = sjson.DeleteBytes(body, "max_output_tokens")
+	body, _ = sjson.DeleteBytes(body, "max_completion_tokens")
+	body, _ = sjson.DeleteBytes(body, "temperature")
+	if !hasExplicitInstructions {
+		if inst := gjson.GetBytes(body, "instructions"); inst.Exists() && strings.TrimSpace(inst.String()) == "" {
+			body, _ = sjson.DeleteBytes(body, "instructions")
+		}
+	}
+	return body
+}
+
 func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, token string, stream bool, cfg *config.Config, ginHeaders http.Header) {
 	r.Header.Set("Content-Type", "application/json")
 	if strings.TrimSpace(token) != "" {
 		r.Header.Set("Authorization", "Bearer "+token)
 	} else {
 		r.Header.Del("Authorization")
+	}
+
+	if codexUseSIWC(auth) {
+		if sessionID := strings.TrimSpace(r.Header.Get("Session-Id")); sessionID != "" {
+			r.Header.Del("Session-Id")
+			setHeaderCasePreserved(r.Header, "session_id", sessionID)
+			r.Header.Set("X-Client-Request-Id", sessionID)
+		}
+		r.Header.Set("User-Agent", codexSIWCUserAgent(cfg))
+		if stream {
+			r.Header.Set("Accept", "text/event-stream")
+		} else {
+			r.Header.Set("Accept", "application/json")
+		}
+		r.Header.Set("Connection", "Keep-Alive")
+		var attrs map[string]string
+		if auth != nil {
+			attrs = auth.Attributes
+		}
+		util.ApplyCustomHeadersFromAttrs(r, attrs, ginHeaders)
+		return
 	}
 
 	if ginHeaders != nil && ginHeaders.Get("X-Codex-Beta-Features") != "" {
@@ -488,7 +560,7 @@ const codexRoutingHintHeader = "X-Codex-Routing-Hint"
 // API-key requests are not touched, matching native Codex, which sends no hint
 // to API-key providers.
 func applyCodexRoutingHint(ctx context.Context, headers http.Header, auth *cliproxyauth.Auth, baseModel string, upstreamBody []byte, clientHeaders http.Header) {
-	if codexAuthUsesAPIKey(auth) {
+	if codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) {
 		return
 	}
 	deleteHeaderCaseInsensitive(headers, codexRoutingHintHeader)
