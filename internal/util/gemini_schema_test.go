@@ -3524,3 +3524,39 @@ func TestCleanJSONSchema_PreservesMultiBranchAnyOfOneOf_Issue3662(t *testing.T) 
 		}
 	})
 }
+
+func TestCleanJSONSchemaForAntigravityClaudeTool_ProjectsUnions(t *testing.T) {
+	for _, keyword := range []string{"anyOf", "oneOf"} {
+		for _, tc := range []struct {
+			name, branches, wantType, wantHint string
+			wantNullable                       bool
+		}{
+			{"object beats boolean and array", `[{"type":"boolean"},{"type":"object","properties":{"enabled":{"type":"boolean"}},"required":["enabled"]},{"type":"array","items":{"type":"string"}}]`, "object", "Accepts: boolean | object | array", false},
+			{"array beats string", `[{"type":"string"},{"type":"array","items":{"type":"string"}}]`, "array", "Accepts: string | array", false},
+			{"nullable object", `[{"type":"null"},{"type":"boolean"},{"type":"object","properties":{"enabled":{"type":"boolean"}}}]`, "object", "Accepts: null | boolean | object", true},
+			{"filtered boolean schemas", `[false,{"type":"boolean"},{"type":"array","items":{"type":"string"}}]`, "array", "Accepts: boolean | array", false},
+			{"null only", `[{"type":"null"}]`, "null", "Original description", false},
+		} {
+			t.Run(keyword+"/"+tc.name, func(t *testing.T) {
+				input := `{"type":"object","properties":{"value":{"description":"Original description","` + keyword + `":` + tc.branches + `}}}`
+				got := gjson.Parse(CleanJSONSchemaForAntigravityClaudeTool(input))
+				value := got.Get("properties.value")
+				if value.Get("anyOf").Exists() || value.Get("oneOf").Exists() || value.Get("type").String() != tc.wantType {
+					t.Fatalf("union was not projected to %s: %s", tc.wantType, got.Raw)
+				}
+				if value.Get("nullable").Bool() != tc.wantNullable {
+					t.Fatalf("unexpected nullable: %s", value.Raw)
+				}
+				if desc := value.Get("description").String(); !strings.Contains(desc, "Original description") || !strings.Contains(desc, tc.wantHint) {
+					t.Fatalf("missing description hints: %s", value.Raw)
+				}
+				if tc.wantType == "object" && value.Get("properties.enabled.type").String() != "boolean" {
+					t.Fatalf("selected object fields were lost: %s", value.Raw)
+				}
+				if tc.wantType == "array" && value.Get("items.type").String() != "string" {
+					t.Fatalf("selected array items were lost: %s", value.Raw)
+				}
+			})
+		}
+	}
+}

@@ -317,7 +317,7 @@ func TestSanitizeAntigravityRequestSchemasMatchesLegacy(t *testing.T) {
 	for fixtureIndex, fixture := range fixtures {
 		for _, useAntigravitySchema := range []bool{false, true} {
 			want := legacySanitizeAntigravityRequestSchemas(fixture, useAntigravitySchema)
-			got := sanitizeAntigravityRequestSchemas(fixture, useAntigravitySchema)
+			got := sanitizeAntigravityRequestSchemas(fixture, useAntigravitySchema, false)
 			if got != want {
 				t.Fatalf("case %d antigravity=%t differs: input_bytes=%d got_bytes=%d want_bytes=%d", fixtureIndex, useAntigravitySchema, len(fixture), len(got), len(want))
 			}
