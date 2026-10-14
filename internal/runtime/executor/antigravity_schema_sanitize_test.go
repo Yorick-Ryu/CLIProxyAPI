@@ -53,7 +53,7 @@ func TestSanitizeAntigravityRequestSchemasPreservesHistory(t *testing.T) {
 		{"antigravity", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := sanitizeAntigravityRequestSchemas(sanitizeTestPayload, tc.useAntigravitySchema)
+			got := sanitizeAntigravityRequestSchemas(sanitizeTestPayload, tc.useAntigravitySchema, false)
 
 			before := gjson.Get(sanitizeTestPayload, "request.contents")
 			after := gjson.Get(got, "request.contents")
@@ -84,7 +84,7 @@ func TestSanitizeAntigravityRequestSchemasPreservesHistory(t *testing.T) {
 // TestSanitizeAntigravityRequestSchemasStillCleansSchemas verifies the schema itself is still
 // renamed and cleaned, so scoping the cleaner did not disable it.
 func TestSanitizeAntigravityRequestSchemasStillCleansSchemas(t *testing.T) {
-	got := sanitizeAntigravityRequestSchemas(sanitizeTestPayload, false)
+	got := sanitizeAntigravityRequestSchemas(sanitizeTestPayload, false, false)
 
 	decl := "request.tools.0.functionDeclarations.0"
 	if gjson.Get(got, decl+".parametersJsonSchema").Exists() {
@@ -120,7 +120,7 @@ func TestSanitizeAntigravityRequestSchemasCleansResultSchemas(t *testing.T) {
 	  "responseJsonSchema": {"type": "object", "$id": "drop-c", "properties": {"c": {"type": "string"}}}
 	}]}]}}`
 
-	got := sanitizeAntigravityRequestSchemas(payload, false)
+	got := sanitizeAntigravityRequestSchemas(payload, false, false)
 	decl := gjson.Get(got, "request.tools.0.functionDeclarations.0")
 
 	for _, unsupported := range []string{`parameters.\$id`, `response.\$comment`, `responseJsonSchema.\$id`} {
@@ -170,7 +170,7 @@ func TestAntigravitySchemaPathsCoverEverySchemaLocation(t *testing.T) {
 				if !antigravityRequestNeedsSchemaSanitization([]byte(payload)) {
 					t.Fatal("sanitization must trigger for a payload carrying schemas")
 				}
-				got := sanitizeAntigravityRequestSchemas(payload, false)
+				got := sanitizeAntigravityRequestSchemas(payload, false, false)
 
 				check := func(path string) {
 					t.Helper()
@@ -224,7 +224,7 @@ func TestSanitizeAntigravityRequestSchemasMatchesWholePayloadCleaning(t *testing
 			doc := `{"request":{"tools":[{"functionDeclarations":[{"name":"t","parameters":` + schema + `}]}]}}`
 			whole := util.CleanJSONSchemaForAntigravityTool(doc, useAntigravitySchema)
 			want := gjson.Get(whole, schemaPath).Raw
-			got := gjson.Get(sanitizeAntigravityRequestSchemas(doc, useAntigravitySchema), schemaPath).Raw
+			got := gjson.Get(sanitizeAntigravityRequestSchemas(doc, useAntigravitySchema, false), schemaPath).Raw
 			if want != got {
 				t.Errorf("%s (antigravity=%v) diverged from whole-payload cleaning.\nwant: %s\ngot:  %s",
 					name, useAntigravitySchema, want, got)
@@ -234,7 +234,7 @@ func TestSanitizeAntigravityRequestSchemasMatchesWholePayloadCleaning(t *testing
 
 	// Explicitly pin the placeholder, so the equivalence above cannot pass by both sides dropping it.
 	doc := `{"request":{"tools":[{"functionDeclarations":[{"name":"t","parameters":` + shapes["optionalOnly"] + `}]}]}}`
-	got := gjson.Get(sanitizeAntigravityRequestSchemas(doc, true), schemaPath)
+	got := gjson.Get(sanitizeAntigravityRequestSchemas(doc, true, false), schemaPath)
 	if req := got.Get("required").Array(); len(req) != 1 || req[0].String() != "_" {
 		t.Errorf("Claude VALIDATED placeholder missing for an optional-only schema: %s", got.Raw)
 	}
@@ -249,7 +249,7 @@ func TestSanitizeAntigravityRequestSchemasKeepsResponseSchemasPlaceholderFree(t 
 		}}}
 	}}`
 
-	got := sanitizeAntigravityRequestSchemas(payload, true)
+	got := sanitizeAntigravityRequestSchemas(payload, true, false)
 	toolSchema := gjson.Get(got, "request.tools.0.functionDeclarations.0.parameters")
 	if required := toolSchema.Get("required.0").String(); required != "_" {
 		t.Fatalf("tool schema lost VALIDATED placeholder, required[0] = %q: %s", required, got)
@@ -295,7 +295,7 @@ func TestSanitizeAntigravityRequestSchemasProjectsUnionsAndPreservesEnumTypes(t 
 		}}}
 	}}`
 
-	got := sanitizeAntigravityRequestSchemas(payload, true)
+	got := sanitizeAntigravityRequestSchemas(payload, true, false)
 	responseSchema := gjson.Get(got, "request.generationConfig.responseSchema")
 	action := responseSchema.Get("properties.action")
 	if action.Get("anyOf").Exists() || action.Get("type").String() != "object" || !action.Get("nullable").Bool() {
@@ -346,7 +346,7 @@ func TestSanitizeAntigravityToolSchemasKeepNativeTypeAndNullableOnBothPaths(t *t
 	}}]}]}}`
 
 	for _, requirePlaceholder := range []bool{false, true} {
-		got := sanitizeAntigravityRequestSchemas(payload, requirePlaceholder)
+		got := sanitizeAntigravityRequestSchemas(payload, requirePlaceholder, false)
 		schema := gjson.Get(got, "request.tools.0.functionDeclarations.0.parameters")
 		if schema.Get("properties.level.type").String() != "number" {
 			t.Fatalf("placeholder=%v changed numeric tool argument type: %s", requirePlaceholder, schema.Raw)
@@ -454,7 +454,7 @@ func TestSanitizeAntigravityRequestSchemasCleansBothSpellingsInPlace(t *testing.
 		`"responseSchema":{"type":"object","$id":"drop-a","properties":{"canonical":{"type":"string"}}},` +
 		`"response_schema":{"type":"object","$id":"drop-b","properties":{"alias":{"type":"string"}}}}}}`
 
-	got := sanitizeAntigravityRequestSchemas(payload, false)
+	got := sanitizeAntigravityRequestSchemas(payload, false, false)
 
 	for path, prop := range map[string]string{
 		"request.generationConfig.responseSchema":  "canonical",
@@ -489,8 +489,8 @@ func TestSanitizeAntigravityRequestSchemasIsIdempotent(t *testing.T) {
 	    "compound": {"type": "string", "enum": ["a", "b"], "minLength": 1}}}
 	}]}]}}`
 
-	once := sanitizeAntigravityRequestSchemas(payload, false)
-	twice := sanitizeAntigravityRequestSchemas(once, false)
+	once := sanitizeAntigravityRequestSchemas(payload, false, false)
+	twice := sanitizeAntigravityRequestSchemas(once, false, false)
 
 	base := "request.tools.0.functionDeclarations.0.parameters.properties."
 	for _, prop := range []string{"withDesc", "bare", "compound"} {
@@ -540,7 +540,7 @@ func TestSanitizeAntigravityRequestSchemasStripsPropertyNamesEverywhere(t *testi
 						strings.TrimPrefix(genContainer, "request.") + `":{` + gen + `}}}`
 
 					for _, useAntigravitySchema := range []bool{false, true} {
-						got := sanitizeAntigravityRequestSchemas(payload, useAntigravitySchema)
+						got := sanitizeAntigravityRequestSchemas(payload, useAntigravitySchema, false)
 						if strings.Contains(got, `"propertyNames"`) {
 							t.Errorf("antigravity=%v: propertyNames reaches upstream: %s", useAntigravitySchema, got)
 						}
@@ -567,7 +567,7 @@ func TestSanitizeAntigravityRequestSchemasKeepsPropertyNamesInHistory(t *testing
 	}}`
 
 	for _, useAntigravitySchema := range []bool{false, true} {
-		got := sanitizeAntigravityRequestSchemas(payload, useAntigravitySchema)
+		got := sanitizeAntigravityRequestSchemas(payload, useAntigravitySchema, false)
 
 		before := gjson.Get(payload, "request.contents")
 		after := gjson.Get(got, "request.contents")
@@ -626,7 +626,7 @@ func TestSanitizeAntigravityRequestSchemasStripsEncryptedMetadata(t *testing.T) 
 		payload := `{"request":{"tools":[{"` + declContainer + `":[{"name":"test_tool","parameters":` + encryptedSchema + `}]}]}}`
 
 		for _, useAntigravitySchema := range []bool{false, true} {
-			got := sanitizeAntigravityRequestSchemas(payload, useAntigravitySchema)
+			got := sanitizeAntigravityRequestSchemas(payload, useAntigravitySchema, false)
 			if strings.Contains(got, `"encrypted"`) {
 				t.Errorf("declContainer=%s antigravity=%v: 'encrypted' marker survived sanitization: %s", declContainer, useAntigravitySchema, got)
 			}
@@ -673,7 +673,7 @@ func TestSanitizeAntigravityRequestSchemasNormalizesTrueBooleanSubschemas(t *tes
 	}}`
 
 	for _, useAntigravitySchema := range []bool{false, true} {
-		got := sanitizeAntigravityRequestSchemas(payload, useAntigravitySchema)
+		got := sanitizeAntigravityRequestSchemas(payload, useAntigravitySchema, false)
 		decl := gjson.Get(got, "request.tools.0.functionDeclarations.0")
 		params := decl.Get("parameters")
 		if !params.Exists() {

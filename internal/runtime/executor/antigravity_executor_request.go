@@ -73,7 +73,7 @@ func (e *AntigravityExecutor) buildRequest(ctx context.Context, auth *cliproxyau
 		payloadLog []byte
 	)
 	if antigravityRequestNeedsSchemaSanitization(payload) {
-		payloadStr := sanitizeAntigravityRequestSchemas(string(payload), useAntigravitySchema)
+		payloadStr := sanitizeAntigravityRequestSchemas(string(payload), useAntigravitySchema, strings.Contains(modelName, "claude"))
 
 		if strings.Contains(modelName, "claude") {
 			updated, _ := sjson.SetBytes([]byte(payloadStr), "request.toolConfig.functionCallingConfig.mode", "VALIDATED")
@@ -164,8 +164,8 @@ func (e *AntigravityExecutor) buildRequest(ctx context.Context, auth *cliproxyau
 // data keys inside functionCall arguments replayed from conversation history. Running it over the
 // whole document silently mutated that history, so tools lost required argument fields and the
 // model imitated the corrupted examples on later turns.
-func sanitizeAntigravityRequestSchemas(payloadStr string, useAntigravitySchema bool) string {
-	payloadStr = sanitizeAntigravityToolSchemas(payloadStr, useAntigravitySchema)
+func sanitizeAntigravityRequestSchemas(payloadStr string, useAntigravitySchema, projectUnions bool) string {
+	payloadStr = sanitizeAntigravityToolSchemas(payloadStr, useAntigravitySchema, projectUnions)
 	return sanitizeAntigravityGenerationSchemas(payloadStr)
 }
 
@@ -173,14 +173,14 @@ func sanitizeAntigravityRequestSchemas(payloadStr string, useAntigravitySchema b
 // a small document containing only request.tools, then replaces that subtree
 // once. This preserves rewrite order and bytes without copying the full request
 // for every declaration schema.
-func sanitizeAntigravityToolSchemas(payloadStr string, useAntigravitySchema bool) string {
+func sanitizeAntigravityToolSchemas(payloadStr string, useAntigravitySchema, projectUnions bool) string {
 	tools := gjson.Get(payloadStr, "request.tools")
 	if !tools.IsArray() {
 		return payloadStr
 	}
 
 	toolDocument := `{"request":{"tools":` + tools.Raw + `}}`
-	toolDocument = sanitizeAntigravityToolSchemaDocument(toolDocument, useAntigravitySchema)
+	toolDocument = sanitizeAntigravityToolSchemaDocument(toolDocument, useAntigravitySchema, projectUnions)
 	cleanedTools := gjson.Get(toolDocument, "request.tools")
 	if !cleanedTools.IsArray() || cleanedTools.Raw == tools.Raw {
 		return payloadStr
@@ -193,7 +193,7 @@ func sanitizeAntigravityToolSchemas(payloadStr string, useAntigravitySchema bool
 	return string(updated)
 }
 
-func sanitizeAntigravityToolSchemaDocument(payloadStr string, useAntigravitySchema bool) string {
+func sanitizeAntigravityToolSchemaDocument(payloadStr string, useAntigravitySchema, projectUnions bool) string {
 	for _, base := range antigravityFunctionDeclarationPaths(payloadStr) {
 		oldPath := base + ".parametersJsonSchema"
 		if !gjson.Get(payloadStr, oldPath).Exists() {
@@ -208,6 +208,9 @@ func sanitizeAntigravityToolSchemaDocument(payloadStr string, useAntigravitySche
 	}
 
 	toolSchemaCleaner := func(schema string) string {
+		if projectUnions {
+			return util.CleanJSONSchemaForAntigravityClaudeTool(schema)
+		}
 		return util.CleanJSONSchemaForAntigravityTool(schema, useAntigravitySchema)
 	}
 	cleanNestedToolSchema := func(schemaRaw string) string {

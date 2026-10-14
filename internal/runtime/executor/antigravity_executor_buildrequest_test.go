@@ -533,3 +533,48 @@ func assertSchemaSanitizedAndPropertyPreserved(t *testing.T, params map[string]a
 		t.Fatalf("deprecated should be removed from nested schema")
 	}
 }
+
+func TestAntigravityBuildRequest_ClaudeProjectsToolUnionsOnly(t *testing.T) {
+	payload := []byte(`{"request":{
+		"tools":[{"function_declarations":[{"name":"update_setting","parametersJsonSchema":{
+			"type":"object","properties":{"value":{"description":"Setting value","anyOf":[
+				{"type":"boolean"},
+				{"type":"object","properties":{"enabled":{"type":"boolean"}},"required":["enabled"]},
+				{"type":"array","items":{"type":"string"}}
+			]}}
+		}}]}],
+		"contents":[{"role":"model","parts":[{"functionCall":{"name":"update_setting","args":{"value":true,"anyOf":"keep-history"}}}]}],
+		"generationConfig":{"responseJsonSchema":{"type":"object","properties":{"value":{"anyOf":[{"type":"string"},{"type":"boolean"}]}}}}
+	}}`)
+	for _, model := range []string{"claude-opus-5-5", "claude-sonnet-4-6", "gemini-2.5-pro", "gemini-3-pro", "gemini-3.1-pro"} {
+		t.Run(model, func(t *testing.T) {
+			body := buildRequestBodyFromRawPayload(t, model, payload)
+			decl := extractFirstFunctionDeclaration(t, body)
+			params := decl["parameters"].(map[string]any)
+			value := params["properties"].(map[string]any)["value"].(map[string]any)
+			request := body["request"].(map[string]any)
+			if strings.Contains(model, "claude") {
+				if _, exists := value["anyOf"]; exists || value["type"] != "object" {
+					t.Fatalf("Claude tool union must project to object, got %v", value)
+				}
+				if !strings.Contains(value["description"].(string), "Accepts: boolean | object | array") {
+					t.Fatalf("alternate type hints were lost: %v", value)
+				}
+				if request["toolConfig"].(map[string]any)["functionCallingConfig"].(map[string]any)["mode"] != "VALIDATED" {
+					t.Fatal("Claude VALIDATED mode was lost")
+				}
+			} else if branches, ok := value["anyOf"].([]any); !ok || len(branches) != 3 {
+				t.Fatalf("Gemini must retain all three branches: %v", value)
+			}
+			parts := request["contents"].([]any)[0].(map[string]any)["parts"].([]any)
+			args := parts[0].(map[string]any)["functionCall"].(map[string]any)["args"].(map[string]any)
+			if args["value"] != true || args["anyOf"] != "keep-history" {
+				t.Fatalf("conversation arguments were rewritten: %v", args)
+			}
+			responseValue := request["generationConfig"].(map[string]any)["responseJsonSchema"].(map[string]any)["properties"].(map[string]any)["value"].(map[string]any)
+			if branches, ok := responseValue["anyOf"].([]any); !ok || len(branches) != 2 {
+				t.Fatalf("tool compatibility policy must not alter response schemas: %v", responseValue)
+			}
+		})
+	}
+}

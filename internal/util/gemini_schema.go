@@ -33,6 +33,7 @@ type jsonSchemaCleanOptions struct {
 	removeToolTitle                   bool
 	removeGeminiMetadata              bool
 	flattenUnions                     bool
+	projectMultiBranchUnions          bool
 	forceEnumStringType               bool
 	dropAllEnums                      bool
 	dropBooleanEnums                  bool
@@ -51,15 +52,27 @@ func CleanJSONSchemaForAntigravity(jsonStr string) string {
 // CleanJSONSchemaForAntigravityTool transforms an Antigravity function schema. The private
 // backend accepts enum members only as strings, but the declared type still controls the JSON
 // type of generated function arguments, so numeric and boolean types must not be rewritten.
-// requirePlaceholder is used only for Claude VALIDATED mode.
+// requirePlaceholder retains the existing placeholder policy for VALIDATED tool schemas.
 func CleanJSONSchemaForAntigravityTool(jsonStr string, requirePlaceholder bool) string {
+	return cleanAntigravityToolSchema(jsonStr, requirePlaceholder, false)
+}
+
+// CleanJSONSchemaForAntigravityClaudeTool projects unions to a representative branch.
+// Antigravity's Claude route rejects multi-branch unions on its native Schema carrier.
+// Keep alternate types as description hints, matching the pre-union-preservation policy.
+func CleanJSONSchemaForAntigravityClaudeTool(jsonStr string) string {
+	return cleanAntigravityToolSchema(jsonStr, true, true)
+}
+
+func cleanAntigravityToolSchema(jsonStr string, requirePlaceholder, projectUnions bool) string {
 	return cleanJSONSchema(jsonStr, jsonSchemaCleanOptions{
-		addPlaceholder:       requirePlaceholder,
-		addMissingArrayItems: true,
-		antigravitySemantics: true,
-		removeToolTitle:      !requirePlaceholder,
-		flattenUnions:        true,
-		dropAllEnums:         true,
+		addPlaceholder:           requirePlaceholder,
+		addMissingArrayItems:     true,
+		antigravitySemantics:     true,
+		removeToolTitle:          !requirePlaceholder,
+		flattenUnions:            true,
+		projectMultiBranchUnions: projectUnions,
+		dropAllEnums:             true,
 	})
 }
 
@@ -136,7 +149,7 @@ func cleanJSONSchema(jsonStr string, options jsonSchemaCleanOptions) string {
 	jsonStr = mergeConditionals(jsonStr)
 	jsonStr = mergeAllOf(jsonStr)
 	if options.flattenUnions {
-		jsonStr = flattenAnyOfOneOf(jsonStr, options.preserveStandardConstraints)
+		jsonStr = flattenAnyOfOneOf(jsonStr, options.preserveStandardConstraints, options.projectMultiBranchUnions)
 	}
 	jsonStr = flattenTypeArrays(jsonStr, options.antigravitySemantics)
 
@@ -1207,7 +1220,7 @@ func partitionUnionBranches(items []gjson.Result, parentProps gjson.Result) (non
 	return
 }
 
-func flattenAnyOfOneOf(jsonStr string, preserveOneOf bool) string {
+func flattenAnyOfOneOf(jsonStr string, preserveOneOf, projectUnions bool) string {
 	pathsByField := findPathsByFields(jsonStr, []string{"oneOf", "anyOf"})
 	var paths []string
 	for _, key := range []string{"oneOf", "anyOf"} {
@@ -1239,7 +1252,7 @@ func flattenAnyOfOneOf(jsonStr string, preserveOneOf bool) string {
 		// protobuf Schema has only a single anyOf field and cannot represent a second union
 		// conjunction structurally. Preserve anyOf as the primary union and move the sibling
 		// oneOf constraint to a description hint instead of concatenating it into anyOf.
-		if key == "oneOf" && !preserveOneOf && parent.Get("anyOf").IsArray() {
+		if key == "oneOf" && !preserveOneOf && !projectUnions && parent.Get("anyOf").IsArray() {
 			jsonStr = appendHint(jsonStr, parentPath, "oneOf: "+arr.Raw)
 			jsonStr, _ = sjson.Delete(jsonStr, p)
 			continue
@@ -1252,7 +1265,7 @@ func flattenAnyOfOneOf(jsonStr string, preserveOneOf bool) string {
 		// Preserve multi-branch unions (2+ standalone non-null branches) so non-first branches are not lost.
 		// On native Gemini/Antigravity Schema carriers (!preserveOneOf), normalize oneOf to anyOf because
 		// the protobuf Schema message supports anyOf but rejects oneOf.
-		if len(nonNullItems) >= 2 {
+		if len(nonNullItems) >= 2 && !projectUnions {
 			targetKey := key
 			if key == "oneOf" && !preserveOneOf {
 				targetKey = "anyOf"
@@ -1331,6 +1344,10 @@ func flattenAnyOfOneOf(jsonStr string, preserveOneOf bool) string {
 		parentDesc := gjson.Get(jsonStr, descriptionPath(parentPath)).String()
 		_, allTypes := selectBest(candidateItems)
 		selected := nonNullItems[0].Raw
+		if projectUnions {
+			bestIdx, _ := selectBest(nonNullItems)
+			selected = nonNullItems[bestIdx].Raw
+		}
 		if hasNull {
 			updated, _ := sjson.SetBytes([]byte(selected), "nullable", true)
 			selected = string(updated)
