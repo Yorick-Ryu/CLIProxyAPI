@@ -191,7 +191,7 @@ type CodexConfig struct {
 	// AnalyticsEnabled overrides analytics_enabled in existing turn metadata when set.
 	// It does not disable telemetry connections made independently by the client.
 	AnalyticsEnabled *bool `yaml:"analytics_enabled,omitempty" json:"analytics_enabled,omitempty"`
-	// Timezone controls opt-in rewriting of Codex environment timezone/date tags.
+	// Timezone controls opt-in generation of the current Codex environment date and timezone.
 	Timezone CodexTimezoneConfig `yaml:"timezone" json:"timezone"`
 	// WebsocketsDefault applies when a Codex credential omits websockets. Nil means true.
 	WebsocketsDefault *bool `yaml:"websockets-default,omitempty" json:"websockets-default,omitempty"`

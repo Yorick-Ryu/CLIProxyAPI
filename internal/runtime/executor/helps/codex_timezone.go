@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -22,13 +24,22 @@ import (
 
 var environmentBlock = regexp.MustCompile(`(?s)^\s*<environment_context>[^<]*(?:<[^>]+>[^<]*)*</environment_context>\s*$`)
 var timezoneTag = regexp.MustCompile(`<timezone>[^<>]*</timezone>`)
+var currentDateTag = regexp.MustCompile(`<current_date>[^<>]*</current_date>|<current_date\s+status="unavailable"\s*/>`)
+var codexEnvironmentNow = time.Now
 
-// environmentTexts selects only standalone user environment blocks, never tool output or instructions.
-func environmentTexts(body []byte) map[string]string {
-	out := make(map[string]string)
+type environmentText struct {
+	path string
+	text string
+}
+
+// latestEnvironmentText selects the last standalone user environment block.
+// Earlier snapshots are historical context and must not be regenerated as today.
+func latestEnvironmentText(body []byte) (environmentText, bool) {
 	if !gjson.ValidBytes(body) {
-		return out
+		return environmentText{}, false
 	}
+	var latest environmentText
+	found := false
 	for i, item := range gjson.GetBytes(body, "input").Array() {
 		if item.Get("role").String() != "user" {
 			continue
@@ -40,8 +51,8 @@ func environmentTexts(body []byte) map[string]string {
 		content := item.Get("content")
 		prefix := fmt.Sprintf("input.%d.content", i)
 		add := func(path string, value gjson.Result) {
-			if value.Type == gjson.String && environmentBlock.MatchString(value.Str) && timezoneTag.MatchString(value.Str) {
-				out[path] = value.Str
+			if value.Type == gjson.String && environmentBlock.MatchString(value.Str) {
+				latest, found = environmentText{path: path, text: value.Str}, true
 			}
 		}
 		if content.Type == gjson.String {
@@ -54,32 +65,96 @@ func environmentTexts(body []byte) map[string]string {
 			}
 		}
 	}
-	return out
+	return latest, found
 }
 
-// rewriteTimezone changes timezone tags only. Date-only client metadata lacks the
-// original instant required for timezone conversion, so historical dates are preserved.
-func rewriteTimezone(body []byte, texts map[string]string, zone string) []byte {
-	_, err := time.LoadLocation(zone)
-	if err != nil || zone == "" || zone == "Local" {
+// rewriteEnvironmentTime uses one instant and location for both fields and
+// preserves the surrounding text, message order, and historical snapshots.
+func rewriteEnvironmentTime(body []byte, env environmentText, zone string, now time.Time) []byte {
+	if zone == "" || zone == "Local" {
 		return body
 	}
-	out := body
-	for path, text := range texts {
-		next := timezoneTag.ReplaceAllString(text, "<timezone>"+zone+"</timezone>")
-		if next == text {
-			continue
-		}
-		out, err = sjson.SetBytes(out, path, next)
-		if err != nil {
-			return body
-		}
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		return body
 	}
-	return out
+	date := "<current_date>" + now.In(loc).Format("2006-01-02") + "</current_date>"
+	timezone := "<timezone>" + zone + "</timezone>"
+	text := env.text
+	var missing []string
+	if currentDateTag.MatchString(text) {
+		text = currentDateTag.ReplaceAllString(text, date)
+	} else {
+		missing = append(missing, date)
+	}
+	if timezoneTag.MatchString(text) {
+		text = timezoneTag.ReplaceAllString(text, timezone)
+	} else {
+		missing = append(missing, timezone)
+	}
+	if len(missing) != 0 {
+		text = strings.Replace(text, "</environment_context>", "  "+strings.Join(missing, "\n  ")+"\n</environment_context>", 1)
+	}
+	if text == env.text {
+		return body
+	}
+	updated, err := sjson.SetBytes(body, env.path, text)
+	if err != nil {
+		return body
+	}
+	return updated
 }
 
-// ApplyCodexTimezone is shared by HTTP, compact, and WebSocket request preparation.
-// Lookup failures are deliberately fail-open and no credential is sent to the GeoIP service.
+// localEnvironmentTimezone reads the CPA process environment, never its IP.
+// Like Codex CLI, an unresolvable IANA name falls back to UTC for both fields.
+func localEnvironmentTimezone() string {
+	if value, present := os.LookupEnv("TZ"); present {
+		value = strings.TrimPrefix(value, ":")
+		if value == "" {
+			return "Etc/UTC"
+		}
+		if zone := environmentTimezoneName(value); zone != "" {
+			return zone
+		}
+		return "Etc/UTC"
+	}
+	if target, err := filepath.EvalSymlinks("/etc/localtime"); err == nil {
+		if zone := environmentTimezoneName(target); zone != "" {
+			return zone
+		}
+	}
+	if raw, err := os.ReadFile("/etc/timezone"); err == nil {
+		if zone := environmentTimezoneName(strings.TrimSpace(string(raw))); zone != "" {
+			return zone
+		}
+	}
+	if zone := environmentTimezoneName(time.Local.String()); zone != "" {
+		return zone
+	}
+	return "Etc/UTC"
+}
+
+func environmentTimezoneName(value string) string {
+	if filepath.IsAbs(value) {
+		target, err := filepath.EvalSymlinks(value)
+		if err != nil {
+			return ""
+		}
+		path := filepath.ToSlash(target)
+		_, value, _ = strings.Cut(path, "/zoneinfo/")
+		value = strings.TrimPrefix(strings.TrimPrefix(value, "posix/"), "right/")
+	}
+	if value == "" || value == "Local" {
+		return ""
+	}
+	if _, err := time.LoadLocation(value); err != nil {
+		return ""
+	}
+	return value
+}
+
+// ApplyCodexTimezone is shared by HTTP, compact, and WebSocket preparation.
+// GeoIP failures preserve the entire input, without partial date/timezone updates.
 func ApplyCodexTimezone(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, body []byte) []byte {
 	if cfg == nil {
 		return body
@@ -97,15 +172,17 @@ func ApplyCodexTimezone(ctx context.Context, cfg *config.Config, auth *cliproxya
 	if policy.Mode == "" || policy.Mode == "off" || policy.Validate() != nil {
 		return body
 	}
-	texts := environmentTexts(body)
-	if len(texts) == 0 {
+	env, found := latestEnvironmentText(body)
+	if !found {
 		return body
 	}
-	zone := policy.Zone
-	if policy.Mode == "egress" {
+	var zone string
+	if policy.Mode == "local" {
+		zone = localEnvironmentTimezone()
+	} else {
 		zone = codexTimezoneCache.resolve(ctx, cfg, auth)
 	}
-	return rewriteTimezone(body, texts, zone)
+	return rewriteEnvironmentTime(body, env, zone, codexEnvironmentNow())
 }
 
 type timezoneEntry struct {

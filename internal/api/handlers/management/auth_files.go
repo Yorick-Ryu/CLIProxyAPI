@@ -782,9 +782,6 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quota authFileQu
 	}
 	if policy, err := config.CodexTimezoneFromMetadata(auth.Metadata); err == nil && policy != nil {
 		entry["codex_timezone_mode"] = policy.Mode
-		if policy.Zone != "" {
-			entry["codex_timezone"] = policy.Zone
-		}
 	}
 	if requestRetry, ok := auth.RequestRetryOverride(); ok {
 		entry["request_retry"] = requestRetry

@@ -347,6 +347,10 @@ func (h *Handler) PatchAuthFileFields(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid field %s", fieldPath)})
 			return
 		}
+		if fieldPath == "codex_timezone" && value != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "codex_timezone is retired; use codex_timezone_mode: off, local, or egress"})
+			return
+		}
 		if targetAuth.Metadata == nil {
 			targetAuth.Metadata = make(map[string]any)
 		}
@@ -392,18 +396,6 @@ func (h *Handler) PatchAuthFileFields(c *gin.Context) {
 		changed = true
 	}
 	if _, modeTouched := touchedRoots["codex_timezone_mode"]; modeTouched {
-		if _, err := config.CodexTimezoneFromMetadata(targetAuth.Metadata); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-	}
-	if _, zoneTouched := touchedRoots["codex_timezone"]; zoneTouched {
-		if value := targetAuth.Metadata["codex_timezone"]; value != nil {
-			if _, ok := value.(string); !ok {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "codex_timezone must be a string"})
-				return
-			}
-		}
 		if _, err := config.CodexTimezoneFromMetadata(targetAuth.Metadata); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
