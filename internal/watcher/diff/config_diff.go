@@ -140,6 +140,7 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 		changes = append(changes, fmt.Sprintf("antigravity.connection-pool.max-idle-conns-per-host: %s -> %s", oldMaxIdle, newMaxIdle))
 	}
 
+	changes = appendOptionalBoolChange(changes, "codex.analytics_enabled", oldCfg.Codex.AnalyticsEnabled, newCfg.Codex.AnalyticsEnabled)
 	if !reflect.DeepEqual(oldCfg.Codex.Timezone, newCfg.Codex.Timezone) {
 		changes = append(changes, "codex.timezone: updated")
 	}

@@ -188,6 +188,9 @@ type AntigravityConnectionPoolConfig struct {
 
 // CodexConfig configures provider-wide Codex request behavior.
 type CodexConfig struct {
+	// AnalyticsEnabled overrides analytics_enabled in existing turn metadata when set.
+	// It does not disable telemetry connections made independently by the client.
+	AnalyticsEnabled *bool `yaml:"analytics_enabled,omitempty" json:"analytics_enabled,omitempty"`
 	// Timezone controls opt-in rewriting of Codex environment timezone/date tags.
 	Timezone CodexTimezoneConfig `yaml:"timezone" json:"timezone"`
 	// WebsocketsDefault applies when a Codex credential omits websockets. Nil means true.

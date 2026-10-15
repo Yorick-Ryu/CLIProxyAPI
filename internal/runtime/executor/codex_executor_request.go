@@ -187,6 +187,7 @@ func (e *CodexExecutor) prepareCachedRequest(ctx context.Context, from sdktransl
 	if identityState.convergence.promptCacheKeyWasConverged {
 		cache.ID = identityState.convergence.sessionID
 	}
+	rawJSON = helps.ApplyCodexAnalyticsBody(e.cfg, rawJSON)
 	rawJSON = helps.FinalizePayload(ctx, rawJSON)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
 	if err != nil {
@@ -462,6 +463,7 @@ func stripCodexSIWCUnsupportedFields(body []byte, hasExplicitInstructions bool) 
 }
 
 func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, token string, stream bool, cfg *config.Config, ginHeaders http.Header) {
+	defer helps.ApplyCodexAnalyticsHeaders(cfg, r.Header)
 	r.Header.Set("Content-Type", "application/json")
 	if strings.TrimSpace(token) != "" {
 		r.Header.Set("Authorization", "Bearer "+token)
