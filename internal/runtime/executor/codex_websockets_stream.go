@@ -855,6 +855,7 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
 		convergenceSourcePayload = upstreamBody
 	}
 	upstreamBody, identityState.convergence = applyCodexIdentityConvergenceBody(e.cfg, auth, convergenceSourcePayload, upstreamBody, opts.Headers)
+	upstreamBody = helps.ApplyCodexAnalyticsBody(e.cfg, upstreamBody)
 	upstreamBody = finalizePayload(upstreamBody)
 	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, preserveNativeOutput, opts.Headers)
 	applyCodexRoutingHint(ctx, wsHeaders, auth, baseModel, upstreamBody, opts.Headers)

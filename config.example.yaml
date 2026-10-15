@@ -1028,6 +1028,10 @@ oauth:
 
     # Codex provider behavior.
     codex:
+      # Override analytics_enabled in existing turn metadata (header and body).
+      # Omit or use null to preserve client values; false/true report that value.
+      # This does not control client telemetry connections. Explicit payload rules take precedence.
+      analytics_enabled: null
       # BeiAPI fork: preserve timezone unless explicitly overridden.
       timezone:
         mode: off
