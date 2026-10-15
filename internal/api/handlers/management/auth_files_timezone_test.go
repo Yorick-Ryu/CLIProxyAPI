@@ -36,7 +36,7 @@ func TestPatchAuthFileTimezoneSettings(t *testing.T) {
 			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 		}
 	}
-	patch(`"codex_timezone_mode":"fixed","codex_timezone":"Asia/Tokyo"`, 200)
+	patch(`"codex_timezone_mode":"local"`, 200)
 	get := func() *coreauth.Auth {
 		a, ok := manager.GetByID("account.json")
 		if !ok {
@@ -44,7 +44,7 @@ func TestPatchAuthFileTimezoneSettings(t *testing.T) {
 		}
 		return a
 	}
-	if get().Metadata["codex_timezone"] != "Asia/Tokyo" {
+	if get().Metadata["codex_timezone_mode"] != "local" {
 		t.Fatal("not saved")
 	}
 	data, err := os.ReadFile(filepath.Join(authDir, "account.json"))
@@ -55,15 +55,16 @@ func TestPatchAuthFileTimezoneSettings(t *testing.T) {
 	if err = json.Unmarshal(data, &saved); err != nil {
 		t.Fatal(err)
 	}
-	if saved["codex_timezone_mode"] != "fixed" || saved["codex_timezone"] != "Asia/Tokyo" {
+	if saved["codex_timezone_mode"] != "local" {
 		t.Fatal("settings not persisted")
 	}
 	entry := h.buildAuthFileEntry(get(), authFileQuotaContext{})
-	if entry["codex_timezone_mode"] != "fixed" || entry["codex_timezone"] != "Asia/Tokyo" {
+	if entry["codex_timezone_mode"] != "local" {
 		t.Fatal("account list omits timezone")
 	}
-	patch(`"codex_timezone_mode":"fixed","codex_timezone":"invalid/zone"`, 400)
-	if get().Metadata["codex_timezone"] != "Asia/Tokyo" {
+	patch(`"codex_timezone_mode":"fixed"`, 400)
+	patch(`"codex_timezone":"Asia/Tokyo"`, 400)
+	if get().Metadata["codex_timezone_mode"] != "local" {
 		t.Fatal("invalid patch changed live metadata")
 	}
 	patch(`"codex_timezone_mode.nested":"off"`, 400)

@@ -9,8 +9,7 @@ import (
 func TestV8MigrationPreservesForkCodexPolicies(t *testing.T) {
 	raw := []byte(`codex:
   timezone:
-    mode: fixed
-    zone: Asia/Singapore
+    mode: local
   websockets-default: false
   websocket-max-message-bytes: 17416099
   identity-convergence: true

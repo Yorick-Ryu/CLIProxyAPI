@@ -10,7 +10,7 @@ import (
 func TestCodexTimezoneChangeReported(t *testing.T) {
 	oldCfg := &config.Config{}
 	newCfg := &config.Config{Codex: config.CodexConfig{Timezone: config.CodexTimezoneConfig{
-		Mode: "fixed", Zone: "Asia/Tokyo",
+		Mode: "local",
 	}}}
 	if !slices.Contains(BuildConfigChangeDetails(oldCfg, newCfg), "codex.timezone: updated") {
 		t.Fatal("timezone changes must be reported")

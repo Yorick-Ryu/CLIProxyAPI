@@ -1032,10 +1032,13 @@ oauth:
       # Omit or use null to preserve client values; false/true report that value.
       # This does not control client telemetry connections. Explicit payload rules take precedence.
       analytics_enabled: null
-      # BeiAPI fork: preserve timezone unless explicitly overridden.
+      # off preserves client dates/timezones; local uses the CPA process environment;
+      # egress queries the account's actual exit timezone. Default: off.
+      # local/egress generate both fields from one current instant in the latest
+      # environment block only; earlier historical blocks remain unchanged.
+      # See docs/codex-timezone.md for account overrides and migration.
       timezone:
         mode: off
-        zone: ""
       # Used by downstream WebSocket requests; per-account settings override it.
       websockets-default: true
       # Complete uncompressed upstream WS message limit; <= 0 disables the check.
