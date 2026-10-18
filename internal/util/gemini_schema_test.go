@@ -3717,7 +3717,7 @@ func TestCleanJSONSchemaForAntigravityClaudeTool_ProjectsUnions(t *testing.T) {
 		}{
 			{"object beats boolean and array", `[{"type":"boolean"},{"type":"object","properties":{"enabled":{"type":"boolean"}},"required":["enabled"]},{"type":"array","items":{"type":"string"}}]`, "object", "Accepts: boolean | object | array", false},
 			{"array beats string", `[{"type":"string"},{"type":"array","items":{"type":"string"}}]`, "array", "Accepts: string | array", false},
-			{"nullable object", `[{"type":"null"},{"type":"boolean"},{"type":"object","properties":{"enabled":{"type":"boolean"}}}]`, "object", "Accepts: null | boolean | object", true},
+			{"nullable object", `[{"type":"null"},{"type":"boolean"},{"type":"object","properties":{"enabled":{"type":"boolean"}}}]`, "object", "Accepts: boolean | object | null", true},
 			{"filtered boolean schemas", `[false,{"type":"boolean"},{"type":"array","items":{"type":"string"}}]`, "array", "Accepts: boolean | array", false},
 			{"null only", `[{"type":"null"}]`, "null", "Original description", false},
 		} {
