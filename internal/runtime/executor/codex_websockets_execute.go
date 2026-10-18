@@ -100,7 +100,7 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 	body = helps.ApplyCodexTimezone(ctx, e.cfg, auth, body)
 	body = helps.SanitizeCodexInputItemIDs(body)
 	if useSIWC {
-		body = applyCodexSIWCWebsocketBodyRules(body, hasExplicitInstructions)
+		body = applyCodexSIWCWebsocketBodyRules(body, hasExplicitInstructions, cliproxyexecutor.Options{KeepTopLevelEffort: thinking.HasThinkingSuffix(req.Model)})
 	}
 	clientBody := body
 	upstreamBody, accountIdentityState := applyCodexAccountIdentityBodyForConfig(ctx, e.cfg, auth, body)

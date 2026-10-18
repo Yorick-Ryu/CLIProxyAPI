@@ -18,8 +18,8 @@ import (
 const (
 	// antigravityFallbackVersion is the client version reported when the hub
 	// manifest has not been fetched yet or cannot be reached. Cloud Code rejects
-	// newer models for older clients. Keep the fallback current enough to expose
-	// Gemini 4 when the startup manifest cannot be reached.
+	// newer models for clients below 2.23.0, so this floor must stay at or above
+	// that version.
 	antigravityFallbackVersion = "2.23.0"
 	antigravityHubPlatform     = "darwin/arm64"
 	antigravityVersionCacheTTL = 6 * time.Hour

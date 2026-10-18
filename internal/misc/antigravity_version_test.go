@@ -49,7 +49,8 @@ func TestAntigravityLatestVersionUsesCurrentHubFallback(t *testing.T) {
 	}
 }
 
-// The fallback must retain access to the current Gemini 4 model catalog.
+// Cloud Code resolves newer models only for clients reporting at least 2.23.0;
+// older versions get 404 Requested entity was not found.
 func TestAntigravityFallbackVersionMeetsBackendFloor(t *testing.T) {
 	const floorMajor, floorMinor = 2, 23
 
