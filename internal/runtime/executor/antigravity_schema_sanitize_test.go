@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	antigravityclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/antigravity/claude"
 	antigravitychat "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/antigravity/openai/chat-completions"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	"github.com/tidwall/gjson"
@@ -53,7 +54,7 @@ func TestSanitizeAntigravityRequestSchemasPreservesHistory(t *testing.T) {
 		{"antigravity", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := sanitizeAntigravityRequestSchemas(sanitizeTestPayload, tc.useAntigravitySchema, false)
+			got := sanitizeAntigravityRequestSchemasForModel(sanitizeTestPayload, tc.useAntigravitySchema, false)
 
 			before := gjson.Get(sanitizeTestPayload, "request.contents")
 			after := gjson.Get(got, "request.contents")
@@ -84,7 +85,7 @@ func TestSanitizeAntigravityRequestSchemasPreservesHistory(t *testing.T) {
 // TestSanitizeAntigravityRequestSchemasStillCleansSchemas verifies the schema itself is still
 // renamed and cleaned, so scoping the cleaner did not disable it.
 func TestSanitizeAntigravityRequestSchemasStillCleansSchemas(t *testing.T) {
-	got := sanitizeAntigravityRequestSchemas(sanitizeTestPayload, false, false)
+	got := sanitizeAntigravityRequestSchemasForModel(sanitizeTestPayload, false, false)
 
 	decl := "request.tools.0.functionDeclarations.0"
 	if gjson.Get(got, decl+".parametersJsonSchema").Exists() {
@@ -120,7 +121,7 @@ func TestSanitizeAntigravityRequestSchemasCleansResultSchemas(t *testing.T) {
 	  "responseJsonSchema": {"type": "object", "$id": "drop-c", "properties": {"c": {"type": "string"}}}
 	}]}]}}`
 
-	got := sanitizeAntigravityRequestSchemas(payload, false, false)
+	got := sanitizeAntigravityRequestSchemasForModel(payload, false, false)
 	decl := gjson.Get(got, "request.tools.0.functionDeclarations.0")
 
 	for _, unsupported := range []string{`parameters.\$id`, `response.\$comment`, `responseJsonSchema.\$id`} {
@@ -170,7 +171,7 @@ func TestAntigravitySchemaPathsCoverEverySchemaLocation(t *testing.T) {
 				if !antigravityRequestNeedsSchemaSanitization([]byte(payload)) {
 					t.Fatal("sanitization must trigger for a payload carrying schemas")
 				}
-				got := sanitizeAntigravityRequestSchemas(payload, false, false)
+				got := sanitizeAntigravityRequestSchemasForModel(payload, false, false)
 
 				check := func(path string) {
 					t.Helper()
@@ -224,7 +225,7 @@ func TestSanitizeAntigravityRequestSchemasMatchesWholePayloadCleaning(t *testing
 			doc := `{"request":{"tools":[{"functionDeclarations":[{"name":"t","parameters":` + schema + `}]}]}}`
 			whole := util.CleanJSONSchemaForAntigravityTool(doc, useAntigravitySchema)
 			want := gjson.Get(whole, schemaPath).Raw
-			got := gjson.Get(sanitizeAntigravityRequestSchemas(doc, useAntigravitySchema, false), schemaPath).Raw
+			got := gjson.Get(sanitizeAntigravityRequestSchemasForModel(doc, useAntigravitySchema, false), schemaPath).Raw
 			if want != got {
 				t.Errorf("%s (antigravity=%v) diverged from whole-payload cleaning.\nwant: %s\ngot:  %s",
 					name, useAntigravitySchema, want, got)
@@ -234,7 +235,7 @@ func TestSanitizeAntigravityRequestSchemasMatchesWholePayloadCleaning(t *testing
 
 	// Explicitly pin the placeholder, so the equivalence above cannot pass by both sides dropping it.
 	doc := `{"request":{"tools":[{"functionDeclarations":[{"name":"t","parameters":` + shapes["optionalOnly"] + `}]}]}}`
-	got := gjson.Get(sanitizeAntigravityRequestSchemas(doc, true, false), schemaPath)
+	got := gjson.Get(sanitizeAntigravityRequestSchemasForModel(doc, true, false), schemaPath)
 	if req := got.Get("required").Array(); len(req) != 1 || req[0].String() != "_" {
 		t.Errorf("Claude VALIDATED placeholder missing for an optional-only schema: %s", got.Raw)
 	}
@@ -249,7 +250,7 @@ func TestSanitizeAntigravityRequestSchemasKeepsResponseSchemasPlaceholderFree(t 
 		}}}
 	}}`
 
-	got := sanitizeAntigravityRequestSchemas(payload, true, false)
+	got := sanitizeAntigravityRequestSchemasForModel(payload, true, false)
 	toolSchema := gjson.Get(got, "request.tools.0.functionDeclarations.0.parameters")
 	if required := toolSchema.Get("required.0").String(); required != "_" {
 		t.Fatalf("tool schema lost VALIDATED placeholder, required[0] = %q: %s", required, got)
@@ -295,7 +296,7 @@ func TestSanitizeAntigravityRequestSchemasProjectsUnionsAndPreservesEnumTypes(t 
 		}}}
 	}}`
 
-	got := sanitizeAntigravityRequestSchemas(payload, true, false)
+	got := sanitizeAntigravityRequestSchemasForModel(payload, true, false)
 	responseSchema := gjson.Get(got, "request.generationConfig.responseSchema")
 	action := responseSchema.Get("properties.action")
 	if action.Get("anyOf").Exists() || action.Get("type").String() != "object" || !action.Get("nullable").Bool() {
@@ -346,7 +347,7 @@ func TestSanitizeAntigravityToolSchemasKeepNativeTypeAndNullableOnBothPaths(t *t
 	}}]}]}}`
 
 	for _, requirePlaceholder := range []bool{false, true} {
-		got := sanitizeAntigravityRequestSchemas(payload, requirePlaceholder, false)
+		got := sanitizeAntigravityRequestSchemasForModel(payload, requirePlaceholder, false)
 		schema := gjson.Get(got, "request.tools.0.functionDeclarations.0.parameters")
 		if schema.Get("properties.level.type").String() != "number" {
 			t.Fatalf("placeholder=%v changed numeric tool argument type: %s", requirePlaceholder, schema.Raw)
@@ -454,7 +455,7 @@ func TestSanitizeAntigravityRequestSchemasCleansBothSpellingsInPlace(t *testing.
 		`"responseSchema":{"type":"object","$id":"drop-a","properties":{"canonical":{"type":"string"}}},` +
 		`"response_schema":{"type":"object","$id":"drop-b","properties":{"alias":{"type":"string"}}}}}}`
 
-	got := sanitizeAntigravityRequestSchemas(payload, false, false)
+	got := sanitizeAntigravityRequestSchemasForModel(payload, false, false)
 
 	for path, prop := range map[string]string{
 		"request.generationConfig.responseSchema":  "canonical",
@@ -489,8 +490,8 @@ func TestSanitizeAntigravityRequestSchemasIsIdempotent(t *testing.T) {
 	    "compound": {"type": "string", "enum": ["a", "b"], "minLength": 1}}}
 	}]}]}}`
 
-	once := sanitizeAntigravityRequestSchemas(payload, false, false)
-	twice := sanitizeAntigravityRequestSchemas(once, false, false)
+	once := sanitizeAntigravityRequestSchemasForModel(payload, false, false)
+	twice := sanitizeAntigravityRequestSchemasForModel(once, false, false)
 
 	base := "request.tools.0.functionDeclarations.0.parameters.properties."
 	for _, prop := range []string{"withDesc", "bare", "compound"} {
@@ -540,7 +541,7 @@ func TestSanitizeAntigravityRequestSchemasStripsPropertyNamesEverywhere(t *testi
 						strings.TrimPrefix(genContainer, "request.") + `":{` + gen + `}}}`
 
 					for _, useAntigravitySchema := range []bool{false, true} {
-						got := sanitizeAntigravityRequestSchemas(payload, useAntigravitySchema, false)
+						got := sanitizeAntigravityRequestSchemasForModel(payload, useAntigravitySchema, false)
 						if strings.Contains(got, `"propertyNames"`) {
 							t.Errorf("antigravity=%v: propertyNames reaches upstream: %s", useAntigravitySchema, got)
 						}
@@ -567,7 +568,7 @@ func TestSanitizeAntigravityRequestSchemasKeepsPropertyNamesInHistory(t *testing
 	}}`
 
 	for _, useAntigravitySchema := range []bool{false, true} {
-		got := sanitizeAntigravityRequestSchemas(payload, useAntigravitySchema, false)
+		got := sanitizeAntigravityRequestSchemasForModel(payload, useAntigravitySchema, false)
 
 		before := gjson.Get(payload, "request.contents")
 		after := gjson.Get(got, "request.contents")
@@ -626,7 +627,7 @@ func TestSanitizeAntigravityRequestSchemasStripsEncryptedMetadata(t *testing.T) 
 		payload := `{"request":{"tools":[{"` + declContainer + `":[{"name":"test_tool","parameters":` + encryptedSchema + `}]}]}}`
 
 		for _, useAntigravitySchema := range []bool{false, true} {
-			got := sanitizeAntigravityRequestSchemas(payload, useAntigravitySchema, false)
+			got := sanitizeAntigravityRequestSchemasForModel(payload, useAntigravitySchema, false)
 			if strings.Contains(got, `"encrypted"`) {
 				t.Errorf("declContainer=%s antigravity=%v: 'encrypted' marker survived sanitization: %s", declContainer, useAntigravitySchema, got)
 			}
@@ -673,7 +674,7 @@ func TestSanitizeAntigravityRequestSchemasNormalizesTrueBooleanSubschemas(t *tes
 	}}`
 
 	for _, useAntigravitySchema := range []bool{false, true} {
-		got := sanitizeAntigravityRequestSchemas(payload, useAntigravitySchema, false)
+		got := sanitizeAntigravityRequestSchemasForModel(payload, useAntigravitySchema, false)
 		decl := gjson.Get(got, "request.tools.0.functionDeclarations.0")
 		params := decl.Get("parameters")
 		if !params.Exists() {
@@ -710,4 +711,196 @@ func TestSanitizeAntigravityRequestSchemasNormalizesTrueBooleanSubschemas(t *tes
 			t.Errorf("useAntigravitySchema=%v: large_int corrupted, got %s", useAntigravitySchema, val.Raw)
 		}
 	}
+}
+
+// Issue 3662 regression: the original fix preserved multi-branch tool unions for
+// every Antigravity model, but the Antigravity Claude backend converts Gemini
+// function declarations into Claude custom.input_schema and rejects nested
+// multi-branch anyOf/oneOf unions with HTTP 400 ("JSON schema is invalid").
+// Tool schemas for Claude models must therefore have nested multi-branch unions
+// flattened to a single strongest branch before they are sent upstream, while
+// Gemini models keep the preserved-union behavior from the original fix.
+func TestAntigravityBuildRequestFlattensToolUnionsForClaude_Issue3662Regression(t *testing.T) {
+	// Reduced reproduction from the regression report: a nested boolean/object/array
+	// union under properties.value, plus a two-string-branch nested union. Merely
+	// declaring these tools must not poison the whole Claude request.
+	payload := []byte(`{"request":{"tools":[{"functionDeclarations":[{"name":"diagnostic_union","parametersJsonSchema":{` +
+		`"type":"object",` +
+		`"properties":{` +
+		`"value":{"anyOf":[{"type":"boolean"},{"type":"object","properties":{"enabled":{"type":"boolean"}},"required":["enabled"]},{"type":"array","items":{"type":"string"}}]},` +
+		`"duo":{"anyOf":[{"type":"string"},{"type":"string"}]}` +
+		`},` +
+		`"required":["value"]` +
+		`}}]}]}}`)
+
+	declParams := func(t *testing.T, modelName string) gjson.Result {
+		t.Helper()
+		body := buildRequestBodyFromRawPayload(t, modelName, payload)
+		encoded, errMarshal := json.Marshal(body)
+		if errMarshal != nil {
+			t.Fatal(errMarshal)
+		}
+		decl := gjson.GetBytes(encoded, "request.tools.0.functionDeclarations.0")
+		if !decl.Exists() {
+			t.Fatalf("model %s: function declaration missing: %s", modelName, encoded)
+		}
+		if decl.Get("parametersJsonSchema").Exists() {
+			t.Fatalf("model %s: parametersJsonSchema was not renamed for Antigravity: %s", modelName, decl.Raw)
+		}
+		params := decl.Get("parameters")
+		if !params.Exists() {
+			t.Fatalf("model %s: parameters missing after sanitization: %s", modelName, decl.Raw)
+		}
+		return params
+	}
+
+	t.Run("claude flattens nested tool unions", func(t *testing.T) {
+		params := declParams(t, "claude-opus-5-5-high")
+
+		value := params.Get("properties.value")
+		if value.Get("anyOf").Exists() || value.Get("oneOf").Exists() {
+			t.Fatalf("claude tool union survived sanitization; Antigravity Claude rejects nested multi-branch unions: %s", params.Raw)
+		}
+		// The pre-regression behavior selected the strongest (object) branch.
+		if got := value.Get("type").String(); got != "object" {
+			t.Fatalf("claude flattened value type = %q, want object (strongest branch): %s", got, params.Raw)
+		}
+		if !value.Get("properties.enabled").Exists() {
+			t.Fatalf("claude flattened value lost the object branch properties: %s", params.Raw)
+		}
+		if desc := value.Get("description").String(); !strings.Contains(desc, "Accepts:") || !strings.Contains(desc, "boolean") || !strings.Contains(desc, "array") {
+			t.Fatalf("claude flattened value lost the dropped-branch hint: %s", params.Raw)
+		}
+
+		duo := params.Get("properties.duo")
+		if duo.Get("anyOf").Exists() || duo.Get("oneOf").Exists() {
+			t.Fatalf("claude two-string-branch union survived sanitization: %s", params.Raw)
+		}
+		if got := duo.Get("type").String(); got != "string" {
+			t.Fatalf("claude flattened duo type = %q, want string: %s", got, params.Raw)
+		}
+	})
+
+	// The Claude-request translator serves whichever Antigravity model the client
+	// selected, Gemini included: its union handling must stay model-unaware and
+	// preserve multi-branch unions, because only the executor knows the target
+	// model. Flattening in the translator would lose non-first branches (audio)
+	// before the executor's Gemini path could keep them.
+	// Function return schemas are not the rejected custom.input_schema: even for
+	// Claude models their multi-branch unions must survive cleaning, like any other
+	// response-side schema. Only declaration parameter schemas are flattened.
+	t.Run("claude keeps unions in function return schemas", func(t *testing.T) {
+		unionSchema := `{"type":"object","properties":{"item":{"anyOf":[{"type":"string"},{"type":"object","properties":{"image":{"type":"string"}},"required":["image"]},{"type":"object","properties":{"audio":{"type":"string"}},"required":["audio"]}]}},"required":["item"]}`
+		decl := `{"name":"diagnostic_union"` +
+			`,"parametersJsonSchema":` + unionSchema +
+			`,"response":` + unionSchema +
+			`,"responseJsonSchema":` + unionSchema +
+			`,"response_json_schema":` + unionSchema + `}`
+		returnPayload := []byte(`{"request":{"tools":[{"functionDeclarations":[` + decl + `]}]}}`)
+
+		body := buildRequestBodyFromRawPayload(t, "claude-opus-5-5-high", returnPayload)
+		encoded, errMarshal := json.Marshal(body)
+		if errMarshal != nil {
+			t.Fatal(errMarshal)
+		}
+		gotDecl := gjson.GetBytes(encoded, "request.tools.0.functionDeclarations.0")
+		params := gotDecl.Get("parameters")
+		if params.Get("properties.item.anyOf").Exists() || params.Get("properties.item.type").String() != "object" || !params.Get("properties.item.properties.image").Exists() {
+			t.Fatalf("claude parameter schema union was not flattened: %s", params.Raw)
+		}
+		for _, key := range []string{"response", "responseJsonSchema", "response_json_schema"} {
+			ret := gotDecl.Get(key)
+			if !ret.Exists() {
+				t.Fatalf("claude return schema %q missing after cleaning: %s", key, gotDecl.Raw)
+			}
+			if got := len(ret.Get("properties.item.anyOf").Array()); got != 3 {
+				t.Fatalf("claude return schema %q anyOf branch count = %d, want 3 preserved: %s", key, got, ret.Raw)
+			}
+			if !ret.Get("properties.item.anyOf.2.properties.audio").Exists() {
+				t.Fatalf("claude return schema %q lost the audio branch: %s", key, ret.Raw)
+			}
+		}
+	})
+
+	// A nullable multi-branch union cleaned by the Claude-request translator first
+	// (which strips the null branch and sets nullable:true on the parent) must keep
+	// that nullability when the executor flattens it for a Claude model, matching
+	// what direct Claude cleaning produces.
+	t.Run("claude chain keeps nullable marker after flattening", func(t *testing.T) {
+		input := []byte(`{"model":"claude-opus-5-5-high","max_tokens":1024,"messages":[{"role":"user","content":"hi"}],"tools":[{"name":"diagnostic_union","input_schema":{"type":"object","properties":{"value":{"anyOf":[{"type":"string"},{"type":"integer"},{"type":"null"}]}},"required":["value"]}}]}`)
+		translated, errConv := antigravityclaude.ConvertClaudeRequestToAntigravity("claude-opus-5-5-high", input, false)
+		if errConv != nil {
+			t.Fatalf("convert error: %v", errConv)
+		}
+		translatedValue := gjson.GetBytes(translated, "request.tools.0.functionDeclarations.0.parametersJsonSchema.properties.value")
+		if len(translatedValue.Get("anyOf").Array()) != 2 || !translatedValue.Get("nullable").Bool() {
+			t.Fatalf("translator must preserve the union and set nullable:true: %s", translatedValue.Raw)
+		}
+
+		body := buildRequestBodyFromRawPayload(t, "claude-opus-5-5-high", translated)
+		encoded, errMarshal := json.Marshal(body)
+		if errMarshal != nil {
+			t.Fatal(errMarshal)
+		}
+		finalValue := gjson.GetBytes(encoded, "request.tools.0.functionDeclarations.0.parameters.properties.value")
+		if finalValue.Get("anyOf").Exists() || finalValue.Get("type").String() != "string" {
+			t.Fatalf("executor must flatten the union for Claude: %s", finalValue.Raw)
+		}
+		if !finalValue.Get("nullable").Bool() {
+			t.Fatalf("executor dropped nullable:true while flattening: %s", finalValue.Raw)
+		}
+	})
+
+	t.Run("claude translator then executor honors the selected model", func(t *testing.T) {
+		for _, modelName := range []string{"gemini-3.6-flash-high", "claude-opus-5-5-high"} {
+			input := []byte(`{"model":"` + modelName + `","max_tokens":1024,"messages":[{"role":"user","content":"hi"}],"tools":[{"name":"diagnostic_union","input_schema":{"type":"object","properties":{"item":{"anyOf":[{"type":"string"},{"type":"object","properties":{"image":{"type":"string"}},"required":["image"]},{"type":"object","properties":{"audio":{"type":"string"}},"required":["audio"]}]}},"required":["item"]}}]}`)
+			translated, errConv := antigravityclaude.ConvertClaudeRequestToAntigravity(modelName, input, false)
+			if errConv != nil {
+				t.Fatalf("model %s: convert error: %v", modelName, errConv)
+			}
+			translatedParams := gjson.GetBytes(translated, "request.tools.0.functionDeclarations.0.parametersJsonSchema")
+			if got := len(translatedParams.Get("properties.item.anyOf").Array()); got != 3 {
+				t.Fatalf("model %s: translator anyOf branch count = %d, want 3 (flattening belongs to the executor, not the translator): %s", modelName, got, translatedParams.Raw)
+			}
+			if !translatedParams.Get("properties.item.anyOf.2.properties.audio").Exists() {
+				t.Fatalf("model %s: translator lost the audio branch: %s", modelName, translatedParams.Raw)
+			}
+
+			body := buildRequestBodyFromRawPayload(t, modelName, translated)
+			encoded, errMarshal := json.Marshal(body)
+			if errMarshal != nil {
+				t.Fatal(errMarshal)
+			}
+			finalParams := gjson.GetBytes(encoded, "request.tools.0.functionDeclarations.0.parameters")
+			if !finalParams.Exists() {
+				t.Fatalf("model %s: final parameters missing: %s", modelName, encoded)
+			}
+			if strings.Contains(modelName, "claude") {
+				if finalParams.Get("properties.item.anyOf").Exists() || finalParams.Get("properties.item.type").String() != "object" || !finalParams.Get("properties.item.properties.image").Exists() {
+					t.Fatalf("model %s: executor must flatten the union for Claude: %s", modelName, finalParams.Raw)
+				}
+			} else if got := len(finalParams.Get("properties.item.anyOf").Array()); got != 3 || !finalParams.Get("properties.item.anyOf.2.properties.audio").Exists() {
+				t.Fatalf("model %s: executor must keep 3 preserved branches incl. audio for Gemini, got %d: %s", modelName, got, finalParams.Raw)
+			}
+		}
+	})
+
+	t.Run("gemini keeps preserved tool unions", func(t *testing.T) {
+		// One model per existing useAntigravitySchema group: gemini-3.1-pro shares the
+		// Claude VALIDATED placeholder group, gemini-3.6-flash does not. Both are Gemini
+		// and must keep the preserved unions from the original Issue 3662 fix.
+		for _, modelName := range []string{"gemini-3.1-pro-low", "gemini-3.6-flash-high"} {
+			params := declParams(t, modelName)
+
+			if got := len(params.Get("properties.value.anyOf").Array()); got != 3 {
+				t.Fatalf("model %s: preserved anyOf branch count = %d, want 3: %s", modelName, got, params.Raw)
+			}
+			if !params.Get("properties.value.anyOf.1.properties.enabled").Exists() {
+				t.Fatalf("model %s: preserved anyOf lost the object branch: %s", modelName, params.Raw)
+			}
+			if got := len(params.Get("properties.duo.anyOf").Array()); got != 2 {
+				t.Fatalf("model %s: preserved two-branch anyOf count = %d, want 2: %s", modelName, got, params.Raw)
+			}
+		}
+	})
 }
