@@ -107,9 +107,20 @@ func PersistCodexAuthFile(ctx context.Context, path string, auth *Auth) (bool, e
 		auth.Metadata["disabled"] = auth.Disabled
 		errLock := codex.WithFileLock(path, func() error {
 			existing, errRead := os.ReadFile(path)
+			if guard := credentialCommitGuard(ctx); guard != nil && errRead == nil {
+				var disk map[string]any
+				if json.Unmarshal(existing, &disk) != nil || disk == nil {
+					return fmt.Errorf("invalid credential commit source")
+				}
+			}
 			if errRead == nil && len(existing) > 0 {
 				var diskMap map[string]any
 				if errUnmarshal := json.Unmarshal(existing, &diskMap); errUnmarshal == nil && len(diskMap) > 0 {
+					if guard := credentialCommitGuard(ctx); guard != nil {
+						if errGuard := guard(diskMap); errGuard != nil {
+							return errGuard
+						}
+					}
 					if !HasAuthCreationIntent(ctx) {
 						auth.Metadata = codex.MergeCodexCredentialsFromDisk(diskMap, auth.Metadata)
 					}
@@ -121,6 +132,11 @@ func PersistCodexAuthFile(ctx context.Context, path string, auth *Auth) (bool, e
 				}
 			} else if errRead != nil && !os.IsNotExist(errRead) {
 				return fmt.Errorf("auth filestore: read existing failed: %w", errRead)
+			}
+			if guard := credentialCommitGuard(ctx); guard != nil && errRead != nil {
+				if errGuard := guard(nil); errGuard != nil {
+					return errGuard
+				}
 			}
 			return codex.WriteJSONFileAtomic(path, auth.Metadata)
 		})

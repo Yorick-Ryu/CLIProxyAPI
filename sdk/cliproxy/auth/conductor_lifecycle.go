@@ -321,7 +321,7 @@ func (m *Manager) updateInternal(ctx context.Context, base, auth *Auth, mode upd
 	persistMetaMint := (mode == updateModePrepare || mode == updateModeRefresh) && strings.EqualFold(strings.TrimSpace(auth.Provider), "meta")
 	if errPersist := m.persistLocked(ctx, auth); errPersist != nil {
 		// A minted Meta key must reach the store before requests can use it.
-		if persistMetaMint {
+		if persistMetaMint || strictAuthPersistence(ctx) {
 			m.mu.Unlock()
 			return nil, fmt.Errorf("persist meta auth: %w", errPersist)
 		}
