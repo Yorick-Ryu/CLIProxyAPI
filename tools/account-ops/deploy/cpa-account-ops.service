@@ -21,6 +21,7 @@ TimeoutStopSec=20
 KillMode=control-group
 RuntimeDirectory=cpa-account-ops
 RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 StateDirectory=cpa-account-ops
 StateDirectoryMode=0700
 NoNewPrivileges=true
