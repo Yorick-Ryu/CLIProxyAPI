@@ -36,7 +36,7 @@ class Management:
         result=self.api('POST','/v8/management/account-ops/targets/'+target['id']+'/preferences',{'config_version':target['config_version'],'fields':fields})
         if result.get('verified') is not True:raise OpsError('configuration_changed',409)
         return result['config_version']
-    def candy(self,name,check,wait=None):
+    def candy(self,name,check,wait=None,record=None):
         wait=wait or time.sleep
         route='/v0/management/plugins/cpa-codex-candy-eval'
         def entry():
@@ -46,7 +46,7 @@ class Management:
         if prior.get('running'):raise OpsError('locked',409)
         seen={json.dumps(result,sort_keys=True) for result in prior.get('results',[])}
         models=[row['id'] for row in self.api('GET','/v8/management/credentials/models?name='+urllib.parse.quote(name,safe='')).get('models',[])]
-        if 'gpt-6.1-sol' not in models:return False
+        if 'gpt-6.1-sol' not in models:return None
         self.api('POST',route+'/run',{'auth_ids':[name],'model':'gpt-6.1-sol','effort':'low','runs':1,'model_catalog':{name:models}})
         for _ in range(60):
             check();after=entry()
@@ -54,6 +54,9 @@ class Management:
             if not after.get('running') and len(fresh)==1:
                 import re
                 result=fresh[0]
+                if record:
+                    import hashlib
+                    record('candy:'+hashlib.sha256(json.dumps(result,sort_keys=True).encode()).hexdigest(),result)
                 if result.get('skipped') or re.search(r'(?<!\d)401(?!\d)|unauthori[sz]ed',str(result.get('error') or ''),re.I):return None
                 return result.get('ok') is True and not result.get('error') and not result.get('skipped') and bool(re.search(r'(?<!\d)21(?!\d)',str(result.get('answer') or '')))
             wait(5)

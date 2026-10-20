@@ -124,8 +124,9 @@ class Engine:
                 self.phase(job,'quality')
                 if job['snapshot'].get('quality_skip')=='user_explicit':
                     self.store.transition(job['id'],self.owner,'running','quality','user_skipped')
-                elif not self.adapter.quality(job):
-                    self.store.transition(job['id'],self.owner,'partial','quality','quality_failed')
+                elif (evaluation:=self.adapter.quality(job)) is not True:
+                    self.store.transition(job['id'],self.owner,'partial','quality','quality_failed' if evaluation is False else 'unknown')
+                    if evaluation is False:self.store.queue_notification(job['id'],'quality_failed')
                     return
                 else:self.store.transition(job['id'],self.owner,'running','quality','quality_passed')
             self.phase(job,'preferences');self.adapter.step(job,'preferences');self.adapter.verify(job)

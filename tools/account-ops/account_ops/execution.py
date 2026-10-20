@@ -93,6 +93,17 @@ class Executor:
                 self.store.db.execute('UPDATE accounts SET auth_ref=? WHERE id=?',(target['auth_ref'],account_id))
         return targets
 
+    def legacy_plugin(self):
+        cached=getattr(self,'history_cache',None)
+        if cached and cached[0]+30>self.store.clock():return cached[1]
+        try:
+            from .legacy import Legacy
+            state=self.management.api('GET','/v0/management/plugins/cpa-codex-candy-eval/state')
+            results={row['id']:row.get('results',[]) for row in state.get('auths',[]) if isinstance(row,dict) and isinstance(row.get('id'),str)}
+            summary={'kind':'plugin','available':True,'legacy':True,'time_precision':'source',**Legacy(self.store)._plugin({'results':results})}
+        except OpsError:summary={'kind':'plugin','available':False,'reason':'unavailable'}
+        self.history_cache=(self.store.clock(),summary);return summary
+
     def snapshot(self,account_id,kind):
         with self.store.mutex:account=self.store.db.execute('SELECT * FROM accounts WHERE id=?',(account_id,)).fetchone()
         if not account:raise OpsError('invalid_input')
@@ -236,7 +247,16 @@ class Executor:
 
     def quality(self,job):
         target=self.target(job,True)
-        return self.management.candy(target['auth_ref'],lambda:self.guard(job))
+        return self._candy(job,lambda:self.guard(job))
+
+    def _candy(self,job,check):
+        target=self.target(job,True)
+        def record(evidence,result):
+            health=bool(AUTH_ERROR.search(str(result.get('error') or '')))
+            kind='health' if health else 'quality'
+            reason='failed' if health else 'unknown' if result.get('skipped') else 'quality_passed' if result.get('ok') and not result.get('error') else 'quality_failed'
+            with self.store.transaction():self.store._event(job['id'],'quality',reason,kind,job['source'],job['account_id'],evidence)
+        return self.management.candy(target['auth_ref'],check,record=record)
 
     def verify(self,job):
         target=self.target(job,True);auth=self.management.auth(target['auth_ref'])
@@ -313,12 +333,12 @@ class Executor:
         target=self.target(job,True);auth=self.management.auth(target['auth_ref']);priority=int(auth.get('priority') or 0)
         plan=str(auth.get('plan_type') or '').lower()
         if auth.get('disabled') or not ('business' in plan or plan=='team'):raise OpsError('disabled' if auth.get('disabled') else 'free')
-        first=self.management.candy(target['auth_ref'],check)
+        first=self._candy(job,check)
         correct=priority==0 and first is True
         if not correct and not (priority>0 and first is False):return
         if correct:
             for _ in range(240):check();time.sleep(1)
-        repeated=[self.management.candy(target['auth_ref'],check),self.management.candy(target['auth_ref'],check)]
+        repeated=[self._candy(job,check),self._candy(job,check)]
         desired=periodic_decision(priority,first,repeated)
         if desired is not None:
             check();self.revisions[job['id']]=self.management.patch(self.target(job,True),{'priority':desired})

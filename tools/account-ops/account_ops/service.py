@@ -25,7 +25,10 @@ class Service:
         if match:=re.fullmatch(r'/_internal/jobs/([a-f0-9]{32})/guard',path):
             if method=='GET':return 200,self.store.commit_guard(match[1])
         if path=='/capabilities' and method=='GET':return 200,self.capabilities()
-        if path=='/monitor' and method=='GET':return 200,{**self.legacy.refresh(),'schedules':self.store.schedules()['items'],'notifications':self.store.notification_summary()}
+        if path=='/monitor' and method=='GET':
+            legacy=self.legacy.refresh()
+            if self.executor and hasattr(self.executor,'legacy_plugin') and not any(source['kind']=='plugin' for source in legacy['sources']):legacy['sources'].append(self.executor.legacy_plugin())
+            return 200,{**legacy,'schedules':self.store.schedules()['items'],'notifications':self.store.notification_summary()}
         if path=='/imports/preview' and method=='POST':
             if set(body)-{'text','instance'} or body.get('instance',self.store.instance)!=self.store.instance:raise OpsError('invalid_input')
             rows=parse(body.get('text'),dt.datetime.fromtimestamp(self.store.clock(),dt.timezone.utc))
