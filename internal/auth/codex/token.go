@@ -248,6 +248,8 @@ type CodexTokenStorage struct {
 
 	// ReplaceCredentials permits an explicit login to replace existing outer tokens.
 	ReplaceCredentials bool `json:"-"`
+	// BeforeCommit validates an operations snapshot under the credential file lock.
+	BeforeCommit func(map[string]any) error `json:"-"`
 	// RefreshPatch updates only refreshed partitions during a direct storage save.
 	RefreshPatch *CredentialRefreshPatch `json:"-"`
 
@@ -278,10 +280,20 @@ func (ts *CodexTokenStorage) SaveTokenToFile(authFilePath string) error {
 		if errRead != nil && !os.IsNotExist(errRead) {
 			return fmt.Errorf("failed to read existing credentials: %w", errRead)
 		}
+		if errRead != nil && os.IsNotExist(errRead) && ts.BeforeCommit != nil {
+			if errGuard := ts.BeforeCommit(nil); errGuard != nil {
+				return errGuard
+			}
+		}
 		if errRead == nil {
 			var diskMap map[string]any
 			if errUnmarshal := json.Unmarshal(existingBytes, &diskMap); errUnmarshal != nil || diskMap == nil {
 				return fmt.Errorf("invalid existing credential JSON")
+			}
+			if ts.BeforeCommit != nil {
+				if errGuard := ts.BeforeCommit(diskMap); errGuard != nil {
+					return errGuard
+				}
 			}
 			if ts.RefreshPatch != nil {
 				return WriteJSONFileAtomic(authFilePath, ts.RefreshPatch.Apply(diskMap))

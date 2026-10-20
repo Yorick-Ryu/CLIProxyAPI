@@ -1,0 +1,40 @@
+[Unit]
+Description=CPA account operations worker
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cpa-ops
+Group=cpa-ops
+UMask=0077
+WorkingDirectory=/opt/cpa-account-ops/current/login
+Environment=PYTHONPATH=/opt/cpa-account-ops/current/worker
+Environment=HOME=/var/lib/cpa-account-ops/browser-home
+Environment=CLOAKBROWSER_BINARY_PATH=/opt/cpa-account-ops/browser/chrome
+Environment=CLOAKBROWSER_SUPPRESS_FONT_WARNING=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/cpa-account-ops/current/login/.venv/bin/python -m account_ops.server --config /etc/cpa-account-ops/config.json
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+KillMode=control-group
+RuntimeDirectory=cpa-account-ops
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+StateDirectory=cpa-account-ops
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/lib/cpa-account-ops /run/cpa-account-ops
+TasksMax=512
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target

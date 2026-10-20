@@ -196,6 +196,11 @@ func (h *Handler) RequestAnthropicToken(c *gin.Context) {
 }
 
 func (h *Handler) RequestCodexToken(c *gin.Context) {
+	opsGuard, errOpsGuard := h.captureAccountOpsOAuthGuard(c)
+	if errOpsGuard != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "configuration_changed"})
+		return
+	}
 	ctx := context.Background()
 	ctx = PopulateAuthContext(ctx, c)
 
@@ -338,6 +343,12 @@ func (h *Handler) RequestCodexToken(c *gin.Context) {
 		}
 		if errGuard := guardOAuthSessionPendingForSave(state, "codex"); errGuard != nil {
 			return
+		}
+		if opsGuard != nil {
+			if errBind := opsGuard.bind(state, record); errBind != nil {
+				SetOAuthSessionError(state, "configuration_changed")
+				return
+			}
 		}
 		savedPath, errSave := h.saveTokenRecord(ctx, record)
 		if errSave != nil {

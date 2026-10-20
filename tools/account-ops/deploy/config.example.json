@@ -1,0 +1,14 @@
+{
+  "instance": "dmit",
+  "root": "/var/lib/cpa-account-ops/state",
+  "socket": "/run/cpa-account-ops/ops.sock",
+  "master_key_file": "/etc/cpa-account-ops/master.key",
+  "service_token_file": "/etc/cpa-account-ops/service.key",
+  "legacy_paths": {},
+  "execution": {
+    "origin": "http://127.0.0.1:18319",
+    "management_key_file": "/etc/cpa-account-ops/management.key",
+    "python": "/opt/cpa-account-ops/current/login/.venv/bin/python",
+    "login_project": "/opt/cpa-account-ops/current/login"
+  }
+}
