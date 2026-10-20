@@ -296,4 +296,14 @@ class ExecutionPolicyTests(Fixture):
         job,_=self.store.submit('login',self.account,'expiry-newlogin',extra={'order':{'expires_at':'2026-10-22T18:00:00+08:00'}})
         adapter.step(job,'preferences');self.assertEqual(writes[0],{'websockets':True,'note':'到期时间：2026-10-22 18:00（北京时间）'})
 
+class PrivateRetentionTests(Fixture):
+    def test_terminal_debug_material_expires_without_touching_waiting_jobs(self):
+        done=self.record();Engine(self.store).tick()
+        waiting,_=self.store.submit('health_scan',None,'waiting-retention')
+        for job in (done,waiting):
+            directory=self.root/'jobs'/job['id'];directory.mkdir(parents=True);(directory/'browser.log').write_text('synthetic-private-debug')
+        self.clock.now+=3601;self.store.purge_expired_private_material()
+        self.assertFalse((self.root/'jobs'/done['id']).exists())
+        self.assertTrue((self.root/'jobs'/waiting['id']/'browser.log').exists())
+
 if __name__=='__main__':unittest.main()
