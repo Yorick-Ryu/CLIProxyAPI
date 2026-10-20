@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import shutil
 import threading
 import time
 import uuid
@@ -299,6 +300,7 @@ class Store:
 
     def purge_expired_private_material(self):
         with self.transaction():
+            expired=self.db.execute("SELECT id FROM jobs WHERE state IN ('succeeded','partial','failed','cancelled','skipped') AND updated<?",(self.clock()-3600,)).fetchall()
             self.db.execute('DELETE FROM drafts WHERE expires<=?',(self.clock(),))
             cutoff=self.clock()-90*86400
             self.db.execute("DELETE FROM job_inputs WHERE job_id IN (SELECT id FROM jobs WHERE state IN ('succeeded','partial','failed','cancelled','skipped') AND updated<?)",(self.clock()-3600,))
@@ -306,6 +308,11 @@ class Store:
             self.db.execute("DELETE FROM credential_enrollments WHERE job_id IN (SELECT id FROM jobs WHERE state IN ('succeeded','partial','failed','cancelled','skipped') AND updated<?)",(cutoff,))
             self.db.execute("DELETE FROM batch_children WHERE parent_id IN (SELECT id FROM jobs WHERE updated<? AND state IN ('succeeded','partial','failed','cancelled','skipped')) AND job_id IN (SELECT id FROM jobs WHERE updated<? AND state IN ('succeeded','partial','failed','cancelled','skipped'))",(cutoff,cutoff))
             self.db.execute("DELETE FROM jobs WHERE state IN ('succeeded','partial','failed','cancelled','skipped') AND updated<? AND id NOT IN (SELECT job_id FROM events WHERE job_id IS NOT NULL) AND id NOT IN (SELECT job_id FROM job_inputs) AND id NOT IN (SELECT parent_id FROM jobs WHERE parent_id IS NOT NULL)",(cutoff,))
+
+        for row in expired:
+            private=self.root/'jobs'/row['id']
+            if private.is_symlink():private.unlink()
+            elif private.exists():shutil.rmtree(private)
 
     def private_job_input(self,job_id):
         with self.mutex:row=self.db.execute('SELECT payload FROM job_inputs WHERE job_id=?',(job_id,)).fetchone()

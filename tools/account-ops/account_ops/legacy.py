@@ -52,9 +52,12 @@ class Legacy:
             for result in results:
                 if not isinstance(result,dict):continue
                 when=timestamp(result.get('time'))
-                reason='quality_passed' if result.get('ok') is True and not result.get('error') and not result.get('skipped') else 'quality_failed'
+                from .policy import AUTH_ERROR
+                kind='health' if AUTH_ERROR.search(str(result.get('error') or '')) else 'quality'
+                reason='failed' if kind=='health' else 'unknown' if result.get('skipped') else 'quality_passed' if result.get('ok') is True and not result.get('error') else 'quality_failed'
                 evidence='plugin:'+hashlib.sha256(encode([reference,result.get('time'),result.get('model'),result.get('effort'),reason]).encode()).hexdigest()
-                self.store.legacy_event('quality',reason,evidence,when,phase='quality')
+                with self.store.mutex:account=self.store.db.execute('SELECT id FROM accounts WHERE auth_ref=?',(reference,)).fetchone()
+                self.store.legacy_event(kind,reason,evidence,when,account['id'] if account else None,phase='quality' if kind=='quality' else 'preflight')
                 count+=1
                 if when is not None: latest=max(latest or when,when)
         return {'retained_results':count,'last_run':latest,'per_credential_limit':20}

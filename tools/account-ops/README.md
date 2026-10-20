@@ -92,5 +92,6 @@ an absent helper leaves notifications pending. No Feishu integration is included
 Private drafts expire after one hour; frozen job inputs remain until one hour
 after completion. Structured events have 90-day retention, subject to unresolved
 notification references. Browser logs and ownership files are private operational
-evidence and should be removed under the operator's retention policy. Never put
+evidence removed one hour after a terminal result; unresolved jobs retain them
+for ownership reconciliation. Never put
 secret files, logs or database backups into source archives or public artifacts.

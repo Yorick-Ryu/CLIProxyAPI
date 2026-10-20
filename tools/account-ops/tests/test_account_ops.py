@@ -285,6 +285,7 @@ class ExecutionPolicyTests(Fixture):
         self.assertEqual(self.store.get_job(job['id'])['state'],'partial')
         self.assertEqual(adapter.phases.count('preferences'),1)
         self.assertNotIn('notify',adapter.phases)
+        self.assertEqual(self.store.notification_summary()['pending'],1)
     def test_new_login_expiry_is_not_written_on_reauthorization(self):
         adapter=self.adapter();writes=[];auth={'access_token':'synthetic','account_id':'workspace','websockets':False,'priority':0}
         adapter.target=lambda job,allow_new=False:self.target
@@ -295,5 +296,43 @@ class ExecutionPolicyTests(Fixture):
         self.store.cancel(job['id'])
         job,_=self.store.submit('login',self.account,'expiry-newlogin',extra={'order':{'expires_at':'2026-10-22T18:00:00+08:00'}})
         adapter.step(job,'preferences');self.assertEqual(writes[0],{'websockets':True,'note':'到期时间：2026-10-22 18:00（北京时间）'})
+
+class PrivateRetentionTests(Fixture):
+    def test_terminal_debug_material_expires_without_touching_waiting_jobs(self):
+        done=self.record();Engine(self.store).tick()
+        waiting,_=self.store.submit('health_scan',None,'waiting-retention')
+        for job in (done,waiting):
+            directory=self.root/'jobs'/job['id'];directory.mkdir(parents=True);(directory/'browser.log').write_text('synthetic-private-debug')
+        self.clock.now+=3601;self.store.purge_expired_private_material()
+        self.assertFalse((self.root/'jobs'/done['id']).exists())
+        self.assertTrue((self.root/'jobs'/waiting['id']/'browser.log').exists())
+
+class LiveHistoryTests(Fixture):
+    def test_plugin_api_history_is_linked_redacted_and_deduplicated(self):
+        from account_ops.execution import Executor
+        executor=object.__new__(Executor);executor.store=self.store
+        account=self.store.account('a@example.com','team','codex-a.json')
+        class Management:
+            def api(_,method,path):return {'auths':[{'id':'codex-a.json','results':[{'time':'2026-10-20T10:00:00Z','model':'gpt-6.1-sol','ok':False,'error':'401 unauthorized '+SECRET}]}]}
+        executor.management=Management();executor.legacy_plugin();executor.legacy_plugin()
+        records=self.store.records()['items'];self.assertEqual(len(records),1)
+        self.assertEqual(records[0]['kind'],'health');self.assertEqual(records[0]['account_id'],account)
+        self.assertNotIn(SECRET,json.dumps(records))
+
+class CandyEvidenceTests(unittest.TestCase):
+    def test_fresh_result_is_captured_without_exposing_its_body(self):
+        from account_ops.cpa import Management
+        for answer,error,skipped,expected in [('21',None,False,True),('29',None,False,False),('',None,False,False),('', '401 unauthorized',False,None),('',None,True,None)]:
+            with self.subTest(expected=expected,error=error,skipped=skipped):
+                manager=object.__new__(Management);state=[0];evidence=[]
+                def api(method,path,body=None):
+                    if path.endswith('/state'):
+                        state[0]+=1
+                        return {'auths':[{'id':'codex-a.json','running':False,'results':[] if state[0]==1 else [{'time':'2026-10-20T10:00:00Z','model':'gpt-6.1-sol','effort':'low','ok':answer=='21','answer':answer,'error':error,'skipped':skipped}]}]}
+                    if '/models?' in path:return {'models':[{'id':'gpt-6.1-sol'}]}
+                    return {}
+                manager.api=api
+                self.assertIs(manager.candy('codex-a.json',lambda:None,wait=lambda _:None,record=lambda key,result:evidence.append(key)),expected)
+                self.assertEqual(len(evidence),1);self.assertRegex(evidence[0],r'^candy:[a-f0-9]{64}$')
 
 if __name__=='__main__':unittest.main()
