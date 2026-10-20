@@ -5,6 +5,10 @@ single local worker over an authenticated Unix socket. OMCPA uses a handwritten
 response projection and its existing authenticated management facade. Browsers do
 not receive CPA keys, saved passwords, TOTP secrets, OAuth URLs or tokens.
 
+Build the CPA core with `CGO_ENABLED=1` on Unix, as in its Dockerfile. Native
+dynamic plugin loading is unavailable in a `CGO_ENABLED=0` binary. Verify both
+the plugin inventory and its authenticated state route before a rollout.
+
 ## Run and verify
 
 Install this package with Python 3.12 or newer and install the existing login
