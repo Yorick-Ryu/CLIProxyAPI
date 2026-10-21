@@ -208,6 +208,21 @@ func applyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth,
 			state.promptCacheKeyWasRemapped = true
 		}
 	}
+	// History retains the turn that created each message, rather than adopting
+	// the current request's turn. Use the same namespace as turn metadata.
+	if input := gjson.GetBytes(rawJSON, "input"); input.IsArray() {
+		for i, item := range input.Array() {
+			value := item.Get("internal_chat_message_metadata_passthrough.turn_id")
+			if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
+				continue
+			}
+			path := fmt.Sprintf("input.%d.internal_chat_message_metadata_passthrough.turn_id", i)
+			updated, err := sjson.SetBytes(rawJSON, path, codexAccountIdentityUUID(state, "turn", value.String()))
+			if err == nil {
+				rawJSON = updated
+			}
+		}
+	}
 	return rawJSON, state
 }
 
