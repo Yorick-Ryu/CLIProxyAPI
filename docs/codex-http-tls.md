@@ -18,8 +18,7 @@ multiplexed H2; validate representative traffic before deployment.
 
 This is ClientHello compatibility, not an OpenSSL replacement. Legacy algorithms
 advertised by the captured client are not all implemented by uTLS; unusual server
-selections may fail instead of completing a native OpenSSL handshake. Session
-resumption, TLS record behavior and HTTP header ordering are not claimed identical.
+selections may fail instead of completing a native OpenSSL handshake. TLS record behavior is not claimed identical.
 Certificate chain and hostname verification remain enabled; no automatic fallback
 to another profile or weaker certificate policy occurs.
 
@@ -39,3 +38,13 @@ Tests: TestCodexLinuxHTTPWireHello, TestCodexLinuxHTTPPooling,
 TestCodexLinuxHTTPProfileSelection, TestCodexHTTPTLSConfig,
 TestCodexDefaultLinuxTUIIdentity. The wire test decodes emitted TLS bytes against
 capture values; integration tests cover TLS 1.2/1.3, HTTP/1.1 and connection reuse.
+
+The Linux profile also serializes HTTP/1.1 field names in lowercase, with observed
+Codex header groups first and host/length framing last. Unknown OAuth/operator
+headers retain their relative order. Values, repeated fields and body framing
+are preserved; this is not a universal ordering template for every CLI request.
+
+New Linux TLS connections explicitly use no client session cache, matching the
+observed native Linux behavior. Ticket extensions remain advertised. Successful
+HTTP/1.1 connections still reuse the existing account-scoped pool. TLS 1.2/1.3
+tests cover successful responses followed by fresh, non-resumed connections.

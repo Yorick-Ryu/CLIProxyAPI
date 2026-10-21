@@ -1,6 +1,26 @@
 package helps
 
-import tls "github.com/refraction-networking/utls"
+import (
+	tls "github.com/refraction-networking/utls"
+	"net"
+)
+
+// codexFreshTLSConfig keeps new connections independent, matching the observed
+// native Linux HTTP and per-connect rustls WS behavior. Keep ticket extensions
+// in the hello; disabling their advertisement would change the wire profile.
+func codexFreshTLSConfig(cfg *tls.Config) *tls.Config {
+	fresh := cfg.Clone()
+	fresh.ClientSessionCache = nil
+	return fresh
+}
+
+func newCodexLinuxTLSClient(raw net.Conn, cfg *tls.Config) (*tls.UConn, error) {
+	conn := tls.UClient(raw, codexFreshTLSConfig(cfg), tls.HelloCustom)
+	if err := conn.ApplyPreset(codexLinuxHTTPHello()); err != nil {
+		return nil, err
+	}
+	return conn, nil
+}
 
 // codexLinuxHTTPHello reproduces the initial ClientHello captured from official
 // Linux musl CLI 0.162.1/0.163.0 with no custom CA environment. This is a wire

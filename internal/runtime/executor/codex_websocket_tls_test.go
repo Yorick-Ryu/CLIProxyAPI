@@ -16,6 +16,9 @@ func TestCodexWebsocketTLSProfileDialer(t *testing.T) {
 			if (d.TLSHandshakeContext != nil) != (profile == "codex") {
 				t.Fatalf("route %q profile %q: wrong hook", route, profile)
 			}
+			if (d.WriteHandshake != nil) != (profile == "codex") {
+				t.Fatal("header profile not tied to TLS configuration")
+			}
 			if d.NetDialTLSContext != nil {
 				t.Fatal("TLS dial bypasses proxy tunnel")
 			}

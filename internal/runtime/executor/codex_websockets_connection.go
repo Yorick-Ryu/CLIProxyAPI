@@ -265,6 +265,7 @@ func newProxyAwareWebsocketDialer(ctx context.Context, cfg *config.Config, auth 
 
 	if cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.Codex.WebsocketTLSProfile), "codex") {
 		dialer.TLSHandshakeContext = helps.CodexWebsocketTLSHandshake
+		dialer.WriteHandshake = helps.WriteCodexWebsocketHandshake
 	}
 
 	proxyURL := executionProxyURL(ctx, cfg, auth)

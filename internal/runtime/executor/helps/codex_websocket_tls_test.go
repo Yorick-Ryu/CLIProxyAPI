@@ -119,7 +119,7 @@ func TestCodexWebsocketTLSRoundTrip(t *testing.T) {
 				defer upstream.Close()
 				roots := x509.NewCertPool()
 				roots.AddCert(upstream.Certificate())
-				d := websocket.Dialer{EnableCompression: true, EnableContextTakeover: true, HandshakeTimeout: 5 * time.Second}
+				d := websocket.Dialer{WriteHandshake: WriteCodexWebsocketHandshake, EnableCompression: true, EnableContextTakeover: true, HandshakeTimeout: 5 * time.Second}
 				d.TLSHandshakeContext = func(ctx context.Context, c net.Conn, host string) (net.Conn, error) {
 					return codexWebsocketTLSHandshake(ctx, c, &utls.Config{ServerName: host, RootCAs: roots})
 				}

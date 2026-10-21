@@ -419,8 +419,8 @@ func TestCodexLinuxHTTPPooling(t *testing.T) {
 				if err != nil {
 					return nil, "", err
 				}
-				c := tls.UClient(raw, &tls.Config{ServerName: u.Hostname(), RootCAs: roots}, tls.HelloCustom)
-				if err = c.ApplyPreset(codexLinuxHTTPHello()); err == nil {
+				c, err := newCodexLinuxTLSClient(raw, &tls.Config{ServerName: u.Hostname(), RootCAs: roots})
+				if err == nil {
 					err = c.HandshakeContext(ctx)
 				}
 				if err != nil {

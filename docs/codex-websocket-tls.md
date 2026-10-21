@@ -14,7 +14,8 @@ rustls captures: cipher/signature/group order, TLS 1.2/1.3, hybrid ML-KEM
 and X25519 key shares, randomized extension order, and no ALPN. The profile
 is independent of the advertised CLI version. It does not reproduce the
 entire rustls TLS record layer or promise identical session resumption.
-No TLS session cache is shared across accounts.
+New connections explicitly use no client session cache, consistent with the
+official per-connect TLS configuration. Existing WS connections remain reusable.
 
 Certificate chain and hostname verification use system roots. Failures are
 returned through existing connection error handling; no silent downgrade to
@@ -34,3 +35,13 @@ Verification: `go test ./internal/runtime/executor/helps ./internal/config
 The wire test decodes emitted TLS bytes against captured field values, and
 TLS 1.2/1.3 integration tests cover certificate rejection, compressed WS
 round trips on a reused connection, and proxy tunnel ordering.
+
+The same profile enables handshake header serialization compatibility: Host,
+Connection, Upgrade, Sec-WebSocket-Version and Sec-WebSocket-Key lead, followed
+by lowercase business fields. Unknown fields and operator values are retained.
+Only serialization changes; Gorilla still validates the response and handles
+frames. The default native profile retains its original serialization.
+
+TLS 1.2/1.3 regression tests complete real message exchanges and reconnect without
+session resumption. This hardens CPA behavior; it does not extend the official
+capture evidence to all successful official reconnect scenarios.

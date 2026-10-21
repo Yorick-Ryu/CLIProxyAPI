@@ -23,3 +23,7 @@ already-connected transport, after any CONNECT tunnel. It is skipped for
 plain WS and when `NetDialTLSContext` is supplied. On failure DialContext
 closes the original transport. Codex uses this hook for its optional uTLS
 profile; root helper tests exercise real TLS and proxy connections.
+
+`Dialer.WriteHandshake` is an opt-in request serialization hook. Codex uses it to
+adjust header case/order without replacing Gorilla response validation or frame
+handling. With no hook, the original `http.Request.Write` path remains active.
