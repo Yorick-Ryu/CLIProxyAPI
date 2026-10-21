@@ -431,6 +431,10 @@ func (f *fallbackRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 // for Anthropic and a Chrome profile for ChatGPT, with a standard-transport
 // fallback for other hosts.
 func NewUtlsHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, timeout time.Duration, disableCompression ...bool) (clientOut *http.Client) {
+	return newUtlsHTTPClient(ctx, cfg, auth, timeout, false, disableCompression...)
+}
+
+func newUtlsHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, timeout time.Duration, codexPooling bool, disableCompression ...bool) (clientOut *http.Client) {
 	// Carry the opt-in TLS establishment bound (requests
 	// tls-handshake-timeout-seconds) on a request-scoped wrapper. This
 	// client is shared, so the bound intentionally reaches both the Claude
@@ -456,6 +460,18 @@ func NewUtlsHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyau
 	}
 
 	var chromeRT http.RoundTripper = newUtlsRoundTripper(proxyURL)
+	if codexPooling {
+		if scope := NewCodexCookieStore(ctx, cfg, auth); scope != nil {
+			dialer := newUtlsRoundTripper(proxyURL)
+			chromeRT = &codexHTTPPoolRouter{account: scope.account, proxyURL: proxyURL, cache: codexHTTPPools, dial: func(ctx context.Context, host, addr string) (net.Conn, string, error) {
+				conn, err := dialer.createConnection(ctx, host, addr)
+				if err != nil {
+					return nil, "", err
+				}
+				return conn, conn.ConnectionState().NegotiatedProtocol, nil
+			}}
+		}
+	}
 	var anthropicRT http.RoundTripper = cachedClaudeCodeRoundTripper(proxyURL)
 	var standardTransport http.RoundTripper = http.DefaultTransport
 	if proxyURL != "" {

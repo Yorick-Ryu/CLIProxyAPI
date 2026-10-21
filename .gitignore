@@ -33,6 +33,7 @@ docs/*
 !docs/management-api-v8.md
 !docs/codex-timezone.md
 !docs/codex-infrastructure-cookies.md
+!docs/codex-http-pooling.md
 AGENTS.md
 CLAUDE.md
 GEMINI.md

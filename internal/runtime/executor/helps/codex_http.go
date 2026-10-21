@@ -17,7 +17,7 @@ import (
 // Gzip decoding remains available when the server actually returns gzip, without
 // coupling this behavior to zstd compression of the outgoing request body.
 func NewCodexHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, timeout time.Duration) *http.Client {
-	client := NewUtlsHTTPClient(ctx, cfg, auth, timeout, true)
+	client := newUtlsHTTPClient(ctx, cfg, auth, timeout, true, true)
 	client.Transport = &codexResponseTransport{next: client.Transport, cookies: NewCodexCookieStore(ctx, cfg, auth)}
 	return client
 }
