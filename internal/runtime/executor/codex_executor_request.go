@@ -492,7 +492,6 @@ func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, toke
 		} else {
 			r.Header.Set("Accept", "application/json")
 		}
-		r.Header.Set("Connection", "Keep-Alive")
 		var attrs map[string]string
 		if auth != nil {
 			attrs = auth.Attributes
@@ -527,7 +526,6 @@ func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, toke
 	} else {
 		r.Header.Set("Accept", "application/json")
 	}
-	r.Header.Set("Connection", "Keep-Alive")
 
 	isAPIKey := codexAuthUsesAPIKey(auth)
 	if originator := strings.TrimSpace(ginHeaders.Get("Originator")); originator != "" {

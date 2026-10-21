@@ -411,7 +411,11 @@ func TestCodexChildIdentityOnWire(t *testing.T) {
 						metadata["x-openai-subagent"] = "review"
 						metadata["x-codex-turn-metadata"] = string(nestedMetadata)
 					}
-					body, err := json.Marshal(map[string]any{"model": "gpt-5.5", "input": []any{}, "prompt_cache_key": parentThreadSource, "client_metadata": metadata})
+					input := []any{}
+					for _, turn := range []string{parentTurnSource, parentTurnSource, childTurnSource} {
+						input = append(input, map[string]any{"type": "message", "role": "user", "content": []any{map[string]string{"type": "input_text", "text": "test"}}, "internal_chat_message_metadata_passthrough": map[string]any{"turn_id": turn, "create_time": 123.5}})
+					}
+					body, err := json.Marshal(map[string]any{"model": "gpt-5.5", "input": input, "prompt_cache_key": parentThreadSource, "client_metadata": metadata})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -437,6 +441,13 @@ func TestCodexChildIdentityOnWire(t *testing.T) {
 						t.Fatal(err)
 					}
 					got := <-captured
+					if transport == "http" && got.headers.Get("Connection") != "" {
+						t.Fatalf("unexpected HTTP Connection header: %q", got.headers.Get("Connection"))
+					}
+					if transport == "ws" && got.headers.Get("Connection") != "Upgrade" {
+						t.Fatal("WebSocket upgrade header was lost")
+					}
+
 					if got.headers.Get("User-Agent") != cfg.CodexHeaderDefaults.UserAgent {
 						t.Fatal("configured UA must replace the intermediary's Go UA")
 					}
@@ -445,6 +456,13 @@ func TestCodexChildIdentityOnWire(t *testing.T) {
 					assertCodexIdentityV7Timestamp(t, child, childThreadSource)
 					childTurn := gjson.GetBytes(got.body, "client_metadata.turn_id").String()
 					assertCodexIdentityV7Timestamp(t, childTurn, childTurnSource)
+					for i, want := range []string{parentTurn, parentTurn, childTurn} {
+						item := gjson.GetBytes(got.body, fmt.Sprintf("input.%d.internal_chat_message_metadata_passthrough", i))
+						if item.Get("turn_id").String() != want || item.Get("create_time").Float() != 123.5 {
+							t.Fatalf("input %d lost its original turn association or timestamp: %s", i, item.Raw)
+						}
+					}
+
 					if parent == parentThreadSource || child == childThreadSource || child == parent || got.headers.Get("Session-Id") != parent {
 						t.Fatal("child and parent thread relationship lost")
 					}
@@ -506,6 +524,48 @@ func TestCodexContextWindowIdentityScopedWithoutSynthesis(t *testing.T) {
 		missing, _ := applyCodexAccountIdentityBody(codexAccountIdentityTestContext("caller"), auth, []byte(`{"client_metadata":{"x-codex-turn-metadata":"{\"thread_id\":\"thread\"}"}}`))
 		if gjson.GetBytes(missing, "client_metadata.context_window_id").Exists() || gjson.Get(gjson.GetBytes(missing, "client_metadata.x-codex-turn-metadata").String(), "context_window_id").Exists() {
 			t.Fatal("mapper synthesized an absent context window")
+		}
+	}
+}
+
+func TestCodexInputTurnMappingPreservesUnrelatedValues(t *testing.T) {
+	ctx := codexAccountIdentityTestContext("caller")
+	auth := &cliproxyauth.Auth{ID: "test", Provider: "codex"}
+	for _, input := range []string{`"plain input"`, `null`, `[{"type":"message"},{"internal_chat_message_metadata_passthrough":{"turn_id":null}},{"internal_chat_message_metadata_passthrough":{"turn_id":123}},{"internal_chat_message_metadata_passthrough":{"turn_id":" "}}]`} {
+		body := []byte(`{"input":` + input + `}`)
+		got, _ := applyCodexAccountIdentityBody(ctx, auth, body)
+		if !bytes.Equal(got, body) {
+			t.Fatalf("unexpected mutation: %s", got)
+		}
+	}
+	body := []byte(`{"input":[{"internal_chat_message_metadata_passthrough":{"turn_id":"turn-a","create_time":1.2300,"extra":{"turn_id":"opaque"}}}]}`)
+	got, state := applyCodexAccountIdentityBody(ctx, auth, body)
+	if gjson.GetBytes(got, "input.0.internal_chat_message_metadata_passthrough.turn_id").String() != codexAccountIdentityUUID(state, "turn", "turn-a") {
+		t.Fatal("input-only turn was not scoped")
+	}
+	if gjson.GetBytes(got, "input.0.internal_chat_message_metadata_passthrough.create_time").Raw != "1.2300" || gjson.GetBytes(got, "input.0.internal_chat_message_metadata_passthrough.extra.turn_id").String() != "opaque" {
+		t.Fatal("unrelated metadata changed")
+	}
+	apiAuth := &cliproxyauth.Auth{ID: "api", Provider: "codex", Attributes: map[string]string{"api_key": "test"}}
+	got, _ = applyCodexAccountIdentityBody(ctx, apiAuth, body)
+	if !bytes.Equal(got, body) {
+		t.Fatal("API-key request changed")
+	}
+}
+
+func TestCodexHTTPConnectionHeaderExplicitOverride(t *testing.T) {
+	for _, value := range []string{"", "close"} {
+		auth := &cliproxyauth.Auth{ID: "test", Provider: "codex", Attributes: map[string]string{}}
+		if value != "" {
+			auth.Attributes["header:Connection"] = value
+		}
+		req, err := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		applyCodexHeadersFromSources(req, auth, "", true, &config.Config{}, http.Header{})
+		if got := req.Header.Get("Connection"); got != value {
+			t.Fatalf("Connection = %q, want %q", got, value)
 		}
 	}
 }
