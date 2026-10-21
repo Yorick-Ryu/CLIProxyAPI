@@ -263,6 +263,10 @@ func newProxyAwareWebsocketDialer(ctx context.Context, cfg *config.Config, auth 
 		}).DialContext,
 	}
 
+	if cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.Codex.WebsocketTLSProfile), "codex") {
+		dialer.TLSHandshakeContext = helps.CodexWebsocketTLSHandshake
+	}
+
 	proxyURL := executionProxyURL(ctx, cfg, auth)
 	if proxyURL == "" {
 		return dialer
@@ -297,8 +301,8 @@ func newProxyAwareWebsocketDialer(ctx context.Context, cfg *config.Config, auth 
 			return dialer
 		}
 		dialer.Proxy = nil
-		dialer.NetDialContext = func(_ context.Context, network, addr string) (net.Conn, error) {
-			return socksDialer.Dial(network, addr)
+		dialer.NetDialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return socksDialer.(proxy.ContextDialer).DialContext(ctx, network, addr)
 		}
 	case "http", "https":
 		dialer.Proxy = http.ProxyURL(setting.URL)

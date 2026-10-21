@@ -17,3 +17,9 @@ this directory separately; root `go test ./...` does not traverse nested modules
 
 When updating Gorilla, rebase these changes and rerun both suites. Do not replace
 the extension offer alone without the corresponding encoder/decoder support.
+
+`Dialer.TLSHandshakeContext` is an opt-in client hook for verified TLS on an
+already-connected transport, after any CONNECT tunnel. It is skipped for
+plain WS and when `NetDialTLSContext` is supplied. On failure DialContext
+closes the original transport. Codex uses this hook for its optional uTLS
+profile; root helper tests exercise real TLS and proxy connections.

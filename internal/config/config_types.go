@@ -238,6 +238,8 @@ type AntigravityConnectionPoolConfig struct {
 
 // CodexConfig configures provider-wide Codex request behavior.
 type CodexConfig struct {
+	// WebsocketTLSProfile selects native (default) or the captured Codex rustls ClientHello.
+	WebsocketTLSProfile string `yaml:"websocket-tls-profile,omitempty" json:"websocket-tls-profile,omitempty"`
 	// AnalyticsEnabled overrides analytics_enabled in existing turn metadata when set.
 	// It does not disable telemetry connections made independently by the client.
 	AnalyticsEnabled *bool `yaml:"analytics_enabled,omitempty" json:"analytics_enabled,omitempty"`
