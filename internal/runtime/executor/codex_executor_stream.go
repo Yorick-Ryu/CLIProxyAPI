@@ -78,7 +78,6 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 	body = helps.SetStringIfDifferent(body, "model", baseModel)
 	useSIWC := codexUseSIWC(auth)
 	hasExplicitInstructions := gjson.GetBytes(req.Payload, "instructions").Exists() && strings.TrimSpace(gjson.GetBytes(req.Payload, "instructions").String()) != ""
-	body = ensureWebSearchToolForHistory(body, opts.Headers)
 	if !useSIWC {
 		body = normalizeCodexInstructions(body, helps.PreserveCodexInstructions(req.Payload, opts))
 		body, err = helps.EnsureCodexWebSearchHistoryTool(body, auth, opts.Headers)

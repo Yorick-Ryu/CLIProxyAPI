@@ -378,8 +378,7 @@ func applyAuthFileFieldsPatch(targetAuth *coreauth.Auth, req map[string]json.Raw
 			return &authFileFieldPatchError{message: "field name is required"}
 		}
 		if strings.HasPrefix(fieldPath, "codex_timezone.") || strings.HasPrefix(fieldPath, "codex_timezone_mode.") {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Codex timezone settings do not support nested fields"})
-			return
+			return &authFileFieldPatchError{message: "Codex timezone settings do not support nested fields"}
 		}
 		value, errDecode := decodeAuthFileFieldValue(rawValue)
 		if errDecode != nil {
@@ -404,8 +403,7 @@ func applyAuthFileFieldsPatch(targetAuth *coreauth.Auth, req map[string]json.Raw
 			}
 		}
 		if fieldPath == "codex_timezone" && value != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "codex_timezone is retired; use codex_timezone_mode: off, local, or egress"})
-			return
+			return &authFileFieldPatchError{message: "codex_timezone is retired; use codex_timezone_mode: off, local, or egress"}
 		}
 		if targetAuth.Metadata == nil {
 			targetAuth.Metadata = make(map[string]any)
@@ -449,8 +447,7 @@ func applyAuthFileFieldsPatch(targetAuth *coreauth.Auth, req map[string]json.Raw
 	}
 	if _, modeTouched := touchedRoots["codex_timezone_mode"]; modeTouched {
 		if _, err := config.CodexTimezoneFromMetadata(targetAuth.Metadata); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
+			return &authFileFieldPatchError{message: err.Error()}
 		}
 	}
 	if changed {
