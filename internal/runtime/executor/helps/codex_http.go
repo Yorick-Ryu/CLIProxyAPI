@@ -18,7 +18,7 @@ import (
 // coupling this behavior to zstd compression of the outgoing request body.
 func NewCodexHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, timeout time.Duration) *http.Client {
 	client := NewUtlsHTTPClient(ctx, cfg, auth, timeout, true)
-	client.Transport = &codexResponseTransport{next: client.Transport}
+	client.Transport = &codexResponseTransport{next: client.Transport, cookies: NewCodexCookieStore(ctx, cfg, auth)}
 	return client
 }
 
@@ -48,10 +48,18 @@ func withoutAutomaticCompression(transport http.RoundTripper) http.RoundTripper 
 	}
 }
 
-type codexResponseTransport struct{ next http.RoundTripper }
+type codexResponseTransport struct {
+	next    http.RoundTripper
+	cookies *CodexCookieStore
+}
 
 func (t *codexResponseTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if t.cookies != nil {
+		request = request.Clone(request.Context())
+		t.cookies.AddHeader(request.URL.String(), request.Header)
+	}
 	response, err := t.next.RoundTrip(request)
+	t.cookies.StoreResponse(request.URL.String(), response)
 	if err != nil || response == nil || response.Body == nil || request.Method == http.MethodHead {
 		return response, err
 	}
