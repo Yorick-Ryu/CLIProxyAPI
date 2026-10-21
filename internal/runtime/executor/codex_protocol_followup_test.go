@@ -56,7 +56,7 @@ func TestCodexWindowAndMemoryMetadataOnWire(t *testing.T) {
 					defer server.Close()
 					cfg := &config.Config{SDKConfig: config.SDKConfig{DisableImageGeneration: config.DisableImageGenerationAll}}
 					auth := &cliproxyauth.Auth{ID: "window-test", Provider: "codex", Attributes: map[string]string{"base_url": server.URL, codexIdentityConvergenceModeKey: mode}, Metadata: map[string]any{"account_id": "synthetic-account"}}
-					payload, _ := json.Marshal(map[string]any{"model": "gpt-5.6-sol", "input": []any{}, "client_metadata": map[string]any{"session_id": thread, "thread_id": thread, "context_window_id": window, "window_id": thread + ":3", "x-codex-window-id": thread + ":3", "window_number": 3, "x-codex-turn-metadata": metadata}})
+					payload, _ := json.Marshal(map[string]any{"model": "gpt-5.6-sol", "input": []any{}, "client_metadata": map[string]any{"session_id": thread, "thread_id": thread, "context_window_id": window, "window_id": thread + ":3", "x-codex-window-id": thread + ":3", "window_number": "3", "x-codex-turn-metadata": metadata}})
 					req := cliproxyexecutor.Request{Model: "gpt-5.6-sol", Payload: payload}
 					opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatCodex, Headers: http.Header{"Session-Id": {thread}, "Thread-Id": {thread}, "X-Codex-Window-Id": {thread + ":3"}, "X-Codex-Turn-Metadata": {metadata}, "X-Openai-Memgen-Request": {"true"}}}
 					var executor cliproxyauth.ProviderExecutor = NewCodexExecutor(cfg)

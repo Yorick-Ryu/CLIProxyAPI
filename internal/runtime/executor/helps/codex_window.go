@@ -22,8 +22,8 @@ func CodexWindowOrdinal(body []byte, headers http.Header) string {
 		}
 	}
 	for _, value := range []gjson.Result{nested.Get("window_number"), gjson.GetBytes(body, "client_metadata.window_number"), headerMetadata.Get("window_number")} {
-		if value.Type == gjson.Number {
-			if number, err := strconv.ParseUint(value.Raw, 10, 64); err == nil {
+		if value.Type == gjson.Number || value.Type == gjson.String {
+			if number, err := strconv.ParseUint(value.String(), 10, 64); err == nil {
 				return strconv.FormatUint(number, 10)
 			}
 		}
