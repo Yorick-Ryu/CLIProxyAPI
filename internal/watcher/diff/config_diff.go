@@ -144,6 +144,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 	if !reflect.DeepEqual(oldCfg.Codex.Timezone, newCfg.Codex.Timezone) {
 		changes = append(changes, "codex.timezone: updated")
 	}
+	if oldCfg.Codex.WebsocketTLSProfile != newCfg.Codex.WebsocketTLSProfile {
+		changes = append(changes, "codex.websocket-tls-profile: updated (new connections)")
+	}
 	changes = appendOptionalBoolChange(changes, "codex.websockets-default", oldCfg.Codex.WebsocketsDefault, newCfg.Codex.WebsocketsDefault)
 	if oldCfg.Codex.WebsocketMaxMessageBytes != newCfg.Codex.WebsocketMaxMessageBytes {
 		changes = append(changes, fmt.Sprintf("codex.websocket-max-message-bytes: %d -> %d", oldCfg.Codex.WebsocketMaxMessageBytes, newCfg.Codex.WebsocketMaxMessageBytes))

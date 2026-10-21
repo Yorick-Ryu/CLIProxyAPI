@@ -1085,6 +1085,9 @@ oauth:
       # Complete uncompressed upstream WS message limit; <= 0 disables the check.
       websocket-max-message-bytes: 0
       # Preserve independent sessions while converging the account device identity.
+      # Optional WS ClientHello compatibility; native is the default. Existing connections
+      # keep their TLS state until reconnected. Does not change HTTP or advertised CLI version.
+      websocket-tls-profile: "native" # native | codex
       identity-convergence: false
       identity-confuse: false
       # Compress eligible Codex OAuth HTTP bodies with zstd.

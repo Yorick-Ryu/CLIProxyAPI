@@ -66,6 +66,11 @@ type Dialer struct {
 	// TLSClientConfig is ignored.
 	NetDialTLSContext func(ctx context.Context, network, addr string) (net.Conn, error)
 
+	// TLSHandshakeContext optionally wraps the connected transport after proxy tunnelling.
+	// It is called only for wss when NetDialTLSContext is nil. On error the original
+	// connection is closed by DialContext. The hook must verify the peer certificate.
+	TLSHandshakeContext func(ctx context.Context, conn net.Conn, serverName string) (net.Conn, error)
+
 	// Proxy specifies a function to return a proxy for a given
 	// Request. If the function returns a non-nil error, the
 	// request is aborted with the provided error.
@@ -343,7 +348,14 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 		}
 	}()
 
-	if u.Scheme == "https" && d.NetDialTLSContext == nil {
+	if u.Scheme == "https" && d.NetDialTLSContext == nil && d.TLSHandshakeContext != nil {
+		wrapped, err := d.TLSHandshakeContext(ctx, netConn, hostNoPort)
+		if err != nil {
+			return nil, nil, err
+		}
+		netConn = wrapped
+	}
+	if u.Scheme == "https" && d.NetDialTLSContext == nil && d.TLSHandshakeContext == nil {
 		// If NetDialTLSContext is set, assume that the TLS handshake has already been done
 
 		cfg := cloneTLSConfig(d.TLSClientConfig)
