@@ -371,3 +371,82 @@ func TestCodexHTTPPoolALPNChangeInvalidatesTransport(t *testing.T) {
 	}
 	readPoolReply(t, response)
 }
+
+func TestCodexLinuxHTTPProfileSelection(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Codex.HTTPTLSProfile = "linux"
+	a := &auth.Auth{ID: t.Name(), Provider: "codex"}
+	client := NewCodexHTTPClient(t.Context(), cfg, a, 0)
+	route := client.Transport.(*codexResponseTransport).next.(*fallbackRoundTripper).chrome.(*codexHTTPPoolRouter)
+	if route.profile != "codex-linux-v1" {
+		t.Fatalf("profile %q", route.profile)
+	}
+	cfg.Codex.HTTPTLSProfile = "chrome"
+	other := NewCodexHTTPClient(t.Context(), cfg, a, 0).Transport.(*codexResponseTransport).next.(*fallbackRoundTripper).chrome.(*codexHTTPPoolRouter)
+	if other.profile == route.profile {
+		t.Fatal("profile change did not partition pool")
+	}
+	cfg.Codex.HTTPTLSProfile = "linux"
+	a.Attributes = map[string]string{"api_key": "test"}
+	tr := NewCodexHTTPClient(t.Context(), cfg, a, 0).Transport.(*codexResponseTransport).next.(*fallbackRoundTripper).chrome
+	if _, ok := tr.(*codexHTTPPoolRouter); ok {
+		t.Fatal("OAuth profile applied to API key")
+	}
+}
+
+func TestCodexLinuxHTTPPooling(t *testing.T) {
+	for _, version := range []uint16{stdtls.VersionTLS12, stdtls.VersionTLS13} {
+		t.Run(stdtls.VersionName(version), func(t *testing.T) {
+			var dials atomic.Int32
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.ProtoMajor != 1 || r.TLS.NegotiatedProtocol != "" {
+					t.Error("Linux profile negotiated H2/ALPN")
+				}
+				if r.Header.Get("Accept-Encoding") != "" {
+					t.Error("automatic compression header")
+				}
+				_, _ = io.WriteString(w, "ok")
+			}))
+			server.EnableHTTP2 = true
+			server.TLS = &stdtls.Config{MinVersion: version, MaxVersion: version}
+			server.StartTLS()
+			defer server.Close()
+			roots := x509.NewCertPool()
+			roots.AddCert(server.Certificate())
+			u, _ := url.Parse(server.URL)
+			dial := func(ctx context.Context, _, _ string) (net.Conn, string, error) {
+				raw, err := (&net.Dialer{}).DialContext(ctx, "tcp", u.Host)
+				if err != nil {
+					return nil, "", err
+				}
+				c := tls.UClient(raw, &tls.Config{ServerName: u.Hostname(), RootCAs: roots}, tls.HelloCustom)
+				if err = c.ApplyPreset(codexLinuxHTTPHello()); err == nil {
+					err = c.HandshakeContext(ctx)
+				}
+				if err != nil {
+					_ = raw.Close()
+					return nil, "", err
+				}
+				dials.Add(1)
+				return c, c.ConnectionState().NegotiatedProtocol, nil
+			}
+			cache := newCodexHTTPPoolCache(8)
+			router := &codexHTTPPoolRouter{profile: "codex-linux-v1", account: [32]byte{1}, cache: cache, dial: dial}
+			defer router.CloseIdleConnections()
+			for range 3 {
+				if got := readPoolReply(t, poolGET(t, router, t.Context(), server.URL)); got != "ok" {
+					t.Fatal(got)
+				}
+			}
+			if dials.Load() != 1 {
+				t.Fatalf("no connection reuse: %d", dials.Load())
+			}
+			changed := &codexHTTPPoolRouter{profile: "another-profile", account: router.account, cache: cache, dial: dial}
+			defer changed.CloseIdleConnections()
+			readPoolReply(t, poolGET(t, changed, t.Context(), server.URL))
+			if dials.Load() != 2 {
+				t.Fatal("profile shared old connection")
+			}
+		})
+	}
+}

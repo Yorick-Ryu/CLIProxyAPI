@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	codexUserAgent             = "codex-tui/0.162.0 (Mac OS 27.0.1; arm64) ghostty/1.3.1 (codex-tui; 0.162.0)"
+	codexUserAgent             = "codex-tui/0.162.0 (Ubuntu 24.4.0; x86_64) xterm-256color (codex-tui; 0.162.0)"
 	codexOriginator            = "codex-tui"
 	codexDefaultImageToolModel = "gpt-image-2"
 	codexResponsesLiteHeader   = "X-OpenAI-Internal-Codex-Responses-Lite"

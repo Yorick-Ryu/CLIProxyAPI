@@ -38,6 +38,7 @@ func newCodexHTTPPoolCache(capacity int) *internalcache.BoundedLRU[[32]byte, *co
 // CPA additionally partitions by auth identity, target and TLS policy. Only
 // native ChatGPT HTTP traffic reaches this router; SDK overrides stay intact.
 type codexHTTPPoolRouter struct {
+	profile  string
 	account  [32]byte
 	proxyURL string
 	dial     codexTLSDial
@@ -52,7 +53,7 @@ func (r *codexHTTPPoolRouter) RoundTrip(req *http.Request) (*http.Response, erro
 		port = "443"
 	}
 	addr := net.JoinHostPort(host, port)
-	identity, _ := json.Marshal([]string{hex.EncodeToString(r.account[:]), r.proxyURL, addr, "chrome-auto", tlsHandshakeTimeoutFromContext(req.Context()).String()})
+	identity, _ := json.Marshal([]string{hex.EncodeToString(r.account[:]), r.proxyURL, addr, r.profile, tlsHandshakeTimeoutFromContext(req.Context()).String()})
 	key := sha256.Sum256(identity)
 	pool := r.cache.GetOrAdd(key, func() *codexHTTPPool { return &codexHTTPPool{dial: r.dial, host: host, addr: addr} })
 	r.used.Range(func(key, value any) bool {
