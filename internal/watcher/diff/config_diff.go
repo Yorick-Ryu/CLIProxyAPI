@@ -174,6 +174,15 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 	if oldRequestCompression.MinBytes != newRequestCompression.MinBytes {
 		changes = append(changes, fmt.Sprintf("codex.request-compression.min-bytes: %d -> %d", oldRequestCompression.MinBytes, newRequestCompression.MinBytes))
 	}
+	if oldCfg.Client.Codex.WebSearchResultCache.Enabled != newCfg.Client.Codex.WebSearchResultCache.Enabled {
+		changes = append(changes, fmt.Sprintf("client.codex.web-search-result-cache.enabled: %t -> %t", oldCfg.Client.Codex.WebSearchResultCache.Enabled, newCfg.Client.Codex.WebSearchResultCache.Enabled))
+	}
+	if strings.TrimSpace(oldCfg.Client.Codex.WebSearchResultCache.TTL) != strings.TrimSpace(newCfg.Client.Codex.WebSearchResultCache.TTL) {
+		changes = append(changes, fmt.Sprintf("client.codex.web-search-result-cache.ttl: %s -> %s", strings.TrimSpace(oldCfg.Client.Codex.WebSearchResultCache.TTL), strings.TrimSpace(newCfg.Client.Codex.WebSearchResultCache.TTL)))
+	}
+	if oldCfg.Client.Codex.WebSearchResultCache.Limit != newCfg.Client.Codex.WebSearchResultCache.Limit {
+		changes = append(changes, fmt.Sprintf("client.codex.web-search-result-cache.limit: %d -> %d", oldCfg.Client.Codex.WebSearchResultCache.Limit, newCfg.Client.Codex.WebSearchResultCache.Limit))
+	}
 	if oldCfg.Codex.OrphanDelegationCompatibility != newCfg.Codex.OrphanDelegationCompatibility {
 		changes = append(changes, fmt.Sprintf("codex.orphan-delegation-compatibility: %t -> %t", oldCfg.Codex.OrphanDelegationCompatibility, newCfg.Codex.OrphanDelegationCompatibility))
 	}
