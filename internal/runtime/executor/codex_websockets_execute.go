@@ -19,6 +19,12 @@ import (
 )
 
 func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (resp cliproxyexecutor.Response, err error) {
+	ctx = codexTurnStateContext(ctx, auth, req, opts)
+	defer func() {
+		if err == nil && resp.OnResponseCommitted == nil {
+			resp.OnResponseCommitted = helps.CodexTurnStateCommitObserver(ctx)
+		}
+	}()
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -121,6 +127,7 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 	if auth != nil && !codexAuthUsesAPIKey(auth) {
 		upstreamBody = helps.CanonicalCodexTurnMetadataBody(upstreamBody)
 	}
+	upstreamBody = helps.GuardCodexTurnStateBody(ctx, upstreamBody)
 	upstreamBody = finalizePayload(upstreamBody)
 	reporter.SetTranslatedReasoningEffort(clientBody, to.String())
 	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, nativeRequest, opts.Headers)

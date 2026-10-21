@@ -115,3 +115,22 @@ func TestCanonicalCodexTurnMetadataBodyAndHeaders(t *testing.T) {
 		t.Fatal("formatting synthesized a missing header")
 	}
 }
+
+func TestCodexTurnMetadataHeaderOmitsOnlyToolInventory(t *testing.T) {
+	const raw = ` {"extension":18446744073709551615,"tool_namespaces_info":{"functions":{"name":"functions","functions":{}}},"thread_id":"thread"} `
+	const want = `{"thread_id":"thread","extension":18446744073709551615}`
+	headers := http.Header{"x-CoDeX-TuRn-MeTaDaTa": {raw, `{"tool_namespaces_info":{},"tool_namespaces_info":{},"extension":"ambiguous"}`}}
+	original := append([]string(nil), headers["x-CoDeX-TuRn-MeTaDaTa"]...)
+	CanonicalCodexTurnMetadataHeaders(headers)
+	if headers["x-CoDeX-TuRn-MeTaDaTa"][0] != want || headers["x-CoDeX-TuRn-MeTaDaTa"][1] != original[1] {
+		t.Fatal("header projection lost an unknown field, precision, or invalid input")
+	}
+	if original[0] != raw {
+		t.Fatal("shared header values were mutated")
+	}
+	body := []byte(`{"client_metadata":{"x-codex-turn-metadata":{"tool_namespaces_info":{"n":{"name":"n","functions":{}}},"extension":"keep"}}}`)
+	normalized := CanonicalCodexTurnMetadataBody(body)
+	if !gjson.GetBytes(normalized, "client_metadata.x-codex-turn-metadata.tool_namespaces_info").Exists() {
+		t.Fatal("header projection removed inventory from the body")
+	}
+}

@@ -12,7 +12,7 @@ import (
 func CodexIdentityUUID(name, kind, source string) string {
 	id := uuid.NewSHA1(uuid.NameSpaceOID, []byte(name))
 	id[6] = (id[6] & 0x0f) | 0x40
-	if kind != "session" && kind != "thread" && kind != "turn" {
+	if kind != "session" && kind != "thread" && kind != "turn" && kind != "context-window" {
 		return id.String()
 	}
 

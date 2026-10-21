@@ -261,6 +261,13 @@ func (h *BaseAPIHandler) streamWithPluginExecutor(ctx context.Context, entryProt
 			}
 			select {
 			case dataChan <- payload:
+				if streamResult.OnResponseCommitted != nil {
+					var deliveredHeaders http.Header
+					if !coreexecutor.DownstreamWebsocket(ctx) {
+						deliveredHeaders = upstreamHeaders
+					}
+					streamResult.OnResponseCommitted(deliveredHeaders, payload)
+				}
 				if streamInterceptorsActive && streamChunkPayloadIncludesHistory(interceptorHost) {
 					historyChunks = appendStreamInterceptorHistory(historyChunks, payload)
 				}
@@ -383,6 +390,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
 	rawStreamHeaders := cloneHeader(streamResult.Headers)
 	baseStreamHeaders := cloneHeader(streamResult.Headers)
 	chunks := streamResult.Chunks
+	observeCommittedResponse := streamResult.OnResponseCommitted
 	if chunks == nil {
 		closed := make(chan coreexecutor.StreamChunk)
 		close(closed)
@@ -568,6 +576,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
 			break
 		}
 		rawStreamHeaders = cloneHeader(retryResult.Headers)
+		observeCommittedResponse = retryResult.OnResponseCommitted
 		baseStreamHeaders = cloneHeader(retryResult.Headers)
 		streamHeaderInitialized = false
 		streamClosedBeforeRead = false
@@ -625,15 +634,27 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
 			}
 		}
 
+		committedHeaders := upstreamHeaders
+		if coreexecutor.DownstreamWebsocket(ctx) {
+			// The downstream socket was upgraded before upstream selection;
+			// these HTTP headers are not delivered to its client.
+			committedHeaders = nil
+		}
 		sendData := func(chunk []byte) bool {
 			if ctx == nil {
 				dataChan <- chunk
+				if observeCommittedResponse != nil {
+					observeCommittedResponse(committedHeaders, chunk)
+				}
 				return true
 			}
 			select {
 			case <-ctx.Done():
 				return false
 			case dataChan <- chunk:
+				if observeCommittedResponse != nil {
+					observeCommittedResponse(committedHeaders, chunk)
+				}
 				return true
 			}
 		}

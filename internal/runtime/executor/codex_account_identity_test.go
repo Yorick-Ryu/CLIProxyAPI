@@ -488,3 +488,24 @@ func TestCodexChildIdentityOnWire(t *testing.T) {
 		}
 	}
 }
+
+func TestCodexContextWindowIdentityScopedWithoutSynthesis(t *testing.T) {
+	const source = "019a0992-1500-7abc-8def-0123456789ab"
+	body := []byte(`{"client_metadata":{"context_window_id":"` + source + `","x-codex-turn-metadata":"{\"context_window_id\":\"` + source + `\",\"window_number\":3}"}}`)
+	var previous string
+	for _, account := range []string{"account-a", "account-b"} {
+		auth := &cliproxyauth.Auth{ID: account, Provider: "codex", Metadata: map[string]any{"account_id": account}}
+		mapped, _ := applyCodexAccountIdentityBody(codexAccountIdentityTestContext("caller"), auth, body)
+		id := gjson.GetBytes(mapped, "client_metadata.context_window_id").String()
+		assertCodexIdentityV7Timestamp(t, id, source)
+		nested := gjson.Parse(gjson.GetBytes(mapped, "client_metadata.x-codex-turn-metadata").String())
+		if id == source || id == previous || nested.Get("context_window_id").String() != id || nested.Get("window_number").Int() != 3 {
+			t.Fatal("context window isolation or ordinal preservation failed")
+		}
+		previous = id
+		missing, _ := applyCodexAccountIdentityBody(codexAccountIdentityTestContext("caller"), auth, []byte(`{"client_metadata":{"x-codex-turn-metadata":"{\"thread_id\":\"thread\"}"}}`))
+		if gjson.GetBytes(missing, "client_metadata.context_window_id").Exists() || gjson.Get(gjson.GetBytes(missing, "client_metadata.x-codex-turn-metadata").String(), "context_window_id").Exists() {
+			t.Fatal("mapper synthesized an absent context window")
+		}
+	}
+}

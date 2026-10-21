@@ -19,7 +19,13 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (_ *cliproxyexecutor.StreamResult, err error) {
+func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (result *cliproxyexecutor.StreamResult, err error) {
+	ctx = codexTurnStateContext(ctx, auth, req, opts)
+	defer func() {
+		if err == nil && result != nil && result.OnResponseCommitted == nil {
+			result.OnResponseCommitted = helps.CodexTurnStateCommitObserver(ctx)
+		}
+	}()
 	log.Debugf("Executing Codex Websockets stream request with auth ID: %s, model: %s", auth.ID, req.Model)
 	if ctx == nil {
 		ctx = context.Background()
@@ -773,6 +779,7 @@ type codexWebsocketPrepared struct {
 }
 
 func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*codexWebsocketPrepared, error) {
+	ctx = codexTurnStateContext(ctx, auth, req, opts)
 	baseModel := thinking.ParseSuffix(req.Model).ModelName
 	apiKey, baseURL := codexCreds(auth)
 	if errSIWC := ensureCodexSIWCCredentials(auth, apiKey); errSIWC != nil {
@@ -862,6 +869,7 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
 	if auth != nil && !codexAuthUsesAPIKey(auth) {
 		upstreamBody = helps.CanonicalCodexTurnMetadataBody(upstreamBody)
 	}
+	upstreamBody = helps.GuardCodexTurnStateBody(ctx, upstreamBody)
 	upstreamBody = finalizePayload(upstreamBody)
 	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, preserveNativeOutput, opts.Headers)
 	applyCodexRoutingHint(ctx, wsHeaders, auth, baseModel, upstreamBody, opts.Headers)

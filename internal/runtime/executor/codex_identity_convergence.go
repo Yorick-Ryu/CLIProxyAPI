@@ -24,6 +24,7 @@ type codexIdentityConvergenceState struct {
 	threadID                   string
 	turnID                     string
 	windowID                   string
+	windowOrdinal              string
 	turnStartedAtUnixMs        int64
 	originalBodySessionID      string
 	promptCacheKeyWasConverged bool
@@ -136,6 +137,7 @@ func resolveCodexIdentityConvergenceState(cfg *config.Config, auth *cliproxyauth
 	}
 	turnID := uuid.Must(uuid.NewV7())
 	turnSeconds, turnNanos := turnID.Time().UnixTime()
+	windowOrdinal := helps.CodexWindowOrdinal(rawJSON, clientHeaders)
 
 	return codexIdentityConvergenceState{
 		enabled:               true,
@@ -144,7 +146,8 @@ func resolveCodexIdentityConvergenceState(cfg *config.Config, auth *cliproxyauth
 		sessionID:             sessionID,
 		threadID:              threadID,
 		turnID:                turnID.String(),
-		windowID:              threadID + ":0",
+		windowID:              threadID + ":" + windowOrdinal,
+		windowOrdinal:         windowOrdinal,
 		turnStartedAtUnixMs:   time.Unix(turnSeconds, turnNanos).UnixMilli(),
 		originalBodySessionID: originalBodySessionID,
 	}
@@ -165,6 +168,12 @@ func applyCodexIdentityConvergenceBody(cfg *config.Config, auth *cliproxyauth.Au
 		rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.thread_id", state.threadID)
 		rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.turn_id", state.turnID)
 		rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.x-codex-window-id", state.windowID)
+		if gjson.GetBytes(rawJSON, "client_metadata.window_id").Exists() {
+			rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.window_id", state.windowID)
+		}
+		if gjson.GetBytes(rawJSON, "client_metadata.window_number").Type == gjson.Number {
+			rawJSON, _ = sjson.SetRawBytes(rawJSON, "client_metadata.window_number", []byte(state.windowOrdinal))
+		}
 	}
 
 	if turnMetadata := strings.TrimSpace(gjson.GetBytes(rawJSON, "client_metadata.x-codex-turn-metadata").String()); turnMetadata != "" {
@@ -205,6 +214,9 @@ func rewriteCodexIdentityConvergenceTurnMetadata(raw string, state codexIdentity
 			"turn_id":                 state.turnID,
 			"window_id":               state.windowID,
 			"turn_started_at_unix_ms": state.turnStartedAtUnixMs,
+		}
+		if gjson.Get(raw, "window_number").Type == gjson.Number && state.windowOrdinal != "" {
+			raw, _ = sjson.SetRaw(raw, "window_number", state.windowOrdinal)
 		}
 	}
 	for path, value := range fields {
