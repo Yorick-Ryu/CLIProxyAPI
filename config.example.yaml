@@ -1133,6 +1133,15 @@ oauth:
       #   user-agent: "codex_cli_rs/0.114.0 (Mac OS 14.2.0; x86_64) vscode/1.111.0"
       #   version: "0.114.0"
       #   beta-features: "multi_agent"
+      #   version-sync:
+      #     enabled: false # Check the official stable release once at service startup.
+      # Only an enabled startup performs discovery; no periodic or hot-reload checks.
+      # A successful check overrides global/account UA version tokens and Version.
+      # Platform/terminal fields and Originator are preserved; unrecognized custom UAs
+      # use the built-in identity. This affects runtime headers, not the config file.
+      # Disabled cloaking and API-key/SIWC requests retain their existing behavior.
+      # Until success (or on failure), configured headers remain in use.
+      # Existing WebSockets use new headers on their next handshake.
 
     # Antigravity provider behavior.
     antigravity:
