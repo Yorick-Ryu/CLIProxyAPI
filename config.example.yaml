@@ -1088,6 +1088,9 @@ oauth:
       # Optional WS ClientHello compatibility; native is the default. Existing connections
       # keep their TLS state until reconnected. Does not change HTTP or advertised CLI version.
       websocket-tls-profile: "native" # native | codex
+      # Linux CLI default HTTP ClientHello, without ALPN (HTTP/1.1).
+      # Separate from WS; chrome preserves the existing HTTP behavior.
+      http-tls-profile: "chrome" # chrome | linux
       identity-convergence: false
       identity-confuse: false
       # Compress eligible Codex OAuth HTTP bodies with zstd.
@@ -1133,8 +1136,8 @@ oauth:
       # Omit it or leave it empty to preserve the client version.
       # `beta-features` is a websocket fallback when the client omits the header.
       # header-defaults:
-      #   user-agent: "codex_cli_rs/0.114.0 (Mac OS 14.2.0; x86_64) vscode/1.111.0"
-      #   version: "0.114.0"
+      #   user-agent: "codex-tui/0.162.0 (Ubuntu 24.4.0; x86_64) xterm-256color (codex-tui; 0.162.0)"
+      #   version: "0.162.0"
       #   beta-features: "multi_agent"
       #   version-sync:
       #     enabled: false # Check the official stable release once at service startup.

@@ -144,6 +144,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 	if !reflect.DeepEqual(oldCfg.Codex.Timezone, newCfg.Codex.Timezone) {
 		changes = append(changes, "codex.timezone: updated")
 	}
+	if oldCfg.Codex.HTTPTLSProfile != newCfg.Codex.HTTPTLSProfile {
+		changes = append(changes, "codex.http-tls-profile: updated (separate connection pool)")
+	}
 	if oldCfg.Codex.WebsocketTLSProfile != newCfg.Codex.WebsocketTLSProfile {
 		changes = append(changes, "codex.websocket-tls-profile: updated (new connections)")
 	}

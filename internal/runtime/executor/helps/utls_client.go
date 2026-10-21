@@ -25,9 +25,11 @@ import (
 )
 
 // utlsRoundTripper implements http.RoundTripper using a Chrome fingerprint for
-// providers that require browser-like TLS. The HTTP version follows ALPN. Each
+// providers that require browser-like TLS, or an opt-in Codex Linux profile.
+// The HTTP version follows ALPN. Each
 // request gets a dedicated connection that is closed with the response body.
 type utlsRoundTripper struct {
+	codexLinux         bool
 	dialer             proxy.Dialer
 	disableCompression bool
 }
@@ -82,6 +84,13 @@ func (t *utlsRoundTripper) createConnection(ctx context.Context, host, addr stri
 
 	tlsConfig := &tls.Config{ServerName: host}
 	tlsConn := tls.UClient(conn, tlsConfig, tls.HelloChrome_Auto)
+	if t.codexLinux {
+		tlsConn = tls.UClient(conn, tlsConfig, tls.HelloCustom)
+		if err := tlsConn.ApplyPreset(codexLinuxHTTPHello()); err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("codex Linux TLS profile: %w", err)
+		}
+	}
 
 	handshakeCtx, cancelHandshake := handshakeContext(ctx)
 	defer cancelHandshake()
@@ -463,7 +472,12 @@ func newUtlsHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyau
 	if codexPooling {
 		if scope := NewCodexCookieStore(ctx, cfg, auth); scope != nil {
 			dialer := newUtlsRoundTripper(proxyURL)
-			chromeRT = &codexHTTPPoolRouter{account: scope.account, proxyURL: proxyURL, cache: codexHTTPPools, dial: func(ctx context.Context, host, addr string) (net.Conn, string, error) {
+			profile := "chrome-auto"
+			if cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.Codex.HTTPTLSProfile), "linux") {
+				dialer.codexLinux = true
+				profile = "codex-linux-v1"
+			}
+			chromeRT = &codexHTTPPoolRouter{profile: profile, account: scope.account, proxyURL: proxyURL, cache: codexHTTPPools, dial: func(ctx context.Context, host, addr string) (net.Conn, string, error) {
 				conn, err := dialer.createConnection(ctx, host, addr)
 				if err != nil {
 					return nil, "", err
