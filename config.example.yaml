@@ -1088,6 +1088,8 @@ oauth:
       identity-convergence: false
       identity-confuse: false
       # Compress eligible Codex OAuth HTTP bodies with zstd.
+      # min-bytes: 0 matches native Codex (all Responses sizes); a positive
+      # value is a proxy override. API-key, SIWC and compact requests are excluded.
       request-compression:
         enabled: false
         min-bytes: 0

@@ -12,7 +12,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/klauspost/compress/zstd"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/misc"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
@@ -211,10 +210,10 @@ func (e *CodexExecutor) prepareCachedRequest(ctx context.Context, from sdktransl
 
 func (e *CodexExecutor) setCodexRequestBody(httpReq *http.Request, auth *cliproxyauth.Auth, body []byte) error {
 	wireBody := body
-	compressed := codexRequestCompressionEnabled(e.cfg, auth, len(body))
+	compressed := codexRequestCompressionEnabled(e.cfg, auth, httpReq, len(body))
 	if compressed {
 		var errCompress error
-		wireBody, errCompress = compressCodexRequestBody(body)
+		wireBody, errCompress = helps.CompressCodexRequestBody(body)
 		if errCompress != nil {
 			return errCompress
 		}
@@ -224,6 +223,8 @@ func (e *CodexExecutor) setCodexRequestBody(httpReq *http.Request, auth *cliprox
 	httpReq.GetBody = func() (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(wireBody)), nil
 	}
+	httpReq.TransferEncoding = nil
+	httpReq.Header.Del("Content-Length")
 	httpReq.Header.Del("Content-Encoding")
 	if compressed {
 		httpReq.Header.Set("Content-Encoding", "zstd")
@@ -231,11 +232,17 @@ func (e *CodexExecutor) setCodexRequestBody(httpReq *http.Request, auth *cliprox
 	return nil
 }
 
-func codexRequestCompressionEnabled(cfg *config.Config, auth *cliproxyauth.Auth, bodyBytes int) bool {
+func codexRequestCompressionEnabled(cfg *config.Config, auth *cliproxyauth.Auth, req *http.Request, bodyBytes int) bool {
 	if cfg == nil || !cfg.Codex.RequestCompression.Enabled || auth == nil {
 		return false
 	}
-	if auth.Attributes != nil && strings.TrimSpace(auth.Attributes["api_key"]) != "" {
+	if codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) || req == nil || req.URL == nil || req.Method != http.MethodPost {
+		return false
+	}
+	// Native Codex enables zstd on Responses HTTP, not legacy compaction.
+	// Keep the proxy's direct-image extension, after its final JSON conversion.
+	path := req.URL.Path
+	if !strings.HasSuffix(path, "/responses") && !strings.HasSuffix(path, "/images/generations") && !strings.HasSuffix(path, "/images/edits") {
 		return false
 	}
 	minBytes := cfg.Codex.RequestCompression.MinBytes
@@ -243,21 +250,6 @@ func codexRequestCompressionEnabled(cfg *config.Config, auth *cliproxyauth.Auth,
 		minBytes = 0
 	}
 	return bodyBytes >= minBytes
-}
-
-func compressCodexRequestBody(body []byte) ([]byte, error) {
-	encoder, err := zstd.NewWriter(nil,
-		zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(3)),
-		zstd.WithEncoderConcurrency(1),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create Codex zstd request encoder: %w", err)
-	}
-	compressed := encoder.EncodeAll(body, nil)
-	if errClose := encoder.Close(); errClose != nil {
-		return nil, fmt.Errorf("close Codex zstd request encoder: %w", errClose)
-	}
-	return compressed, nil
 }
 
 func applyCodexIdentityConfuseBody(cfg *config.Config, auth *cliproxyauth.Auth, userPayload []byte, rawJSON []byte) ([]byte, codexIdentityConfuseState) {

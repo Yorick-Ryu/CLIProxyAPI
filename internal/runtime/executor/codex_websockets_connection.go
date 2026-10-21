@@ -31,6 +31,8 @@ const (
 func (e *CodexWebsocketsExecutor) dialCodexWebsocket(ctx context.Context, auth *cliproxyauth.Auth, wsURL string, headers http.Header) (*websocket.Conn, *websocketConnectionCloser, *http.Response, error) {
 	dialer := newProxyAwareWebsocketDialer(ctx, e.cfg, auth)
 	dialer.HandshakeTimeout = codexResponsesWebsocketHandshakeTO
+	// Match native DeflateConfig::default(): offer client_max_window_bits,
+	// retain context unless the peer disables it, and compress every message.
 	dialer.EnableCompression = true
 	dialer.EnableContextTakeover = true
 	if ctx == nil {

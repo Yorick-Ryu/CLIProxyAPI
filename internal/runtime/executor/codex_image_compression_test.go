@@ -162,6 +162,8 @@ func TestCodexRequestBodyCompressionReplay(t *testing.T) {
 	}
 	for _, size := range []int{65535, 65536, 65537, 0} {
 		body := bytes.Repeat([]byte("x"), size)
+		request.TransferEncoding = []string{"chunked"}
+		request.Header.Set("Content-Length", "999999")
 		if errSet := executor.setCodexRequestBody(request, &cliproxyauth.Auth{}, body); errSet != nil {
 			t.Fatal(errSet)
 		}
@@ -179,6 +181,9 @@ func TestCodexRequestBodyCompressionReplay(t *testing.T) {
 		}
 		if errRead != nil || !bytes.Equal(wire, replayed) || request.ContentLength != int64(len(wire)) {
 			t.Fatal("request length or replay differs from wire body")
+		}
+		if len(request.TransferEncoding) != 0 || request.Header.Get("Content-Length") != "" {
+			t.Fatal("prepared body retains stale transfer framing")
 		}
 		if size >= 65536 {
 			decoder, errDecoder := zstd.NewReader(nil)
