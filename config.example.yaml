@@ -1085,10 +1085,10 @@ oauth:
       # Complete uncompressed upstream WS message limit; <= 0 disables the check.
       websocket-max-message-bytes: 0
       # Preserve independent sessions while converging the account device identity.
-      # Optional WS ClientHello compatibility; native is the default. Existing connections
+      # Optional WS ClientHello and handshake header compatibility; native is the default. Existing connections
       # keep their TLS state until reconnected. Does not change HTTP or advertised CLI version.
       websocket-tls-profile: "native" # native | codex
-      # Linux CLI default HTTP ClientHello, without ALPN (HTTP/1.1).
+      # Linux CLI HTTP ClientHello and header compatibility, without ALPN (HTTP/1.1).
       # Separate from WS; chrome preserves the existing HTTP behavior.
       http-tls-profile: "chrome" # chrome | linux
       identity-convergence: false

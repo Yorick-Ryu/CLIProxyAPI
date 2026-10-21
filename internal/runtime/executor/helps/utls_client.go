@@ -85,8 +85,9 @@ func (t *utlsRoundTripper) createConnection(ctx context.Context, host, addr stri
 	tlsConfig := &tls.Config{ServerName: host}
 	tlsConn := tls.UClient(conn, tlsConfig, tls.HelloChrome_Auto)
 	if t.codexLinux {
-		tlsConn = tls.UClient(conn, tlsConfig, tls.HelloCustom)
-		if err := tlsConn.ApplyPreset(codexLinuxHTTPHello()); err != nil {
+		var err error
+		tlsConn, err = newCodexLinuxTLSClient(conn, tlsConfig)
+		if err != nil {
 			_ = conn.Close()
 			return nil, fmt.Errorf("codex Linux TLS profile: %w", err)
 		}
@@ -482,7 +483,12 @@ func newUtlsHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyau
 				if err != nil {
 					return nil, "", err
 				}
-				return conn, conn.ConnectionState().NegotiatedProtocol, nil
+				protocol := conn.ConnectionState().NegotiatedProtocol
+				var wire net.Conn = conn
+				if dialer.codexLinux && protocol != "h2" {
+					wire = httpwire.NewOrderedRequestConnWithNames(conn, CodexHTTPHeaderOrder)
+				}
+				return wire, protocol, nil
 			}}
 		}
 	}

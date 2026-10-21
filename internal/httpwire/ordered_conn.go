@@ -28,9 +28,47 @@ func NewOrderedRequestConn(conn net.Conn, order RequestHeaderOrder) net.Conn {
 	return &orderedRequestConn{Conn: conn, order: order}
 }
 
+// RequestHeaderOrderWithNames can position unknown headers without discarding them.
+// names contains existing header names in their serialized order, including duplicates.
+type RequestHeaderOrderWithNames func(method, requestTarget string, names []string) []string
+
+// NewOrderedRequestConnWithNames supports ordering based on the actual request fields.
+func NewOrderedRequestConnWithNames(conn net.Conn, order RequestHeaderOrderWithNames) net.Conn {
+	if conn == nil || order == nil {
+		return conn
+	}
+	return &orderedRequestConn{Conn: conn, orderWithNames: order}
+}
+
+// ReorderRequestHeader changes only a complete HTTP/1.1 header block. Malformed
+// or incomplete blocks are returned unchanged. Any following body is preserved.
+func ReorderRequestHeader(data []byte, order RequestHeaderOrderWithNames) []byte {
+	if order == nil {
+		return data
+	}
+	end := bytes.Index(data, []byte("\r\n\r\n"))
+	if end < 0 {
+		return data
+	}
+	header := data[:end+4]
+	reordered, _, _ := orderRequestHeader(header, headerOrderForNames(header, order))
+	return append(reordered, data[end+4:]...)
+}
+
+func headerOrderForNames(header []byte, order RequestHeaderOrderWithNames) RequestHeaderOrder {
+	var names []string
+	for _, line := range bytes.Split(header, []byte("\r\n"))[1:] {
+		if colon := bytes.IndexByte(line, ':'); colon > 0 {
+			names = append(names, string(line[:colon]))
+		}
+	}
+	return func(method, target string) []string { return order(method, target, names) }
+}
+
 type orderedRequestConn struct {
 	net.Conn
-	order RequestHeaderOrder
+	order          RequestHeaderOrder
+	orderWithNames RequestHeaderOrderWithNames
 
 	mu            sync.Mutex
 	header        []byte
@@ -104,7 +142,11 @@ func (c *orderedRequestConn) Write(p []byte) (int, error) {
 		c.header = nil
 		currentHeaderBytes := min(len(remaining), max(0, headerEnd-previousHeaderLength))
 
-		ordered, contentLength, chunked := orderRequestHeader(header, c.order)
+		order := c.order
+		if c.orderWithNames != nil {
+			order = headerOrderForNames(header, c.orderWithNames)
+		}
+		ordered, contentLength, chunked := orderRequestHeader(header, order)
 		if _, errWrite := writeAll(c.Conn, ordered); errWrite != nil {
 			// All caller bytes were accepted into the wrapper before the transformed
 			// header write failed. Return the full input count with the terminal

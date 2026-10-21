@@ -17,7 +17,7 @@ func CodexWebsocketTLSHandshake(ctx context.Context, raw net.Conn, serverName st
 }
 
 func codexWebsocketTLSHandshake(ctx context.Context, raw net.Conn, cfg *tls.Config) (net.Conn, error) {
-	conn := tls.UClient(raw, cfg, tls.HelloCustom)
+	conn := tls.UClient(raw, codexFreshTLSConfig(cfg), tls.HelloCustom)
 	if err := conn.ApplyPreset(codexWebsocketHello()); err != nil {
 		return nil, fmt.Errorf("codex websocket TLS profile: %w", err)
 	}

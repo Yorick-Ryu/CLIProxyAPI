@@ -71,6 +71,10 @@ type Dialer struct {
 	// connection is closed by DialContext. The hook must verify the peer certificate.
 	TLSHandshakeContext func(ctx context.Context, conn net.Conn, serverName string) (net.Conn, error)
 
+	// WriteHandshake optionally controls request serialization only. Response
+	// validation and subsequent WebSocket frames retain the standard behavior.
+	WriteHandshake func(io.Writer, *http.Request) error
+
 	// Proxy specifies a function to return a proxy for a given
 	// Request. If the function returns a non-nil error, the
 	// request is aborted with the provided error.
@@ -380,7 +384,11 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 
 	conn := newConn(netConn, false, d.ReadBufferSize, d.WriteBufferSize, d.WriteBufferPool, nil, nil)
 
-	if err := req.Write(netConn); err != nil {
+	writeHandshake := d.WriteHandshake
+	if writeHandshake == nil {
+		writeHandshake = func(w io.Writer, r *http.Request) error { return r.Write(w) }
+	}
+	if err := writeHandshake(netConn, req); err != nil {
 		return nil, nil, err
 	}
 
