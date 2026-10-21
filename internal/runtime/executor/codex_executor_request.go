@@ -100,6 +100,7 @@ func (e *CodexExecutor) HttpRequest(ctx context.Context, auth *cliproxyauth.Auth
 
 type codexIdentityConfuseState struct {
 	enabled                bool
+	canonicalMetadata      bool
 	authID                 string
 	originalPromptCacheKey string
 	promptCacheKey         string
@@ -188,6 +189,9 @@ func (e *CodexExecutor) prepareCachedRequest(ctx context.Context, from sdktransl
 		cache.ID = identityState.convergence.sessionID
 	}
 	rawJSON = helps.ApplyCodexAnalyticsBody(e.cfg, rawJSON)
+	if auth != nil && !codexAuthUsesAPIKey(auth) {
+		rawJSON = helps.CanonicalCodexTurnMetadataBody(rawJSON)
+	}
 	rawJSON = helps.FinalizePayload(ctx, rawJSON)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
 	if err != nil {
@@ -257,11 +261,13 @@ func compressCodexRequestBody(body []byte) ([]byte, error) {
 }
 
 func applyCodexIdentityConfuseBody(cfg *config.Config, auth *cliproxyauth.Auth, userPayload []byte, rawJSON []byte) ([]byte, codexIdentityConfuseState) {
+	state := codexIdentityConfuseState{canonicalMetadata: auth != nil && !codexAuthUsesAPIKey(auth)}
 	if codexIdentityConvergenceEnabled(cfg, auth) || !codexIdentityConfuseEnabled(cfg) || auth == nil || strings.TrimSpace(auth.ID) == "" || len(rawJSON) == 0 {
-		return rawJSON, codexIdentityConfuseState{}
+		return rawJSON, state
 	}
 
-	state := codexIdentityConfuseState{enabled: true, authID: strings.TrimSpace(auth.ID)}
+	state.enabled = true
+	state.authID = strings.TrimSpace(auth.ID)
 	if promptCacheKey := strings.TrimSpace(gjson.GetBytes(userPayload, "prompt_cache_key").String()); promptCacheKey != "" {
 		state.originalPromptCacheKey = promptCacheKey
 		state.promptCacheKey = codexIdentityConfuseUUID(auth.ID, "prompt-cache", promptCacheKey)
@@ -285,6 +291,9 @@ func applyCodexIdentityConfuseBody(cfg *config.Config, auth *cliproxyauth.Auth, 
 func applyCodexIdentityConfuseHeaders(headers http.Header, state *codexIdentityConfuseState) {
 	if headers == nil || state == nil {
 		return
+	}
+	if state.canonicalMetadata {
+		defer helps.CanonicalCodexTurnMetadataHeaders(headers)
 	}
 	applyCodexAccountIdentityHeaders(headers, &state.accountIdentity)
 	applyCodexIdentityConvergenceHeaders(headers, &state.convergence)

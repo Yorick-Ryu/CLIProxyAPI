@@ -118,6 +118,9 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 	}
 	upstreamBody, identityState.convergence = applyCodexIdentityConvergenceBody(e.cfg, auth, convergenceSourcePayload, upstreamBody, opts.Headers)
 	upstreamBody = helps.ApplyCodexAnalyticsBody(e.cfg, upstreamBody)
+	if auth != nil && !codexAuthUsesAPIKey(auth) {
+		upstreamBody = helps.CanonicalCodexTurnMetadataBody(upstreamBody)
+	}
 	upstreamBody = finalizePayload(upstreamBody)
 	reporter.SetTranslatedReasoningEffort(clientBody, to.String())
 	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, nativeRequest, opts.Headers)
