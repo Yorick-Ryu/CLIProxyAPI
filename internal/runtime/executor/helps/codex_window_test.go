@@ -13,6 +13,9 @@ func TestCodexWindowOrdinalProjectionPrecedence(t *testing.T) {
 		want    string
 	}{
 		{"canonical number", `{"client_metadata":{"x-codex-turn-metadata":"{\"window_number\":3,\"window_id\":\"thread:0\"}","x-codex-window-id":"thread:0"}}`, nil, "3"},
+		{"flat string", `{"client_metadata":{"window_number":"7"}}`, nil, "7"},
+		{"flat maximum", `{"client_metadata":{"window_number":"18446744073709551615"}}`, nil, "18446744073709551615"},
+		{"invalid flat string", `{"client_metadata":{"window_number":"-1","window_id":"thread:2"}}`, nil, "2"},
 		{"body window", `{"client_metadata":{"x-codex-window-id":"thread:17"}}`, nil, "17"},
 		{"header window", `{}`, http.Header{"x-codex-window-id": {"thread:8"}}, "8"},
 		{"header metadata", `{}`, http.Header{"X-Codex-Turn-Metadata": {`{"window_number":11}`}}, "11"},

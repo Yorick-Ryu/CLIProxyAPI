@@ -135,7 +135,16 @@ func resolveCodexIdentityConvergenceState(cfg *config.Config, auth *cliproxyauth
 	if mode == codexIdentityConvergenceSession && clientSessionID != "" {
 		threadID = codexIdentityConvergenceUUID(credentialSource, "thread", clientSessionID)
 	}
+	// Account mapping has already scoped client-owned turn identities. Keep them
+	// stable across retries and consistent with parent/root references.
 	turnID := uuid.Must(uuid.NewV7())
+	nested := gjson.Parse(gjson.GetBytes(rawJSON, "client_metadata.x-codex-turn-metadata").String())
+	for _, candidate := range []string{nested.Get("turn_id").String(), gjson.GetBytes(rawJSON, "client_metadata.turn_id").String()} {
+		if existing, err := uuid.Parse(candidate); err == nil {
+			turnID = existing
+			break
+		}
+	}
 	turnSeconds, turnNanos := turnID.Time().UnixTime()
 	windowOrdinal := helps.CodexWindowOrdinal(rawJSON, clientHeaders)
 
@@ -171,7 +180,9 @@ func applyCodexIdentityConvergenceBody(cfg *config.Config, auth *cliproxyauth.Au
 		if gjson.GetBytes(rawJSON, "client_metadata.window_id").Exists() {
 			rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.window_id", state.windowID)
 		}
-		if gjson.GetBytes(rawJSON, "client_metadata.window_number").Type == gjson.Number {
+		if gjson.GetBytes(rawJSON, "client_metadata.window_number").Type == gjson.String {
+			rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.window_number", state.windowOrdinal)
+		} else if gjson.GetBytes(rawJSON, "client_metadata.window_number").Type == gjson.Number {
 			rawJSON, _ = sjson.SetRawBytes(rawJSON, "client_metadata.window_number", []byte(state.windowOrdinal))
 		}
 	}
@@ -205,15 +216,22 @@ func rewriteCodexIdentityConvergenceTurnMetadata(raw string, state codexIdentity
 	if !gjson.Parse(raw).IsObject() {
 		raw = "{}"
 	}
+	// Native memory blobs deliberately omit thread/window/device identities.
+	// Outer compatibility metadata remains independently scoped.
+	if gjson.Get(raw, "request_kind").String() == "memory" {
+		return raw
+	}
 	fields := map[string]any{"installation_id": state.installationID}
 	if state.mode != codexIdentityConvergenceDevice {
 		fields = map[string]any{
-			"installation_id":         state.installationID,
-			"session_id":              state.sessionID,
-			"thread_id":               state.threadID,
-			"turn_id":                 state.turnID,
-			"window_id":               state.windowID,
-			"turn_started_at_unix_ms": state.turnStartedAtUnixMs,
+			"installation_id": state.installationID,
+			"session_id":      state.sessionID,
+			"thread_id":       state.threadID,
+			"turn_id":         state.turnID,
+			"window_id":       state.windowID,
+		}
+		if !gjson.Get(raw, "turn_started_at_unix_ms").Exists() {
+			fields["turn_started_at_unix_ms"] = state.turnStartedAtUnixMs
 		}
 		if gjson.Get(raw, "window_number").Type == gjson.Number && state.windowOrdinal != "" {
 			raw, _ = sjson.SetRaw(raw, "window_number", state.windowOrdinal)
