@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
@@ -38,11 +39,14 @@ func TestCodexIdentityConvergenceUsesStableAccountDeviceAndSession(t *testing.T)
 	if got, want := gjson.GetBytes(firstBody, "client_metadata.session_id").String(), first.sessionID; got != want {
 		t.Fatalf("session id = %q, want %q", got, want)
 	}
-	if version := uuid.MustParse(first.sessionID).Version(); version != 4 {
-		t.Fatalf("session UUID version = %d, want 4", version)
+	if version := uuid.MustParse(first.sessionID).Version(); version != 7 {
+		t.Fatalf("session UUID version = %d, want 7", version)
 	}
 	if got, want := gjson.GetBytes(firstBody, "client_metadata.thread_id").String(), first.threadID; got != want {
 		t.Fatalf("thread id = %q, want %q", got, want)
+	}
+	if version := uuid.MustParse(first.threadID).Version(); version != 7 {
+		t.Fatalf("thread UUID version = %d, want 7", version)
 	}
 	if got, want := gjson.GetBytes(firstBody, "client_metadata.x-codex-window-id").String(), first.windowID; got != want {
 		t.Fatalf("window id = %q, want %q", got, want)
@@ -55,6 +59,11 @@ func TestCodexIdentityConvergenceUsesStableAccountDeviceAndSession(t *testing.T)
 	}
 	if _, err := uuid.Parse(gjson.GetBytes(firstBody, "client_metadata.turn_id").String()); err != nil {
 		t.Fatalf("turn id is not a UUID: %v", err)
+	}
+	turn := uuid.MustParse(first.turnID)
+	seconds, nanos := turn.Time().UnixTime()
+	if turn.Version() != 7 || time.Unix(seconds, nanos).UnixMilli() != first.turnStartedAtUnixMs {
+		t.Fatal("generated turn UUID must retain the exact turn-start timestamp")
 	}
 
 	firstMetadata := gjson.GetBytes(firstBody, "client_metadata.x-codex-turn-metadata").String()
@@ -114,6 +123,18 @@ func TestCodexIdentityConvergenceUsesStableAccountDeviceAndSession(t *testing.T)
 	_, other := applyCodexIdentityConvergenceBody(cfg, otherAuth, firstClientBody, firstClientBody, nil)
 	if other.installationID == first.installationID || other.sessionID == first.sessionID {
 		t.Fatal("different OAuth auths must not share converged device or session ids")
+	}
+}
+
+func TestCodexIdentityConvergencePreservesNativeThreadTimestamp(t *testing.T) {
+	const session = "019a0992-1400-7abc-8def-0123456789ab"
+	auth := &cliproxyauth.Auth{ID: "native-session-auth", Provider: "codex", Metadata: map[string]any{codexIdentityConvergenceModeKey: "session"}}
+	body := []byte(`{"client_metadata":{"session_id":"` + session + `"}}`)
+	_, first := applyCodexIdentityConvergenceBody(&config.Config{}, auth, body, body, nil)
+	assertCodexIdentityV7Timestamp(t, first.threadID, session)
+	_, second := applyCodexIdentityConvergenceBody(&config.Config{}, auth, body, body, nil)
+	if first.sessionID != second.sessionID || first.threadID != second.threadID {
+		t.Fatal("converged session and thread must stay stable across requests")
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
@@ -109,10 +108,7 @@ func codexAccountIdentityUUID(state codexAccountIdentityState, kind, raw string)
 		strings.TrimSpace(kind),
 		raw,
 	}, ":")
-	id := uuid.NewSHA1(uuid.NameSpaceOID, []byte(name))
-	id[6] = (id[6] & 0x0f) | 0x40
-	id[8] = (id[8] & 0x3f) | 0x80
-	return id.String()
+	return helps.CodexIdentityUUID(name, kind, raw)
 }
 
 var codexAccountIdentityBodyFields = []struct {

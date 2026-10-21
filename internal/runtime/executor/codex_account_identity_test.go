@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,8 +9,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
@@ -19,20 +22,25 @@ import (
 )
 
 func TestCodexAccountIdentityPreservesSessionAndTurnLineage(t *testing.T) {
+	const rootThread = "019a0992-1400-7abc-8def-0123456789ab"
+	const childThread = "019a0992-1450-7abc-8def-0123456789ab"
+	const rootTurn = "019a0992-1460-7abc-8def-0123456789ab"
+	const childTurn = "019a0992-1470-7abc-8def-0123456789ab"
 	auth := &cliproxyauth.Auth{ID: "test", Provider: "codex", Metadata: map[string]any{"account_id": "test-account"}}
 	ctx := codexAccountIdentityTestContext("caller")
 	mapRequest := func(thread, turn, root, parent string) ([]byte, http.Header) {
 		t.Helper()
-		meta := map[string]string{"session_id": "root-thread", "thread_id": thread, "turn_id": turn, "root_turn_id": root, "parent_turn_id": parent, "parent_thread_id": "root-thread", "forked_from_thread_id": "root-thread", "window_id": thread + ":3"}
+		meta := map[string]string{"session_id": rootThread, "thread_id": thread, "turn_id": turn, "root_turn_id": root, "parent_turn_id": parent, "parent_thread_id": rootThread, "forked_from_thread_id": rootThread, "window_id": thread + ":3"}
 		raw, _ := json.Marshal(meta)
-		body, _ := json.Marshal(map[string]any{"prompt_cache_key": "root-thread", "client_metadata": map[string]string{"session_id": "root-thread", "thread_id": thread, "turn_id": turn, "root_turn_id": root, "parent_turn_id": parent, "x-codex-window-id": thread + ":3", "x-codex-turn-metadata": string(raw)}})
+		body, _ := json.Marshal(map[string]any{"prompt_cache_key": rootThread, "client_metadata": map[string]string{"session_id": rootThread, "thread_id": thread, "turn_id": turn, "root_turn_id": root, "parent_turn_id": parent, "x-codex-window-id": thread + ":3", "x-codex-turn-metadata": string(raw)}})
 		mapped, state := applyCodexAccountIdentityBody(ctx, auth, body)
-		headers := http.Header{"Session-Id": {"root-thread"}, "Thread-Id": {thread}, "X-Client-Request-Id": {thread}, "X-Codex-Window-Id": {thread + ":3"}, "X-Codex-Turn-Metadata": {string(raw)}}
+		headers := http.Header{"Session-Id": {rootThread}, "Thread-Id": {thread}, "X-Client-Request-Id": {thread}, "X-Codex-Window-Id": {thread + ":3"}, "X-Codex-Turn-Metadata": {string(raw)}}
 		applyCodexAccountIdentityHeaders(headers, &state)
 		return mapped, headers
 	}
-	parent, headers := mapRequest("root-thread", "root-turn", "root-turn", "root-turn")
+	parent, headers := mapRequest(rootThread, rootTurn, rootTurn, rootTurn)
 	session := headers.Get("Session-Id")
+	assertCodexIdentityV7Timestamp(t, session, rootThread)
 	if session != headers.Get("Thread-Id") || session != headers.Get("X-Client-Request-Id") || headers.Get("X-Codex-Window-Id") != session+":3" {
 		t.Fatal("session/thread/request/window relationship lost")
 	}
@@ -40,11 +48,14 @@ func TestCodexAccountIdentityPreservesSessionAndTurnLineage(t *testing.T) {
 		t.Fatal("cache key differs from session")
 	}
 	turn := gjson.GetBytes(parent, "client_metadata.turn_id").String()
-	if turn == "root-turn" || turn != gjson.GetBytes(parent, "client_metadata.root_turn_id").String() {
+	assertCodexIdentityV7Timestamp(t, turn, rootTurn)
+	if turn == rootTurn || turn != gjson.GetBytes(parent, "client_metadata.root_turn_id").String() {
 		t.Fatal("root turn relation lost")
 	}
-	child, childHeaders := mapRequest("child-thread", "child-turn", "root-turn", "root-turn")
+	child, childHeaders := mapRequest(childThread, childTurn, rootTurn, rootTurn)
 	childMeta := gjson.Parse(childHeaders.Get("X-Codex-Turn-Metadata"))
+	assertCodexIdentityV7Timestamp(t, childHeaders.Get("Thread-Id"), childThread)
+	assertCodexIdentityV7Timestamp(t, childMeta.Get("turn_id").String(), childTurn)
 	if childHeaders.Get("Session-Id") != session || childHeaders.Get("Thread-Id") == session {
 		t.Fatal("child session/thread distinction lost")
 	}
@@ -56,6 +67,18 @@ func TestCodexAccountIdentityPreservesSessionAndTurnLineage(t *testing.T) {
 	}
 	if childHeaders.Get("X-Codex-Turn-Metadata") != gjson.GetBytes(child, "client_metadata.x-codex-turn-metadata").String() {
 		t.Fatal("header/body metadata differs")
+	}
+}
+
+func assertCodexIdentityV7Timestamp(t *testing.T, mapped, source string) {
+	t.Helper()
+	id, err := uuid.Parse(mapped)
+	if err != nil {
+		t.Fatalf("invalid mapped UUID %q: %v", mapped, err)
+	}
+	original := uuid.MustParse(source)
+	if id.Version() != 7 || id.Variant() != uuid.RFC4122 || !bytes.Equal(id[:6], original[:6]) {
+		t.Fatalf("mapped UUID %s did not preserve the UUIDv7 timestamp of %s", id, original)
 	}
 }
 
@@ -317,6 +340,12 @@ func TestCodexAccountIdentityLeavesAPIKeyAndMissingFieldsUntouched(t *testing.T)
 }
 
 func TestCodexChildIdentityOnWire(t *testing.T) {
+	const parentThreadSource = "019a0992-1400-7abc-8def-0123456789ab"
+	const childThreadSource = "019a0992-1450-7abc-8def-0123456789ab"
+	const parentTurnSource = "019a0992-1460-7abc-8def-0123456789ab"
+	const childTurnSource = "019a0992-1470-7abc-8def-0123456789ab"
+	turnSeconds, turnNanos := uuid.MustParse(childTurnSource).Time().UnixTime()
+	turnStarted := time.Unix(turnSeconds, turnNanos).UnixMilli()
 	for _, transport := range []string{"http", "ws"} {
 		for _, stream := range []bool{false, true} {
 			for _, source := range []string{"both", "header_only", "body_only", "absent"} {
@@ -367,24 +396,30 @@ func TestCodexChildIdentityOnWire(t *testing.T) {
 					}
 					auth := &cliproxyauth.Auth{ID: "child-wire", Provider: "codex", Attributes: map[string]string{"base_url": server.URL}, Metadata: map[string]any{"account_id": "synthetic-account", "access_token": "synthetic-token"}}
 					ctx := codexAccountIdentityTestContext("synthetic-caller")
-					parentBody, _ := applyCodexAccountIdentityBody(ctx, auth, []byte(`{"client_metadata":{"thread_id":"parent-thread"}}`))
+					parentBody, _ := applyCodexAccountIdentityBody(ctx, auth, []byte(fmt.Sprintf(`{"client_metadata":{"thread_id":%q,"turn_id":%q}}`, parentThreadSource, parentTurnSource)))
 					parent := gjson.GetBytes(parentBody, "client_metadata.thread_id").String()
-					metadata := map[string]string{"session_id": "parent-thread", "thread_id": "child-thread"}
-					hasBody := source == "both" || source == "body_only"
-					hasHeaders := source == "both" || source == "header_only"
-					if hasBody {
-						metadata["x-codex-parent-thread-id"] = "parent-thread"
-						metadata["x-openai-subagent"] = "review"
-						metadata["x-codex-turn-metadata"] = `{"parent_thread_id":"parent-thread","x-codex-parent-thread-id":"parent-thread","thread_id":"child-thread"}`
-					}
-					body, err := json.Marshal(map[string]any{"model": "gpt-5.5", "input": []any{}, "prompt_cache_key": "parent-thread", "client_metadata": metadata})
+					parentTurn := gjson.GetBytes(parentBody, "client_metadata.turn_id").String()
+					metadata := map[string]string{"session_id": parentThreadSource, "thread_id": childThreadSource, "turn_id": childTurnSource, "root_turn_id": parentTurnSource, "parent_turn_id": parentTurnSource, "x-codex-window-id": childThreadSource + ":3"}
+					nestedMetadata, err := json.Marshal(map[string]any{"parent_thread_id": parentThreadSource, "x-codex-parent-thread-id": parentThreadSource, "thread_id": childThreadSource, "turn_id": childTurnSource, "root_turn_id": parentTurnSource, "parent_turn_id": parentTurnSource, "turn_started_at_unix_ms": turnStarted})
 					if err != nil {
 						t.Fatal(err)
 					}
-					headers := http.Header{"User-Agent": {"Go-http-client/1.1"}, "Session-Id": {"parent-thread"}, "Thread-Id": {"child-thread"}}
+					hasBody := source == "both" || source == "body_only"
+					hasHeaders := source == "both" || source == "header_only"
+					if hasBody {
+						metadata["x-codex-parent-thread-id"] = parentThreadSource
+						metadata["x-openai-subagent"] = "review"
+						metadata["x-codex-turn-metadata"] = string(nestedMetadata)
+					}
+					body, err := json.Marshal(map[string]any{"model": "gpt-5.5", "input": []any{}, "prompt_cache_key": parentThreadSource, "client_metadata": metadata})
+					if err != nil {
+						t.Fatal(err)
+					}
+					headers := http.Header{"User-Agent": {"Go-http-client/1.1"}, "Session-Id": {parentThreadSource}, "Thread-Id": {childThreadSource}, "X-Client-Request-Id": {childThreadSource}, "X-Codex-Window-Id": {childThreadSource + ":3"}}
 					if hasHeaders {
-						headers.Set("X-Codex-Parent-Thread-Id", "parent-thread")
+						headers.Set("X-Codex-Parent-Thread-Id", parentThreadSource)
 						headers.Set("X-OpenAI-Subagent", "review")
+						headers.Set("X-Codex-Turn-Metadata", string(nestedMetadata))
 					}
 					req := cliproxyexecutor.Request{Model: "gpt-5.5", Payload: body}
 					opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatCodex, Headers: headers, Stream: stream}
@@ -406,14 +441,28 @@ func TestCodexChildIdentityOnWire(t *testing.T) {
 						t.Fatal("configured UA must replace the intermediary's Go UA")
 					}
 					child := got.headers.Get("Thread-Id")
-					if parent == "parent-thread" || child == "" || child == "child-thread" || child == parent || got.headers.Get("Session-Id") != parent {
+					assertCodexIdentityV7Timestamp(t, parent, parentThreadSource)
+					assertCodexIdentityV7Timestamp(t, child, childThreadSource)
+					childTurn := gjson.GetBytes(got.body, "client_metadata.turn_id").String()
+					assertCodexIdentityV7Timestamp(t, childTurn, childTurnSource)
+					if parent == parentThreadSource || child == childThreadSource || child == parent || got.headers.Get("Session-Id") != parent {
 						t.Fatal("child and parent thread relationship lost")
+					}
+					if got.headers.Get("X-Client-Request-Id") != child || got.headers.Get("X-Codex-Window-Id") != child+":3" || gjson.GetBytes(got.body, "client_metadata.x-codex-window-id").String() != child+":3" {
+						t.Fatal("request and window IDs lost their thread relationship")
+					}
+					if gjson.GetBytes(got.body, "client_metadata.root_turn_id").String() != parentTurn || gjson.GetBytes(got.body, "client_metadata.parent_turn_id").String() != parentTurn {
+						t.Fatal("parent turn references no longer match the independently mapped parent")
 					}
 					if hasHeaders {
 						if got.headers.Get("X-Codex-Parent-Thread-Id") != parent || got.headers.Get("X-OpenAI-Subagent") != "review" {
 							t.Fatal("independent parent or subagent header dropped or incorrectly mapped")
 						}
-						if headers.Get("X-Codex-Parent-Thread-Id") != "parent-thread" {
+						headerMetadata := gjson.Parse(got.headers.Get("X-Codex-Turn-Metadata"))
+						if headerMetadata.Get("turn_id").String() != childTurn || headerMetadata.Get("turn_started_at_unix_ms").Int() != turnStarted || headerMetadata.Get("parent_turn_id").String() != parentTurn {
+							t.Fatal("header turn timestamp or lineage differs from the body")
+						}
+						if headers.Get("X-Codex-Parent-Thread-Id") != parentThreadSource {
 							t.Fatal("incoming headers mutated")
 						}
 					} else if got.headers.Get("X-Codex-Parent-Thread-Id") != "" || got.headers.Get("X-OpenAI-Subagent") != "" {
@@ -424,6 +473,9 @@ func TestCodexChildIdentityOnWire(t *testing.T) {
 						nested := gjson.Parse(gjson.GetBytes(got.body, "client_metadata.x-codex-turn-metadata").String())
 						if alias.String() != parent || nested.Get("parent_thread_id").String() != parent || nested.Get("x-codex-parent-thread-id").String() != parent || nested.Get("thread_id").String() != child {
 							t.Fatal("body aliases and nested parent metadata must match the parent thread")
+						}
+						if nested.Get("turn_id").String() != childTurn || nested.Get("turn_started_at_unix_ms").Int() != turnStarted || nested.Get("root_turn_id").String() != parentTurn || nested.Get("parent_turn_id").String() != parentTurn {
+							t.Fatal("embedded turn timestamp or lineage differs from the outer metadata")
 						}
 						if gjson.GetBytes(got.body, "client_metadata.x-openai-subagent").String() != "review" {
 							t.Fatal("subagent label changed")

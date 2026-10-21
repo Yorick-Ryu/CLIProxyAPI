@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -101,10 +102,7 @@ func codexIdentityConvergenceUUID(identitySource string, kind string, source str
 		strings.TrimSpace(identitySource),
 		strings.TrimSpace(source),
 	}, ":")
-	id := uuid.NewSHA1(uuid.NameSpaceOID, []byte(name))
-	id[6] = (id[6] & 0x0f) | 0x40
-	id[8] = (id[8] & 0x3f) | 0x80
-	return id.String()
+	return helps.CodexIdentityUUID(name, kind, source)
 }
 
 func codexClientMetadataSessionID(payload []byte) string {
@@ -136,6 +134,8 @@ func resolveCodexIdentityConvergenceState(cfg *config.Config, auth *cliproxyauth
 	if mode == codexIdentityConvergenceSession && clientSessionID != "" {
 		threadID = codexIdentityConvergenceUUID(credentialSource, "thread", clientSessionID)
 	}
+	turnID := uuid.Must(uuid.NewV7())
+	turnSeconds, turnNanos := turnID.Time().UnixTime()
 
 	return codexIdentityConvergenceState{
 		enabled:               true,
@@ -143,9 +143,9 @@ func resolveCodexIdentityConvergenceState(cfg *config.Config, auth *cliproxyauth
 		installationID:        installationID,
 		sessionID:             sessionID,
 		threadID:              threadID,
-		turnID:                uuid.Must(uuid.NewV7()).String(),
+		turnID:                turnID.String(),
 		windowID:              threadID + ":0",
-		turnStartedAtUnixMs:   time.Now().UnixMilli(),
+		turnStartedAtUnixMs:   time.Unix(turnSeconds, turnNanos).UnixMilli(),
 		originalBodySessionID: originalBodySessionID,
 	}
 }
