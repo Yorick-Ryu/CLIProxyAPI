@@ -551,6 +551,7 @@ func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, toke
 	}
 	util.ApplyCustomHeadersFromAttrs(r, attrs, ginHeaders)
 	applyCodexCloakingHeaders(r.Header, cfg, auth)
+	applyCodexSyncedIdentity(r.Context(), r.Header, cfg, auth, ginHeaders)
 }
 
 const codexRoutingHintHeader = "X-Codex-Routing-Hint"
@@ -784,4 +785,25 @@ func codexTurnStateContext(ctx context.Context, auth *cliproxyauth.Auth, req cli
 		session = helps.ProviderSessionUUID("codex", opts.Metadata)
 	}
 	return helps.WithCodexTurnState(ctx, owner, headers, body, session)
+}
+
+// applyCodexSyncedIdentity projects one successful startup check into both
+// identity headers, overriding configured versions only while enabled.
+func applyCodexSyncedIdentity(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders http.Header) {
+	applyCodexSyncedIdentityVersion(ctx, headers, cfg, auth, clientHeaders, helps.CodexCurrentVersion())
+}
+
+func applyCodexSyncedIdentityVersion(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders http.Header, version string) {
+	if version == "" || cfg == nil || !cfg.CodexHeaderDefaults.VersionSync.Enabled || auth == nil || codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) || isCodexCloakingDisabled(cfg, auth) {
+		return
+	}
+	ua := codexOperatorHeaderValue(ctx, auth, clientHeaders, "User-Agent")
+	if ua == "" {
+		ua = headers.Get("User-Agent")
+	}
+	headers.Set("User-Agent", helps.CodexVersionUserAgent(ua, codexUserAgent, version))
+	headers.Set("Version", version)
+	if origin := codexOperatorHeaderValue(ctx, auth, clientHeaders, "Originator"); origin != "" {
+		headers.Set("Originator", origin)
+	}
 }

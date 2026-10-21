@@ -187,6 +187,7 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
 	req := (&http.Request{Header: headers}).WithContext(ctx)
 	util.ApplyCustomHeadersFromAttrs(req, attrs, ginHeaders)
 	applyCodexCloakingHeaders(headers, cfg, auth)
+	applyCodexSyncedIdentity(ctx, headers, cfg, auth, ginHeaders)
 
 	return headers
 }
