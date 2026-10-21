@@ -24,7 +24,8 @@ at capacity. Each admits at most 64 domain/path/name slots and rejects Set-Cooki
 lines over 4096 bytes. Slot reservations persist until explicit deletion or
 partition eviction; cookie expiry is independently enforced by the jar.
 Storage is process-local and disappears on restart. No new configuration or
-management endpoint is introduced. HTTP connection pooling is unchanged.
+management endpoint is introduced. Cookie storage is independent of the
+[HTTP connection pool](codex-http-pooling.md).
 
 Implementation: `internal/runtime/executor/helps/codex_cookies.go`.
 Checks: `go test -race ./internal/runtime/executor/helps -run 'TestCodex(Cookies|HTTP)'`;
