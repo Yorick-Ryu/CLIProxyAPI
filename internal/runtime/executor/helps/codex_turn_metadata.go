@@ -95,6 +95,10 @@ func codexMetadataChildShape(shape codexMetadataShape, field string) codexMetada
 // numeric tokens stay lossless. Invalid and ambiguous duplicate-key input is
 // passed through for upstream validation.
 func CanonicalCodexTurnMetadata(raw string) string {
+	return canonicalCodexTurnMetadata(raw, false)
+}
+
+func canonicalCodexTurnMetadata(raw string, header bool) string {
 	if !utf8.ValidString(raw) || !gjson.Valid(raw) {
 		return raw
 	}
@@ -107,7 +111,15 @@ func CanonicalCodexTurnMetadata(raw string) string {
 	if !writeCodexMetadataValue(&output, value, codexMetadataRoot) {
 		return raw
 	}
-	return output.String()
+	canonical := output.String()
+	if header {
+		// Native compatibility headers omit the unbounded tool inventory.
+		// Validate the entire original first, including duplicate keys and UTF-8.
+		if projected, err := sjson.Delete(canonical, "tool_namespaces_info"); err == nil {
+			canonical = projected
+		}
+	}
+	return canonical
 }
 
 func writeCodexMetadataValue(output *strings.Builder, value gjson.Result, shape codexMetadataShape) bool {
@@ -298,7 +310,7 @@ func CanonicalCodexTurnMetadataHeaders(headers http.Header) {
 		}
 		var updated []string
 		for index, value := range values {
-			canonical := CanonicalCodexTurnMetadata(value)
+			canonical := canonicalCodexTurnMetadata(value, true)
 			// Native ASCII JSON can retain DEL, which HeaderValue rejects.
 			// Preserve a valid incoming projection if canonicalization would
 			// make it untransmittable; never introduce an HTTP header error.

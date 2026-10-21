@@ -252,6 +252,9 @@ type Response struct {
 	Metadata map[string]any
 	// Headers carries upstream HTTP response headers for passthrough to clients.
 	Headers http.Header
+	// OnResponseCommitted observes only the final response selected for delivery,
+	// after retries and response interceptors. Headers and payload are read-only.
+	OnResponseCommitted func(http.Header, []byte) `json:"-"`
 }
 
 // StreamChunk represents a single streaming payload unit emitted by provider executors.
@@ -269,6 +272,9 @@ type StreamResult struct {
 	Headers http.Header
 	// Chunks is the channel of streaming payload units.
 	Chunks <-chan StreamChunk
+	// OnResponseCommitted observes each deliverable payload after bootstrap
+	// retries and interceptors. Discarded attempts must never invoke it.
+	OnResponseCommitted func(http.Header, []byte) `json:"-"`
 }
 
 // StatusError represents an error that carries an HTTP-like status code.

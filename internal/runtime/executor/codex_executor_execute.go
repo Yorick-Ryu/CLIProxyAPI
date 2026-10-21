@@ -19,6 +19,12 @@ import (
 )
 
 func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (resp cliproxyexecutor.Response, err error) {
+	ctx = codexTurnStateContext(ctx, auth, req, opts)
+	defer func() {
+		if err == nil && resp.OnResponseCommitted == nil {
+			resp.OnResponseCommitted = helps.CodexTurnStateCommitObserver(ctx)
+		}
+	}()
 	ctx = helps.EnsureSessionContext(ctx, opts, req.Payload)
 	if opts.Alt == "responses/compact" {
 		return e.executeCompact(ctx, auth, req, opts)

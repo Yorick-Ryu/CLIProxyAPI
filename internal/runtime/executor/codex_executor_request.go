@@ -191,6 +191,7 @@ func (e *CodexExecutor) prepareCachedRequest(ctx context.Context, from sdktransl
 	if auth != nil && !codexAuthUsesAPIKey(auth) {
 		rawJSON = helps.CanonicalCodexTurnMetadataBody(rawJSON)
 	}
+	rawJSON = helps.GuardCodexTurnStateBody(ctx, rawJSON)
 	rawJSON = helps.FinalizePayload(ctx, rawJSON)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
 	if err != nil {
@@ -470,6 +471,7 @@ func stripCodexSIWCUnsupportedFields(body []byte, hasExplicitInstructions bool, 
 }
 
 func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, token string, stream bool, cfg *config.Config, ginHeaders http.Header) {
+	defer helps.GuardCodexTurnStateHeaders(r.Context(), r.Header)
 	defer helps.ApplyCodexAnalyticsHeaders(cfg, r.Header)
 	r.Header.Set("Content-Type", "application/json")
 	if strings.TrimSpace(token) != "" {
@@ -510,6 +512,9 @@ func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, toke
 	misc.EnsureHeader(r.Header, ginHeaders, "Thread-Id", "")
 	misc.EnsureHeader(r.Header, ginHeaders, "X-Codex-Parent-Thread-Id", "")
 	misc.EnsureHeader(r.Header, ginHeaders, "X-OpenAI-Subagent", "")
+	if auth != nil && !codexAuthUsesAPIKey(auth) {
+		misc.EnsureHeader(r.Header, ginHeaders, "X-OpenAI-Memgen-Request", "")
+	}
 	misc.EnsureHeader(r.Header, ginHeaders, "X-Codex-Guardian", "")
 	misc.EnsureHeader(r.Header, ginHeaders, "Session-Id", "")
 	misc.EnsureHeader(r.Header, ginHeaders, "X-Openai-Internal-Codex-Responses-Lite", "")
@@ -755,4 +760,30 @@ func codexImageGenerationToolModel(body []byte) string {
 		}
 	}
 	return codexDefaultImageToolModel
+}
+
+// codexTurnStateContext uses original client identities, before account mapping.
+func codexTurnStateContext(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) context.Context {
+	owner := ""
+	if auth != nil && !codexAuthUsesAPIKey(auth) && !codexUseSIWC(auth) {
+		owner = codexCredentialIdentitySource(auth)
+	}
+	body := req.Payload
+	if len(opts.OriginalRequest) > 0 {
+		body = opts.OriginalRequest
+	}
+	headers := opts.Headers
+	if headers == nil && ctx != nil {
+		if ginCtx, ok := ctx.Value("gin").(*gin.Context); ok && ginCtx != nil && ginCtx.Request != nil {
+			headers = ginCtx.Request.Header
+		}
+	}
+	session := executionSessionIDFromOptions(opts)
+	if session == "" {
+		session = helps.ProviderSessionUUID("codex", req.Metadata)
+	}
+	if session == "" {
+		session = helps.ProviderSessionUUID("codex", opts.Metadata)
+	}
+	return helps.WithCodexTurnState(ctx, owner, headers, body, session)
 }

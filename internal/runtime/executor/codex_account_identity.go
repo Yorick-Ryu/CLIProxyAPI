@@ -129,6 +129,7 @@ var codexAccountIdentityBodyFields = []struct {
 	{path: "client_metadata.x-codex-parent-thread-id", kind: "thread"},
 	{path: "client_metadata.forked_from_thread_id", kind: "thread"},
 	{path: "client_metadata.window_id", kind: "window"},
+	{path: "client_metadata.context_window_id", kind: "context-window"},
 	{path: "client_metadata.x-codex-window-id", kind: "window"},
 	{path: "client_metadata.x-client-request-id", kind: "thread"},
 }
@@ -151,6 +152,7 @@ var codexAccountIdentityTurnMetadataFields = []struct {
 	{path: "x-codex-parent-thread-id", kind: "thread"},
 	{path: "forked_from_thread_id", kind: "thread"},
 	{path: "window_id", kind: "window"},
+	{path: "context_window_id", kind: "context-window"},
 	{path: "x-codex-window-id", kind: "window"},
 	{path: "x-client-request-id", kind: "thread"},
 }

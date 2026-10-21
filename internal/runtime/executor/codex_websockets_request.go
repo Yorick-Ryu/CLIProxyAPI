@@ -67,6 +67,7 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
 	if headers == nil {
 		headers = http.Header{}
 	}
+	defer helps.GuardCodexTurnStateHeaders(ctx, headers)
 	defer helps.ApplyCodexAnalyticsHeaders(cfg, headers)
 	if strings.TrimSpace(token) != "" {
 		headers.Set("Authorization", "Bearer "+token)
@@ -118,6 +119,9 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
 	misc.EnsureHeader(headers, ginHeaders, "Thread-Id", "")
 	misc.EnsureHeader(headers, ginHeaders, "X-Codex-Parent-Thread-Id", "")
 	misc.EnsureHeader(headers, ginHeaders, "X-OpenAI-Subagent", "")
+	if auth != nil && !codexAuthUsesAPIKey(auth) {
+		misc.EnsureHeader(headers, ginHeaders, "X-OpenAI-Memgen-Request", "")
+	}
 	misc.EnsureHeader(headers, ginHeaders, "X-Codex-Guardian", "")
 	misc.EnsureHeader(headers, ginHeaders, "X-Codex-Window-Id", "")
 	misc.EnsureHeader(headers, ginHeaders, "x-responsesapi-include-timing-metrics", "")

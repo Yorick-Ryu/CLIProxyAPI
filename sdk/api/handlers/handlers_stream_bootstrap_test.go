@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1331,5 +1332,83 @@ func TestExecuteStreamWithAuthManager_AllowsSplitOpenAIResponsesSSEEventLines(t 
 	expectedData := "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-1\",\"output\":[]}}"
 	if got[1] != expectedData {
 		t.Fatalf("unexpected second chunk.\nGot:  %q\nWant: %q", got[1], expectedData)
+	}
+}
+
+func TestStreamCommitObserverSkipsDiscardedBootstrapAttempts(t *testing.T) {
+	for _, dropped := range []bool{false, true} {
+		t.Run(fmt.Sprint(dropped), func(t *testing.T) {
+			committed := make(chan string, 8)
+			executor := &bootstrapStreamExecutor{stream: func(_ context.Context, call int) (*coreexecutor.StreamResult, error) {
+				chunks := make(chan coreexecutor.StreamChunk, 2)
+				if call == 1 {
+					if dropped {
+						chunks <- coreexecutor.StreamChunk{Payload: []byte("drop")}
+					}
+					chunks <- coreexecutor.StreamChunk{Err: &coreauth.Error{HTTPStatus: http.StatusUnauthorized, Message: "unauthorized"}}
+				} else {
+					chunks <- coreexecutor.StreamChunk{Payload: []byte("ok")}
+				}
+				close(chunks)
+				return &coreexecutor.StreamResult{Headers: http.Header{"X-Upstream-Attempt": {fmt.Sprint(call)}}, Chunks: chunks, OnResponseCommitted: func(h http.Header, p []byte) {
+					committed <- fmt.Sprintf("%d/%s/%s", call, h.Get("X-Upstream-Attempt"), p)
+				}}, nil
+			}}
+			handler, _ := registerBootstrapExecutor(t, executor)
+			handler.UpdateClients(&sdkconfig.SDKConfig{PassthroughHeaders: true, Streaming: sdkconfig.StreamingConfig{BootstrapRetries: 1}})
+			handler.SetPluginHost(&handlerInterceptorTestHost{interceptStreamChunk: func(_ context.Context, req pluginapi.StreamChunkInterceptRequest) pluginapi.StreamChunkInterceptResponse {
+				return pluginapi.StreamChunkInterceptResponse{Body: cloneBytes(req.Body), DropChunk: string(req.Body) == "drop"}
+			}})
+			data, _, errs := handler.ExecuteStreamWithAuthManager(context.Background(), "openai", "bootstrap-model", []byte(`{"model":"bootstrap-model"}`), "")
+			for range data {
+			}
+			for err := range errs {
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			select {
+			case got := <-committed:
+				if got != "2/2/ok" {
+					t.Fatalf("committed %q, want final attempt", got)
+				}
+			default:
+				t.Fatal("final observer was lost through auth/handler wrappers")
+			}
+			select {
+			case got := <-committed:
+				t.Fatalf("discarded attempt committed %q", got)
+			default:
+			}
+		})
+	}
+}
+
+type committedResponseTestExecutor struct {
+	*bootstrapStreamExecutor
+	observe func(http.Header, []byte)
+}
+
+func (e *committedResponseTestExecutor) Execute(context.Context, *coreauth.Auth, coreexecutor.Request, coreexecutor.Options) (coreexecutor.Response, error) {
+	return coreexecutor.Response{Payload: []byte(`{"id":"synthetic","choices":[]}`), Headers: http.Header{"X-Codex-Turn-State": {"synthetic-origin"}}, OnResponseCommitted: e.observe}, nil
+}
+func TestResponseCommitObserverRunsAfterInterceptors(t *testing.T) {
+	executor := &bootstrapStreamExecutor{}
+	handler, manager := registerBootstrapExecutor(t, executor)
+	var gotHeaders http.Header
+	var gotPayload string
+	manager.RegisterExecutor(&committedResponseTestExecutor{bootstrapStreamExecutor: executor, observe: func(h http.Header, p []byte) { gotHeaders = h.Clone(); gotPayload = string(p) }})
+	handler.UpdateClients(&sdkconfig.SDKConfig{PassthroughHeaders: true})
+	handler.SetPluginHost(&handlerInterceptorTestHost{interceptResponse: func(_ context.Context, req pluginapi.ResponseInterceptRequest) pluginapi.ResponseInterceptResponse {
+		h := req.ResponseHeaders.Clone()
+		h.Set("X-Codex-Turn-State", "synthetic-final")
+		return pluginapi.ResponseInterceptResponse{Headers: h, Body: []byte(`{"id":"intercepted","choices":[]}`)}
+	}})
+	payload, headers, err := handler.ExecuteWithAuthManager(context.Background(), "openai", "bootstrap-model", []byte(`{"model":"bootstrap-model"}`), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotHeaders.Get("X-Codex-Turn-State") != "synthetic-final" || gotHeaders.Get("X-Codex-Turn-State") != headers.Get("X-Codex-Turn-State") || gotPayload != string(payload) {
+		t.Fatal("observer saw the pre-interceptor response or was lost")
 	}
 }

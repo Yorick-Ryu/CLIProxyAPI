@@ -287,6 +287,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 					if auth != nil && !codexAuthUsesAPIKey(auth) {
 						payload = helps.CanonicalCodexTurnMetadataBody(payload)
 					}
+					payload = helps.GuardCodexTurnStateBody(streamCtx, payload)
 					payload = helps.NewPayloadFinalizer(e.cfg, "codex-websockets", thinking.ParseSuffix(req.Model).ModelName, "codex", "", payload, steerReq, opts)(payload)
 					payload, _ = sjson.SetBytes(payload, "type", "response.steer")
 					parent := gjson.GetBytes(payload, "previous_response_id").String()

@@ -20,7 +20,13 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (_ *cliproxyexecutor.StreamResult, err error) {
+func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (result *cliproxyexecutor.StreamResult, err error) {
+	ctx = codexTurnStateContext(ctx, auth, req, opts)
+	defer func() {
+		if err == nil && result != nil && result.OnResponseCommitted == nil {
+			result.OnResponseCommitted = helps.CodexTurnStateCommitObserver(ctx)
+		}
+	}()
 	ctx = helps.EnsureSessionContext(ctx, opts, req.Payload)
 	if opts.Alt == "responses/compact" {
 		return nil, statusErr{code: http.StatusBadRequest, msg: "streaming not supported for /responses/compact"}
