@@ -1,0 +1,26 @@
+{
+  "reference": "openai/codex@8d06d62e15ebbe1ad42324232b6e8a7e2e432793 codex-rs/http-client/src/request.rs",
+  "encoder": "zstd 0.13.3 (libzstd 1.5.7): zstd::stream::encode_all(Cursor::new(vec![b'x'; size]), 3)",
+  "cases": [
+    {
+      "size": 0,
+      "frame_hex": "28b52ffd2000010000"
+    },
+    {
+      "size": 2,
+      "frame_hex": "28b52ffd00581100007878"
+    },
+    {
+      "size": 1024,
+      "frame_hex": "28b52ffd00584d00001078780100fb2b8005"
+    },
+    {
+      "size": 131072,
+      "frame_hex": "28b52ffd00585400001078780100fbff39c002010000"
+    },
+    {
+      "size": 2097153,
+      "frame_hex": "28b52ffd00585400001078780100fbff39c00202001078020010780200107802001078020010780200107802001078020010780200107802001078020010780200107802001078020010780200107809000078"
+    }
+  ]
+}

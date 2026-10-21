@@ -28,6 +28,7 @@ func TestCodexExecutorCacheHelper_RequestCompression(t *testing.T) {
 		name           string
 		cfg            *config.Config
 		auth           *cliproxyauth.Auth
+		url            string
 		wantCompressed bool
 	}{
 		{
@@ -56,6 +57,32 @@ func TestCodexExecutorCacheHelper_RequestCompression(t *testing.T) {
 			auth: &cliproxyauth.Auth{Provider: "codex", Attributes: map[string]string{"api_key": "test-key"}},
 		},
 		{
+			name: "API key classified by attributes",
+			cfg:  &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{Enabled: true}}},
+			auth: &cliproxyauth.Auth{Provider: "codex", Attributes: map[string]string{cliproxyauth.AttributeAuthKind: cliproxyauth.AuthKindAPIKey}},
+		},
+		{
+			name: "API key classified by metadata",
+			cfg:  &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{Enabled: true}}},
+			auth: &cliproxyauth.Auth{Provider: "codex", Metadata: map[string]any{cliproxyauth.AttributeAuthKind: cliproxyauth.AuthKindAPIKey}},
+		},
+		{
+			name: "SIWC attributes",
+			cfg:  &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{Enabled: true}}},
+			auth: &cliproxyauth.Auth{Provider: "codex", Attributes: map[string]string{"use_siwc": "true"}},
+		},
+		{
+			name: "SIWC metadata",
+			cfg:  &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{Enabled: true}}},
+			auth: &cliproxyauth.Auth{Provider: "codex", Metadata: map[string]any{"use_siwc": true}},
+		},
+		{
+			name: "legacy compact",
+			cfg:  &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{Enabled: true}}},
+			auth: oauth,
+			url:  "https://chatgpt.com/backend-api/codex/responses/compact",
+		},
+		{
 			name: "below threshold",
 			cfg: &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{
 				Enabled:  true,
@@ -77,7 +104,11 @@ func TestCodexExecutorCacheHelper_RequestCompression(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			executor := NewCodexExecutor(tt.cfg)
-			httpReq, upstreamBody, _, err := executor.cacheHelper(context.Background(), sdktranslator.FromString("openai-response"), "https://example.com/responses", tt.auth, req, req.Payload, rawJSON)
+			url := tt.url
+			if url == "" {
+				url = "https://example.com/responses"
+			}
+			httpReq, upstreamBody, _, err := executor.cacheHelper(context.Background(), sdktranslator.FromString("openai-response"), url, tt.auth, req, req.Payload, rawJSON)
 			if err != nil {
 				t.Fatalf("cacheHelper error: %v", err)
 			}
