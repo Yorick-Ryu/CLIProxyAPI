@@ -38,7 +38,14 @@ func (e *CodexWebsocketsExecutor) dialCodexWebsocket(ctx context.Context, auth *
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	cookies := helps.NewCodexCookieStore(ctx, e.cfg, auth)
+	headers = headers.Clone()
+	if headers == nil {
+		headers = make(http.Header)
+	}
+	cookies.AddHeader(wsURL, headers)
 	conn, resp, err := dialer.DialContext(ctx, wsURL, headers)
+	cookies.StoreResponse(wsURL, resp)
 	if err != nil {
 		cliproxyexecutor.MarkUpstreamAttempt(ctx)
 	}

@@ -32,6 +32,7 @@ auths/*
 docs/*
 !docs/management-api-v8.md
 !docs/codex-timezone.md
+!docs/codex-infrastructure-cookies.md
 AGENTS.md
 CLAUDE.md
 GEMINI.md
