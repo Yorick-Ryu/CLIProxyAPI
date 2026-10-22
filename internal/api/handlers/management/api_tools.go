@@ -16,6 +16,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/proxyutil"
 	log "github.com/sirupsen/logrus"
@@ -214,6 +215,10 @@ func (h *Handler) APICall(c *gin.Context) {
 		Timeout: defaultAPICallTimeout,
 	}
 	httpClient.Transport = h.apiCallTransport(auth, requestProxyURL)
+	if h.codexQueryCompatibility(c.FullPath(), auth, req) {
+		httpClient.Transport = h.selectAPICallTransport(auth, requestProxyURL, helps.NewCodexManagementTransport)
+		defer httpClient.CloseIdleConnections()
+	}
 
 	resp, errDo := httpClient.Do(req)
 	if errDo != nil {
@@ -835,11 +840,20 @@ func (h *Handler) authByIndex(authIndex string) *coreauth.Auth {
 }
 
 func (h *Handler) apiCallTransport(auth *coreauth.Auth, requestProxyURL string) http.RoundTripper {
-	if proxyStr := strings.TrimSpace(requestProxyURL); proxyStr != "" {
-		if transport := buildProxyTransport(proxyStr); transport != nil {
+	return h.selectAPICallTransport(auth, requestProxyURL, func(raw string) http.RoundTripper {
+		if transport := buildProxyTransport(raw); transport != nil {
 			return transport
 		}
-		return directAPICallTransport()
+		return nil
+	})
+}
+
+func (h *Handler) selectAPICallTransport(auth *coreauth.Auth, requestProxyURL string, build func(string) http.RoundTripper) http.RoundTripper {
+	if proxyStr := strings.TrimSpace(requestProxyURL); proxyStr != "" {
+		if transport := build(proxyStr); transport != nil {
+			return transport
+		}
+		return build("direct")
 	}
 
 	var proxyCandidates []string
@@ -860,12 +874,12 @@ func (h *Handler) apiCallTransport(auth *coreauth.Auth, requestProxyURL string) 
 	}
 
 	for _, proxyStr := range proxyCandidates {
-		if transport := buildProxyTransport(proxyStr); transport != nil {
+		if transport := build(proxyStr); transport != nil {
 			return transport
 		}
 	}
 
-	return directAPICallTransport()
+	return build("direct")
 }
 
 func directAPICallTransport() http.RoundTripper {
@@ -1017,4 +1031,14 @@ func buildProxyTransport(proxyStr string) *http.Transport {
 		return nil
 	}
 	return transport
+}
+
+// codexQueryCompatibility keeps the deprecated v0 operation and unrelated
+// providers unchanged. WS profile settings do not control HTTP quota queries.
+func (h *Handler) codexQueryCompatibility(route string, auth *coreauth.Auth, req *http.Request) bool {
+	return route == "/v8/management/requests/api-call" && h.cfg != nil &&
+		strings.EqualFold(strings.TrimSpace(h.cfg.Codex.HTTPTLSProfile), "linux") &&
+		auth != nil && strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") &&
+		auth.AuthKind() != coreauth.AuthKindAPIKey &&
+		strings.TrimSpace(auth.Attributes["api_key"]) == "" && helps.CodexManagementQuery(req)
 }

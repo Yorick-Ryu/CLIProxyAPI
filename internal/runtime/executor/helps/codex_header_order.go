@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/httpwire"
@@ -12,7 +13,15 @@ import (
 // CodexHTTPHeaderOrder follows the observed native Responses header groups.
 // Additional OAuth/operator fields keep their relative order before framing
 // headers. This is a compatibility policy, not a universal Hyper ordering claim.
-func CodexHTTPHeaderOrder(_, _ string, names []string) []string {
+func CodexHTTPHeaderOrder(method, target string, names []string) []string {
+	// Select per request, since a pooled connection may serve both APIs.
+	if u, err := url.ParseRequestURI(target); err == nil && method == http.MethodPost &&
+		(strings.HasSuffix(u.Path, "/images/generations") || strings.HasSuffix(u.Path, "/images/edits")) {
+		return codexHeaderOrder(names, []string{
+			"version", "x-codex-image-turn-id", "x-codex-turn-metadata", "authorization",
+			"chatgpt-account-id", "content-type", "originator", "user-agent", "accept", "cookie",
+		}, []string{"host", "content-length", "transfer-encoding"})
+	}
 	return codexHeaderOrder(names, []string{
 		"x-codex-beta-features", "x-codex-window-id", "x-codex-turn-metadata",
 		"x-openai-internal-codex-responses-lite", "x-client-request-id", "session-id",
