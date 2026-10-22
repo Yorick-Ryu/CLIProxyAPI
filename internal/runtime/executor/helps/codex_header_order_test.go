@@ -115,7 +115,12 @@ func TestCodexImageAndResponsesHeaderOrderOnReusedConnection(t *testing.T) {
 	raw := &codexHeaderCaptureConn{}
 	conn := httpwire.NewOrderedRequestConnWithNames(raw, CodexHTTPHeaderOrder)
 	for _, path := range []string{"/backend-api/codex/images/generations", "/backend-api/codex/responses", "/backend-api/codex/images/edits?test=1"} {
-		input := "POST " + path + " HTTP/1.1\r\nHost: test\r\nUser-Agent: admin/1\r\nContent-Length: 2\r\nContent-Type: application/json\r\nVersion: 0.163.0\r\nX-Codex-Image-Turn-Id: test-turn\r\nAuthorization: Bearer synthetic\r\nChatgpt-Account-Id: synthetic\r\nOriginator: codex-tui\r\nAccept: */*\r\nCookie: synthetic=value\r\nX-Operator: One\r\nX-Operator: Two\r\n\r\n{}"
+		imageTurn := ""
+		if strings.Contains(path, "/images/") {
+			imageTurn = "X-Codex-Image-Turn-Id: test-turn\r\n"
+		}
+		input := "POST " + path + " HTTP/1.1\r\nHost: test\r\nUser-Agent: admin/1\r\nContent-Length: 2\r\nContent-Type: application/json\r\nVersion: 0.163.0\r\n" +
+			imageTurn + "Authorization: Bearer synthetic\r\nChatgpt-Account-Id: synthetic\r\nOriginator: codex-tui\r\nAccept: */*\r\nCookie: synthetic=value\r\nX-Operator: One\r\nX-Operator: Two\r\n\r\n{}"
 		raw.data.Reset()
 		if _, err := conn.Write([]byte(input)); err != nil {
 			t.Fatal(err)
@@ -130,8 +135,11 @@ func TestCodexImageAndResponsesHeaderOrderOnReusedConnection(t *testing.T) {
 			if !reflect.DeepEqual(names, want) {
 				t.Fatalf("image header order: %v", names)
 			}
-		} else if names[0] != "accept" {
-			t.Fatalf("Responses ordering changed: %v", names)
+		} else {
+			want := []string{"version", "accept", "content-type", "authorization", "chatgpt-account-id", "originator", "user-agent", "cookie", "x-operator", "x-operator", "host", "content-length"}
+			if !reflect.DeepEqual(names, want) {
+				t.Fatalf("Responses header order: %v", names)
+			}
 		}
 		if !strings.HasSuffix(wire, "\r\n\r\n{}") || !strings.Contains(wire, "x-operator: One\r\nx-operator: Two") || !strings.Contains(wire, "user-agent: admin/1") {
 			t.Fatal("payload/overrides changed")
@@ -157,11 +165,98 @@ func TestCodexAlphaSearchHeaderOrderOnReusedConnection(t *testing.T) {
 			if !reflect.DeepEqual(names, want) {
 				t.Fatalf("search header order: %v", names)
 			}
-		} else if names[0] != "x-codex-turn-metadata" {
-			t.Fatalf("Responses template changed: %v", names)
+		} else {
+			want := []string{"version", "x-codex-turn-metadata", "accept", "content-type", "authorization", "chatgpt-account-id", "originator", "user-agent", "cookie", "x-operator", "x-operator", "host", "content-length"}
+			if !reflect.DeepEqual(names, want) {
+				t.Fatalf("Responses template changed: %v", names)
+			}
 		}
 		if !strings.HasSuffix(raw.data.String(), "\r\n\r\n{}") || !strings.Contains(raw.data.String(), "x-operator: one\r\nx-operator: two") {
 			t.Fatal("custom header or body changed")
 		}
+	}
+}
+
+func TestCodexResponsesHeaderOrderMatchesNativeOpenAIProvider(t *testing.T) {
+	raw := &codexHeaderCaptureConn{}
+	conn := httpwire.NewOrderedRequestConnWithNames(raw, CodexHTTPHeaderOrder)
+	input := "POST /backend-api/codex/responses HTTP/1.1\r\n" +
+		"Host: chatgpt.com\r\n" +
+		"Version: 0.163.0\r\n" +
+		"X-Codex-Beta-Features: remote_compaction_v2\r\n" +
+		"X-Codex-Window-Id: thread:0\r\n" +
+		"X-Codex-Turn-Metadata: {}\r\n" +
+		"X-OpenAI-Internal-Codex-Responses-Lite: true\r\n" +
+		"X-Codex-Routing-Hint: model=gpt-6-luna\r\n" +
+		"X-Client-Request-Id: thread\r\n" +
+		"Session-Id: thread\r\n" +
+		"Thread-Id: thread\r\n" +
+		"Accept: text/event-stream\r\n" +
+		"Content-Encoding: zstd\r\n" +
+		"Content-Type: application/json\r\n" +
+		"Authorization: Bearer synthetic\r\n" +
+		"Chatgpt-Account-Id: synthetic\r\n" +
+		"Originator: codex-tui\r\n" +
+		"User-Agent: codex-tui/0.163.0 native\r\n" +
+		"Cookie: synthetic=value\r\n" +
+		"Content-Length: 2\r\n" +
+		"\r\n{}"
+	if _, err := conn.Write([]byte(input)); err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, line := range strings.Split(strings.SplitN(raw.data.String(), "\r\n\r\n", 2)[0], "\r\n")[1:] {
+		names = append(names, strings.SplitN(line, ":", 2)[0])
+	}
+	want := []string{
+		"version", "x-codex-beta-features", "x-codex-window-id",
+		"x-codex-turn-metadata", "x-openai-internal-codex-responses-lite",
+		"x-codex-routing-hint", "x-client-request-id", "session-id", "thread-id",
+		"accept", "content-encoding", "content-type", "authorization",
+		"chatgpt-account-id", "originator", "user-agent", "cookie", "host",
+		"content-length",
+	}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("native Responses header order: %v", names)
+	}
+}
+
+func TestCodexWebsocketHeaderOrderMatchesNativeOpenAIProvider(t *testing.T) {
+	input := "GET /responses HTTP/1.1\r\n" +
+		"Host: chatgpt.com\r\n" +
+		"Connection: Upgrade\r\n" +
+		"Upgrade: websocket\r\n" +
+		"Sec-WebSocket-Version: 13\r\n" +
+		"Sec-WebSocket-Key: synthetic\r\n" +
+		"Cookie: synthetic=value\r\n" +
+		"Chatgpt-Account-Id: synthetic\r\n" +
+		"Authorization: Bearer synthetic\r\n" +
+		"User-Agent: codex-tui/0.163.0 native\r\n" +
+		"Originator: codex-tui\r\n" +
+		"Version: 0.163.0\r\n" +
+		"X-Codex-Beta-Features: remote_compaction_v2\r\n" +
+		"X-Client-Request-Id: thread\r\n" +
+		"Session-Id: thread\r\n" +
+		"Thread-Id: thread\r\n" +
+		"X-Codex-Window-Id: thread:0\r\n" +
+		"X-Codex-Turn-Metadata: {}\r\n" +
+		"X-Codex-Routing-Hint: model=gpt-6-luna\r\n" +
+		"OpenAI-Beta: responses_websockets=2026-02-06\r\n" +
+		"Sec-WebSocket-Extensions: permessage-deflate\r\n" +
+		"\r\n"
+	wire := httpwire.ReorderRequestHeader([]byte(input), codexWebsocketHeaderOrder)
+	var names []string
+	for _, line := range strings.Split(strings.SplitN(string(wire), "\r\n\r\n", 2)[0], "\r\n")[1:] {
+		names = append(names, strings.SplitN(line, ":", 2)[0])
+	}
+	want := []string{
+		"Host", "Connection", "Upgrade", "Sec-WebSocket-Version", "Sec-WebSocket-Key",
+		"cookie", "chatgpt-account-id", "authorization", "user-agent", "originator",
+		"version", "x-codex-beta-features", "x-client-request-id", "session-id",
+		"thread-id", "x-codex-window-id", "x-codex-turn-metadata",
+		"x-codex-routing-hint", "openai-beta", "sec-websocket-extensions",
+	}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("native WebSocket header order: %v", names)
 	}
 }
