@@ -58,15 +58,7 @@ func (c *Client) rebalanceCommand(ctx context.Context, address string, args ...a
 	}
 	options.ReadTimeout = -1
 	options.WriteTimeout = -1
-	dialer := redis.NewDialer(options)
-	options.Dialer = func(dialCtx context.Context, network, address string) (net.Conn, error) {
-		conn, errDial := dialer(dialCtx, network, address)
-		if errDial != nil {
-			return nil, errDial
-		}
-		// Closing the pool can wait for an active reader; cancel its socket first.
-		return newPluginSyncCancelableConn(ctx, conn), nil
-	}
+	options.Dialer = redis.NewDialer(options)
 	command := redis.NewClient(options)
 	stopCancel := context.AfterFunc(ctx, func() { _ = command.Close() })
 	defer func() {
