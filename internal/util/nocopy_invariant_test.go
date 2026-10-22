@@ -104,16 +104,19 @@ type reviewedInPlaceByteWrite struct {
 }
 
 var reviewedInPlaceByteWrites = map[string]reviewedInPlaceByteWrite{
-	"third_party/gorilla-websocket/compression.go":          {3, "updates the private four-byte DEFLATE trailer buffer; application JSON never aliases it"},
-	"third_party/gorilla-websocket/conn.go":                 {6, "writes private frame buffers, the four-byte mask key, and a newly allocated close frame; ReadMessage copies payloads into a separate buffer"},
-	"internal/translator/common/apply_patch_responses.go":   {1, "shifts [][]byte item references in a private output slice; no byte of any JSON payload is rewritten"},
-	"internal/runtime/executor/claude_signing.go":           {2, "writes CCH digits into bytes.Clone(body); the caller's body is never touched"},
-	"internal/runtime/executor/claude_executor_cloaking.go": {1, "shifts []string headers to prepend a block; no byte of any payload is rewritten"},
-	"internal/runtime/executor/claude_executor_request.go":  {3, "shifts []string headers to insert a part; no byte of any payload is rewritten"},
-	"internal/runtime/executor/helps/claude_mcp_alias.go":   {1, "copies an HMAC sum into a local fixed-size digest array"},
-	"internal/client/codex/live/tcp_proxy.go":               {1, "copies header and payload into a freshly allocated frame"},
-	"internal/home/client.go":                               {1, "zeroes a secret buffer after json.Unmarshal has copied every value out"},
-	"internal/pluginstore/auth.go":                          {1, "zeroes a locally built credential buffer after base64 encoding copied it out"},
+	"internal/runtime/executor/helps/codex_identity_uuid.go": {1, "copies a timestamp between private UUID arrays; no JSON buffer is modified"},
+	"internal/runtime/executor/helps/codex_compression.go":   {1, "shifts compressed bytes in a newly allocated zstd output buffer; JSON readers only reference the unmodified input"},
+	"internal/runtime/executor/helps/codex_turn_state.go":    {2, "copies scope and token digests into a local fixed-size map key; no JSON buffer is modified"},
+	"third_party/gorilla-websocket/compression.go":           {3, "updates the private four-byte DEFLATE trailer buffer; application JSON never aliases it"},
+	"third_party/gorilla-websocket/conn.go":                  {6, "writes private frame buffers, the four-byte mask key, and a newly allocated close frame; ReadMessage copies payloads into a separate buffer"},
+	"internal/translator/common/apply_patch_responses.go":    {1, "shifts [][]byte item references in a private output slice; no byte of any JSON payload is rewritten"},
+	"internal/runtime/executor/claude_signing.go":            {2, "writes CCH digits into bytes.Clone(body); the caller's body is never touched"},
+	"internal/runtime/executor/claude_executor_cloaking.go":  {1, "shifts []string headers to prepend a block; no byte of any payload is rewritten"},
+	"internal/runtime/executor/claude_executor_request.go":   {3, "shifts []string headers to insert a part; no byte of any payload is rewritten"},
+	"internal/runtime/executor/helps/claude_mcp_alias.go":    {1, "copies an HMAC sum into a local fixed-size digest array"},
+	"internal/client/codex/live/tcp_proxy.go":                {1, "copies header and payload into a freshly allocated frame"},
+	"internal/home/client.go":                                {1, "zeroes a secret buffer after json.Unmarshal has copied every value out"},
+	"internal/pluginstore/auth.go":                           {1, "zeroes a locally built credential buffer after base64 encoding copied it out"},
 }
 
 // TestInPlaceByteWritesAreReviewed keeps the set of in-place byte writes small
