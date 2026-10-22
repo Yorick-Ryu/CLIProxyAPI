@@ -10,9 +10,11 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/httpwire"
 )
 
-// CodexHTTPHeaderOrder follows the observed native Responses header groups.
-// Additional OAuth/operator fields keep their relative order before framing
-// headers. This is a compatibility policy, not a universal Hyper ordering claim.
+// CodexHTTPHeaderOrder follows the observed native OpenAI-provider TUI header
+// groups. Additional OAuth/operator fields keep their relative order before
+// framing headers. This is a compatibility policy, not a universal Hyper
+// ordering claim: Hyper/reqwest merge order is an implementation detail, so the
+// sequence is pinned from actual TUI captures.
 func CodexHTTPHeaderOrder(method, target string, names []string) []string {
 	// Select per request, since a pooled connection may serve both APIs.
 	if u, err := url.ParseRequestURI(target); err == nil && method == http.MethodPost && strings.HasSuffix(u.Path, "/alpha/search") {
@@ -29,17 +31,26 @@ func CodexHTTPHeaderOrder(method, target string, names []string) []string {
 		}, []string{"host", "content-length", "transfer-encoding"})
 	}
 	return codexHeaderOrder(names, []string{
-		"x-codex-beta-features", "x-codex-window-id", "x-codex-turn-metadata",
-		"x-openai-internal-codex-responses-lite", "x-client-request-id", "session-id",
-		"thread-id", "accept", "content-type", "authorization", "originator", "user-agent",
+		"version", "x-codex-beta-features", "x-codex-turn-state",
+		"x-codex-window-id", "x-codex-turn-metadata", "x-codex-parent-thread-id",
+		"x-openai-subagent", "x-openai-memgen-request", "x-oai-attestation",
+		"x-openai-internal-codex-responses-lite", "x-codex-routing-hint",
+		"x-codex-guardian", "x-client-request-id", "session-id", "thread-id",
+		"accept", "content-encoding", "content-type", "authorization",
+		"chatgpt-account-id", "originator", "user-agent",
+		"x-openai-internal-codex-residency", "cookie",
 	}, []string{"host", "content-length", "transfer-encoding"})
 }
 
 func codexWebsocketHeaderOrder(_, _ string, names []string) []string {
 	return codexHeaderOrder(names, []string{
 		"Host", "Connection", "Upgrade", "Sec-WebSocket-Version", "Sec-WebSocket-Key",
-		"authorization", "user-agent", "originator", "openai-beta", "x-codex-turn-metadata",
-		"x-codex-beta-features", "x-client-request-id", "session-id", "thread-id", "x-codex-window-id",
+		"cookie", "chatgpt-account-id", "authorization", "user-agent", "originator",
+		"version", "x-codex-beta-features", "x-codex-turn-state",
+		"x-client-request-id", "session-id", "thread-id", "x-codex-window-id",
+		"x-codex-turn-metadata", "x-codex-parent-thread-id", "x-openai-subagent",
+		"x-openai-memgen-request", "x-codex-routing-hint", "x-oai-attestation",
+		"openai-beta", "x-responsesapi-include-timing-metrics",
 	}, []string{"sec-websocket-extensions"})
 }
 

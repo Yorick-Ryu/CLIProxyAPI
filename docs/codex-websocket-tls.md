@@ -38,7 +38,10 @@ round trips on a reused connection, and proxy tunnel ordering.
 
 The same profile enables handshake header serialization compatibility: Host,
 Connection, Upgrade, Sec-WebSocket-Version and Sec-WebSocket-Key lead, followed
-by lowercase business fields. Unknown fields and operator values are retained.
+by the observed OpenAI-provider TUI order: cookie, account/authorization,
+user-agent, originator, version, beta/turn-state, request/session IDs, window
+and turn metadata, routing hint, `openai-beta`, then
+`sec-websocket-extensions`. Unknown fields and operator values are retained.
 Only serialization changes; Gorilla still validates the response and handles
 frames. The default native profile retains its original serialization.
 

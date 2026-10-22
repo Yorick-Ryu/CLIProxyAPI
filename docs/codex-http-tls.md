@@ -39,10 +39,14 @@ TestCodexLinuxHTTPProfileSelection, TestCodexHTTPTLSConfig,
 TestCodexDefaultLinuxTUIIdentity. The wire test decodes emitted TLS bytes against
 capture values; integration tests cover TLS 1.2/1.3, HTTP/1.1 and connection reuse.
 
-The Linux profile also serializes HTTP/1.1 field names in lowercase, with observed
-Codex header groups first and host/length framing last. Unknown OAuth/operator
-headers retain their relative order. Values, repeated fields and body framing
-are preserved; this is not a universal ordering template for every CLI request.
+The Linux profile also serializes HTTP/1.1 field names in lowercase. The
+Responses template follows the observed OpenAI-provider TUI sequence: `version`,
+beta/turn-state fields, window and turn metadata, compatibility projections,
+responses-lite, routing hint, request/session IDs, `accept`,
+`content-encoding`, `content-type`, authorization/account, originator,
+user-agent, cookie, then host/length framing. Unknown OAuth/operator headers
+retain their relative order. Values, repeated fields and body framing are
+preserved; this is not a universal ordering template for every CLI request.
 
 New Linux TLS connections explicitly use no client session cache, matching the
 observed native Linux behavior. Ticket extensions remain advertised. Successful
