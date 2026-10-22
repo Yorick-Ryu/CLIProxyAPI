@@ -423,6 +423,66 @@ func applyCodexDirectImageHeaders(r *http.Request, auth *cliproxyauth.Auth, toke
 	applyCodexHeadersFromSources(r, auth, token, stream, cfg, ginHeaders)
 }
 
+// applyCodexImageCompatibilityHeaders runs after identity mapping and before
+// model overrides. It changes headers only, never the final media payload.
+func applyCodexImageCompatibilityHeaders(r *http.Request, auth *cliproxyauth.Auth, cfg *config.Config, state *codexIdentityConfuseState, source http.Header) {
+	if cfg == nil || !strings.EqualFold(strings.TrimSpace(cfg.Codex.HTTPTLSProfile), "linux") || auth == nil || codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) {
+		return
+	}
+	if source == nil {
+		if g, ok := r.Context().Value("gin").(*gin.Context); ok && g != nil && g.Request != nil {
+			source = g.Request.Header
+		}
+	}
+	// Account identity overrides retain precedence over built-in cloaking.
+	for _, name := range []string{"User-Agent", "Originator"} {
+		if value := codexOperatorHeaderValue(r.Context(), auth, source, name); value != "" {
+			r.Header.Set(name, value)
+		}
+	}
+	applyCodexSyncedIdentity(r.Context(), r.Header, cfg, auth, source)
+	accept := source.Get("Accept")
+	if accept == "" {
+		accept = "*/*"
+	}
+	if override := codexOperatorHeaderValue(r.Context(), auth, source, "Accept"); override != "" {
+		accept = override
+	}
+	r.Header.Set("Accept", accept)
+	if r.Header.Get("Version") == "" || (!isCodexCloakingDisabled(cfg, auth) && strings.TrimSpace(cfg.CodexHeaderDefaults.Version) == "" && codexOperatorHeaderValue(r.Context(), auth, source, "Version") == "") {
+		// Derive from the effective identity, including pinned/synchronized versions.
+		for _, part := range strings.Fields(r.Header.Get("User-Agent")) {
+			if strings.HasPrefix(part, "codex") {
+				if _, version, ok := strings.Cut(part, "/"); ok {
+					r.Header.Set("Version", version)
+					break
+				}
+			}
+		}
+	}
+	const imageTurnHeader = "X-Codex-Image-Turn-Id"
+	turn := strings.TrimSpace(gjson.Get(r.Header.Get("X-Codex-Turn-Metadata"), "turn_id").String())
+	if turn == "" {
+		turn = strings.TrimSpace(source.Get(imageTurnHeader))
+		if state != nil && turn != "" {
+			turn = codexAccountIdentityUUID(state.accountIdentity, "turn", turn)
+			if state.enabled {
+				turn = state.confuseTurnID(turn)
+			}
+		}
+	}
+	if turn == "" && state != nil && state.convergence.enabled {
+		turn = state.convergence.turnID
+	}
+	if turn == "" {
+		turn = uuid.Must(uuid.NewV7()).String()
+	}
+	if override := codexOperatorHeaderValue(r.Context(), auth, source, imageTurnHeader); override != "" {
+		turn = override
+	}
+	r.Header.Set(imageTurnHeader, turn)
+}
+
 func codexSIWCUserAgent(cfg *config.Config) string {
 	agentName := config.DefaultSignInWithChatGPTIdentifier
 	if cfg != nil {

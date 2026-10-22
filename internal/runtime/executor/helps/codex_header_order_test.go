@@ -110,3 +110,31 @@ func TestCodexWebsocketHandshakeOrderAndValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestCodexImageAndResponsesHeaderOrderOnReusedConnection(t *testing.T) {
+	raw := &codexHeaderCaptureConn{}
+	conn := httpwire.NewOrderedRequestConnWithNames(raw, CodexHTTPHeaderOrder)
+	for _, path := range []string{"/backend-api/codex/images/generations", "/backend-api/codex/responses", "/backend-api/codex/images/edits?test=1"} {
+		input := "POST " + path + " HTTP/1.1\r\nHost: test\r\nUser-Agent: admin/1\r\nContent-Length: 2\r\nContent-Type: application/json\r\nVersion: 0.163.0\r\nX-Codex-Image-Turn-Id: test-turn\r\nAuthorization: Bearer synthetic\r\nChatgpt-Account-Id: synthetic\r\nOriginator: codex-tui\r\nAccept: */*\r\nCookie: synthetic=value\r\nX-Operator: One\r\nX-Operator: Two\r\n\r\n{}"
+		raw.data.Reset()
+		if _, err := conn.Write([]byte(input)); err != nil {
+			t.Fatal(err)
+		}
+		wire := raw.data.String()
+		var names []string
+		for _, line := range strings.Split(strings.SplitN(wire, "\r\n\r\n", 2)[0], "\r\n")[1:] {
+			names = append(names, strings.SplitN(line, ":", 2)[0])
+		}
+		if strings.Contains(path, "/images/") {
+			want := []string{"version", "x-codex-image-turn-id", "authorization", "chatgpt-account-id", "content-type", "originator", "user-agent", "accept", "cookie", "x-operator", "x-operator", "host", "content-length"}
+			if !reflect.DeepEqual(names, want) {
+				t.Fatalf("image header order: %v", names)
+			}
+		} else if names[0] != "accept" {
+			t.Fatalf("Responses ordering changed: %v", names)
+		}
+		if !strings.HasSuffix(wire, "\r\n\r\n{}") || !strings.Contains(wire, "x-operator: One\r\nx-operator: Two") || !strings.Contains(wire, "user-agent: admin/1") {
+			t.Fatal("payload/overrides changed")
+		}
+	}
+}

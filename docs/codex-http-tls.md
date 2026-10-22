@@ -48,3 +48,35 @@ New Linux TLS connections explicitly use no client session cache, matching the
 observed native Linux behavior. Ticket extensions remain advertised. Successful
 HTTP/1.1 connections still reuse the existing account-scoped pool. TLS 1.2/1.3
 tests cover successful responses followed by fresh, non-resumed connections.
+
+The Linux switch also applies to v8 management api-call GET probes for Codex
+OAuth accounts at chatgpt.com/backend-api/wham/usage, backend-api/subscriptions
+and backend-api/wham/rate-limit-reset-credits. Explicit request proxies, account
+proxies and global proxies retain their precedence, including direct overrides.
+The deprecated v0 operation and other providers/targets retain existing behavior.
+
+Official CLI backend-client quota/credits reads use its HTTP client, not its WS
+connector; Linux native TLS is therefore the selected baseline. Subscriptions
+is an OMC query, not established here as a corresponding CLI operation. Query
+header values are preserved. Names follow observed CLI query groups (user-agent, authorization,
+chatgpt-account-id, accept), with unknown fields retained and framing last,
+but no Responses session-header template is injected or universal official query
+header order claimed. These calls do not inherit Responses body transformations,
+cookie storage or UA overrides. Their per-call clients release idle connections.
+
+### Image requests
+
+With `oauth.providers.codex.http-tls-profile: linux`, native Codex OAuth image
+requests use the same account/proxy-partitioned Linux transport as Responses,
+including connection reuse and suppression of automatic `Accept-Encoding`.
+This covers direct Images and Responses-based image execution, streaming and
+nonstreaming. API-key/SIWC credentials and the disabled profile keep their
+previous transport.
+
+Direct `/images/generations` and `/images/edits` use a separate observed Linux
+header-order policy, selected per request even on reused connections. Their
+Accept default is `*/*`; Version follows the effective Codex UA unless explicitly
+pinned, and the image turn ID follows mapped turn metadata or an account-scoped
+client ID, with UUIDv7 generation when absent. Client Accept and account/model
+header overrides remain supported; startup version sync retains its precedence.
+No extra payload mutations or TLS session cache are introduced.

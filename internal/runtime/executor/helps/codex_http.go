@@ -22,6 +22,15 @@ func NewCodexHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxya
 	return client
 }
 
+// NewCodexImageHTTPClient opts native OAuth image paths into the existing Linux
+// policy. Other profiles and credential types retain their previous transport.
+func NewCodexImageHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, nativeOAuth bool) *http.Client {
+	if nativeOAuth && cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.Codex.HTTPTLSProfile), "linux") {
+		return NewCodexHTTPClient(ctx, cfg, auth, 0)
+	}
+	return NewProxyAwareHTTPClient(ctx, cfg, auth, 0)
+}
+
 var codexDefaultHTTPTransport = sync.OnceValue(func() *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.DisableCompression = true
