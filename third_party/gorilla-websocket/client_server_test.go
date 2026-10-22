@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -49,8 +50,9 @@ type cstHandler struct{ *testing.T }
 
 type cstServer struct {
 	*httptest.Server
-	URL string
-	t   *testing.T
+	URL      string
+	t        *testing.T
+	handlers sync.WaitGroup
 }
 
 const (
@@ -61,7 +63,7 @@ const (
 
 func newServer(t *testing.T) *cstServer {
 	var s cstServer
-	s.Server = httptest.NewServer(cstHandler{t})
+	s.Server = httptest.NewServer(s.trackHandler(cstHandler{t}))
 	s.Server.URL += cstRequestURI
 	s.URL = makeWsProto(s.Server.URL)
 	return &s
@@ -69,10 +71,27 @@ func newServer(t *testing.T) *cstServer {
 
 func newTLSServer(t *testing.T) *cstServer {
 	var s cstServer
-	s.Server = httptest.NewTLSServer(cstHandler{t})
+	s.Server = httptest.NewTLSServer(s.trackHandler(cstHandler{t}))
 	s.Server.URL += cstRequestURI
 	s.URL = makeWsProto(s.Server.URL)
 	return &s
+}
+
+// trackHandler includes handlers whose WebSocket connections have been hijacked.
+// httptest.Server.Close only waits for ordinary HTTP handlers.
+func (s *cstServer) trackHandler(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.handlers.Add(1)
+		defer s.handlers.Done()
+		handler.ServeHTTP(w, r)
+	})
+}
+
+func (s *cstServer) Close() {
+	// Tests close their client connections before closing the server. Stop new
+	// HTTP requests first, then join hijacked handlers before testing.T expires.
+	s.Server.Close()
+	s.handlers.Wait()
 }
 
 func (t cstHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
