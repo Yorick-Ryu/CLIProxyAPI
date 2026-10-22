@@ -15,6 +15,12 @@ import (
 // headers. This is a compatibility policy, not a universal Hyper ordering claim.
 func CodexHTTPHeaderOrder(method, target string, names []string) []string {
 	// Select per request, since a pooled connection may serve both APIs.
+	if u, err := url.ParseRequestURI(target); err == nil && method == http.MethodPost && strings.HasSuffix(u.Path, "/alpha/search") {
+		return codexHeaderOrder(names, []string{
+			"version", "x-codex-turn-metadata", "authorization", "chatgpt-account-id",
+			"content-type", "originator", "user-agent", "accept", "cookie",
+		}, []string{"host", "content-length", "transfer-encoding"})
+	}
 	if u, err := url.ParseRequestURI(target); err == nil && method == http.MethodPost &&
 		(strings.HasSuffix(u.Path, "/images/generations") || strings.HasSuffix(u.Path, "/images/edits")) {
 		return codexHeaderOrder(names, []string{

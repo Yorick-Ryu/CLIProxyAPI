@@ -138,3 +138,30 @@ func TestCodexImageAndResponsesHeaderOrderOnReusedConnection(t *testing.T) {
 		}
 	}
 }
+
+func TestCodexAlphaSearchHeaderOrderOnReusedConnection(t *testing.T) {
+	raw := &codexHeaderCaptureConn{}
+	conn := httpwire.NewOrderedRequestConnWithNames(raw, CodexHTTPHeaderOrder)
+	for _, path := range []string{"/backend-api/codex/alpha/search", "/responses", "/backend-api/codex/alpha/search?test=1"} {
+		raw.data.Reset()
+		input := "POST " + path + " HTTP/1.1\r\nHost: test\r\nUser-Agent: native/1\r\nVersion: 0.163.0\r\nX-Codex-Turn-Metadata: {}\r\nAuthorization: Bearer synthetic\r\nChatgpt-Account-Id: synthetic\r\nContent-Type: application/json\r\nOriginator: codex-tui\r\nAccept: */*\r\nCookie: synthetic=value\r\nX-Operator: one\r\nX-Operator: two\r\nContent-Length: 2\r\n\r\n{}"
+		if _, err := conn.Write([]byte(input)); err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, line := range strings.Split(strings.SplitN(raw.data.String(), "\r\n\r\n", 2)[0], "\r\n")[1:] {
+			names = append(names, strings.SplitN(line, ":", 2)[0])
+		}
+		if strings.Contains(path, "/alpha/search") {
+			want := []string{"version", "x-codex-turn-metadata", "authorization", "chatgpt-account-id", "content-type", "originator", "user-agent", "accept", "cookie", "x-operator", "x-operator", "host", "content-length"}
+			if !reflect.DeepEqual(names, want) {
+				t.Fatalf("search header order: %v", names)
+			}
+		} else if names[0] != "x-codex-turn-metadata" {
+			t.Fatalf("Responses template changed: %v", names)
+		}
+		if !strings.HasSuffix(raw.data.String(), "\r\n\r\n{}") || !strings.Contains(raw.data.String(), "x-operator: one\r\nx-operator: two") {
+			t.Fatal("custom header or body changed")
+		}
+	}
+}

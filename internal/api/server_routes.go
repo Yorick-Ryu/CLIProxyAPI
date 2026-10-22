@@ -480,6 +480,14 @@ func (s *Server) codexAlphaSearch(c *gin.Context) {
 		if errRequest != nil {
 			return nil, errRequest
 		}
+		if req.GetBody != nil {
+			if snapshot, err := req.GetBody(); err == nil {
+				if data, errRead := io.ReadAll(snapshot); errRead == nil {
+					requestBody = data
+				}
+				_ = snapshot.Close()
+			}
+		}
 		authType, authValue := current.AccountInfo()
 		helps.RecordAPIRequest(ctx, s.getConfig(), helps.UpstreamRequestLog{
 			URL:       upstreamURL,

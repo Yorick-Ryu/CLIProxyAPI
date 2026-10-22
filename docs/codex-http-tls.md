@@ -80,3 +80,26 @@ pinned, and the image turn ID follows mapped turn metadata or an account-scoped
 client ID, with UUIDv7 generation when absent. Client Accept and account/model
 header overrides remain supported; startup version sync retains its precedence.
 No extra payload mutations or TLS session cache are introduced.
+
+### Standalone Alpha Search
+
+With `oauth.providers.codex.http-tls-profile: linux`, native OAuth POST
+`/alpha/search` uses the observed Linux TUI header groups and defaults Accept
+to `*/*`. Its effective Originator, UA and Version follow the existing identity,
+cloaking, administrator-header and startup-version-sync settings. API-key/SIWC
+credentials and a disabled Linux profile retain their previous behavior.
+
+Forward existing turn metadata without applying the Responses struct layout:
+keep the extension map's field order and use ASCII JSON escapes. Search body
+`id`, metadata session/thread/turn references and existing history turn IDs use
+the same caller/account namespace as Responses, preserving UUIDv7 timestamps.
+Do not synthesize absent metadata or Responses-only headers. Request preparation
+is idempotent across manager preparation/execution; a new account rebuilds from
+the original request. Any context-provided payload finalizer runs after these
+semantic changes, once per prepared attempt.
+
+Verified with actual Linux interactive TUI 0.162.1 and 0.163.0, including
+`Originator: codex-tui`, `Accept: */*` and native metadata/header layouts. The
+0.163.0 direct binary used `--no-daemon` because no complete runtime package was
+installed in the isolated home. This remains an interactive TUI with an embedded
+app-server, distinct from the earlier manually initialized app-server fixture.

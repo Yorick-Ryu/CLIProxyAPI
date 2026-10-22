@@ -73,11 +73,33 @@ func (e *CodexExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Aut
 	} else {
 		req.Header.Del("Authorization")
 	}
+	if e.codexAlphaSearchCompatibility(req, auth) {
+		if err := e.prepareCodexAlphaSearch(req, auth, apiKey); err != nil {
+			return err
+		}
+	}
 	var attrs map[string]string
 	if auth != nil {
 		attrs = auth.Attributes
 	}
-	util.ApplyCustomHeadersFromAttrs(req, attrs)
+	if e.codexAlphaSearchCompatibility(req, auth) {
+		prepared, _ := req.Context().Value(codexAlphaSearchPreparedKey{}).(*codexAlphaSearchPrepared)
+		source := prepared.source
+		util.ApplyCustomHeadersFromAttrs(req, attrs, source)
+		if req.Header.Get("Version") == "" || (!isCodexCloakingDisabled(e.cfg, auth) && strings.TrimSpace(e.cfg.CodexHeaderDefaults.Version) == "" && codexOperatorHeaderValue(req.Context(), auth, source, "Version") == "") {
+			for _, part := range strings.Fields(req.Header.Get("User-Agent")) {
+				if strings.HasPrefix(part, "codex") {
+					if _, version, ok := strings.Cut(part, "/"); ok {
+						req.Header.Set("Version", version)
+						break
+					}
+				}
+			}
+		}
+		applyCodexSyncedIdentity(req.Context(), req.Header, e.cfg, auth, source)
+	} else {
+		util.ApplyCustomHeadersFromAttrs(req, attrs)
+	}
 	return nil
 }
 
@@ -89,12 +111,114 @@ func (e *CodexExecutor) HttpRequest(ctx context.Context, auth *cliproxyauth.Auth
 	if ctx == nil {
 		ctx = req.Context()
 	}
-	httpReq := req.WithContext(ctx)
+	// NewHttpRequest may already have scoped the search request. Carry the
+	// private preparation marker when the caller supplies an enriched context.
+	if prepared := req.Context().Value(codexAlphaSearchPreparedKey{}); prepared != nil {
+		ctx = context.WithValue(ctx, codexAlphaSearchPreparedKey{}, prepared)
+	}
+	httpReq := req.Clone(ctx)
 	if err := e.PrepareRequest(httpReq, auth); err != nil {
 		return nil, err
 	}
 	httpClient := helps.NewCodexHTTPClient(ctx, e.cfg, auth, 0)
 	return httpClient.Do(httpReq)
+}
+
+type codexAlphaSearchPreparedKey struct{}
+
+type codexAlphaSearchPrepared struct {
+	scope  string
+	source http.Header
+	body   []byte
+}
+
+func (e *CodexExecutor) codexAlphaSearchCompatibility(req *http.Request, auth *cliproxyauth.Auth) bool {
+	return req != nil && req.URL != nil && req.Method == http.MethodPost && strings.HasSuffix(req.URL.EscapedPath(), "/alpha/search") &&
+		e.cfg != nil && strings.EqualFold(strings.TrimSpace(e.cfg.Codex.HTTPTLSProfile), "linux") &&
+		auth != nil && strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") && !codexAuthUsesAPIKey(auth) && !codexUseSIWC(auth)
+}
+
+// prepareCodexAlphaSearch keeps native search metadata and its request id in
+// the same caller/account namespace as Responses, without adding Responses
+// session headers or payload fields. Preparation can run twice in the manager.
+func (e *CodexExecutor) prepareCodexAlphaSearch(req *http.Request, auth *cliproxyauth.Auth, token string) error {
+	identity := resolveCodexAccountIdentityState(req.Context(), auth)
+	prepared, _ := req.Context().Value(codexAlphaSearchPreparedKey{}).(*codexAlphaSearchPrepared)
+	if prepared != nil && prepared.scope == identity.namespace {
+		return nil
+	}
+	source := req.Header.Clone()
+	var body []byte
+	if prepared != nil {
+		source, body = prepared.source.Clone(), prepared.body
+	} else {
+		if g, ok := req.Context().Value("gin").(*gin.Context); ok && g != nil && g.Request != nil {
+			source = g.Request.Header.Clone()
+		}
+		if req.Body != nil {
+			reader := req.Body
+			if req.GetBody != nil {
+				var err error
+				reader, err = req.GetBody()
+				if err != nil {
+					return err
+				}
+			}
+			var err error
+			body, err = io.ReadAll(reader)
+			_ = reader.Close()
+			if err != nil {
+				return err
+			}
+		}
+	}
+	// Rebuild only native search headers. Explicit account attributes are applied
+	// by PrepareRequest afterwards, and startup version sync keeps its precedence.
+	headers := make(http.Header)
+	for _, name := range []string{"Version", "X-Codex-Turn-Metadata"} {
+		if value := source.Get(name); value != "" {
+			headers.Set(name, value)
+		}
+	}
+	headers.Set("Content-Type", "application/json")
+	accept := source.Get("Accept")
+	if accept == "" {
+		accept = "*/*"
+	}
+	headers.Set("Accept", accept)
+	ua, _ := codexHeaderDefaults(e.cfg, auth)
+	ensureHeaderWithConfigPrecedence(headers, source, "User-Agent", ua, codexUserAgent)
+	origin := source.Get("Originator")
+	if origin == "" {
+		origin = codexOriginator
+	}
+	headers.Set("Originator", origin)
+	if version := strings.TrimSpace(e.cfg.CodexHeaderDefaults.Version); version != "" {
+		headers.Set("Version", version)
+	}
+	if accountID, _ := auth.Metadata["account_id"].(string); accountID != "" {
+		headers.Set("Chatgpt-Account-Id", accountID)
+	}
+	if token != "" {
+		headers.Set("Authorization", "Bearer "+token)
+	}
+	mapped, identity := applyCodexAccountIdentityBodyForConfig(req.Context(), e.cfg, auth, body)
+	if id := gjson.GetBytes(mapped, "id"); id.Type == gjson.String && id.String() != "" {
+		mapped = helps.SetStringIfDifferent(mapped, "id", codexAccountIdentityUUID(identity, "session", id.String()))
+	}
+	applyCodexAccountIdentityHeaders(headers, &identity)
+	applyCodexCloakingHeaders(headers, e.cfg, auth)
+	if metadata := headers.Get("X-Codex-Turn-Metadata"); metadata != "" {
+		headers.Set("X-Codex-Turn-Metadata", helps.CodexSearchTurnMetadata(metadata))
+	}
+	mapped = helps.FinalizePayload(req.Context(), mapped)
+	req.Header = headers
+	req.Body = io.NopCloser(bytes.NewReader(mapped))
+	req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(mapped)), nil }
+	req.ContentLength = int64(len(mapped))
+	mark := &codexAlphaSearchPrepared{scope: resolveCodexAccountIdentityState(req.Context(), auth).namespace, source: source, body: body}
+	*req = *req.WithContext(context.WithValue(req.Context(), codexAlphaSearchPreparedKey{}, mark))
+	return nil
 }
 
 type codexIdentityConfuseState struct {
