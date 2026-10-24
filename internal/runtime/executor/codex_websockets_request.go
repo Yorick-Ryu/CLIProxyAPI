@@ -68,7 +68,6 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
 		headers = http.Header{}
 	}
 	defer helps.GuardCodexTurnStateHeaders(ctx, headers)
-	defer helps.ApplyCodexAnalyticsHeaders(cfg, headers)
 	if strings.TrimSpace(token) != "" {
 		headers.Set("Authorization", "Bearer "+token)
 	} else {

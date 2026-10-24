@@ -1073,10 +1073,6 @@ oauth:
 
     # Codex provider behavior.
     codex:
-      # Override analytics_enabled in existing turn metadata (header and body).
-      # Omit or use null to preserve client values; false/true report that value.
-      # This does not control client telemetry connections. Explicit payload rules take precedence.
-      analytics_enabled: null
       # off preserves client dates/timezones; local uses the CPA process environment;
       # egress queries the account's actual exit timezone. Default: off.
       # local/egress generate both fields from one current instant in the latest
