@@ -14,10 +14,10 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-const codexAccountIdentityNamespaceVersion = "v1"
+const codexAccountIdentityNamespaceVersion = "v2"
 
 // codexAccountIdentityState carries only an irreversible namespace. It never
-// retains the downstream API key or upstream access token.
+// depends on the downstream API key or retains the upstream access token.
 type codexAccountIdentityState struct {
 	enabled                   bool
 	namespace                 string
@@ -51,7 +51,7 @@ func codexCredentialIdentitySource(auth *cliproxyauth.Auth) string {
 	return ""
 }
 
-func resolveCodexAccountIdentityState(ctx context.Context, auth *cliproxyauth.Auth) codexAccountIdentityState {
+func resolveCodexAccountIdentityState(auth *cliproxyauth.Auth) codexAccountIdentityState {
 	if auth == nil || !strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") || codexAuthUsesAPIKey(auth) {
 		return codexAccountIdentityState{}
 	}
@@ -59,16 +59,10 @@ func resolveCodexAccountIdentityState(ctx context.Context, auth *cliproxyauth.Au
 	if credentialSource == "" {
 		return codexAccountIdentityState{}
 	}
-	callerSource := strings.TrimSpace(helps.APIKeyFromContext(ctx))
-	if callerSource == "" {
-		callerSource = "anonymous"
-	}
 	sum := sha256.Sum256([]byte(strings.Join([]string{
 		"cli-proxy-api",
 		"codex-account-identity",
 		codexAccountIdentityNamespaceVersion,
-		"caller",
-		callerSource,
 		"credential",
 		credentialSource,
 	}, ":")))
@@ -174,10 +168,10 @@ func remapCodexAccountIdentityJSON(raw string, state codexAccountIdentityState) 
 }
 
 // applyCodexAccountIdentityBody remaps existing client-owned identifiers into
-// a caller-and-credential namespace. It preserves identity cardinality and does
+// an account namespace. It preserves identity cardinality and does
 // not synthesize fields that the client omitted.
 func applyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth, rawJSON []byte) ([]byte, codexAccountIdentityState) {
-	state := resolveCodexAccountIdentityState(ctx, auth)
+	state := resolveCodexAccountIdentityState(auth)
 	if !state.enabled || len(rawJSON) == 0 || !gjson.ParseBytes(rawJSON).IsObject() {
 		return rawJSON, state
 	}

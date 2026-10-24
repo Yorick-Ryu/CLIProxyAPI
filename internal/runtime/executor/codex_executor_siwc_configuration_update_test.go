@@ -257,7 +257,7 @@ func TestCodexWebsocketsExecuteUseSIWCStripsConfigurationUpdates(t *testing.T) {
 	case gotBody := <-captured:
 		assertCodexSIWCUpdateStripped(t, gotBody, "high")
 		// Account-scoped identity mapping also applies to SIWC cache keys.
-		identity := resolveCodexAccountIdentityState(context.Background(), codexSIWCAuthForUpdateTest(server.URL))
+		identity := resolveCodexAccountIdentityState(codexSIWCAuthForUpdateTest(server.URL))
 		wantCacheKey := codexAccountIdentityUUID(identity, "session", codexSIWCUpdatePromptCacheKey)
 		if cacheKey := gjson.GetBytes(gotBody, "prompt_cache_key").String(); cacheKey != wantCacheKey {
 			t.Fatalf("prompt_cache_key = %q, want %q; body=%s", cacheKey, wantCacheKey, gotBody)

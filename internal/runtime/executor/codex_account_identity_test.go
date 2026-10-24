@@ -219,7 +219,7 @@ func TestCodexGuardianAndForkOnWire(t *testing.T) {
 	}
 }
 
-func TestCodexAccountIdentityScopesByCallerCredentialAndRawIdentity(t *testing.T) {
+func TestCodexAccountIdentityScopesByAccountAndRawIdentity(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"prompt_cache_key":"client-session-a","client_metadata":{"session_id":"client-session-a","thread_id":"client-thread-a","x-codex-installation-id":"client-install-a","x-codex-window-id":"client-window-a","x-codex-turn-metadata":"{\"installation_id\":\"client-install-a\",\"session_id\":\"client-session-a\",\"thread_id\":\"client-thread-a\",\"turn_id\":\"client-turn-a\",\"window_id\":\"client-window-a\"}"}}`)
 	auth := &cliproxyauth.Auth{
@@ -231,7 +231,7 @@ func TestCodexAccountIdentityScopesByCallerCredentialAndRawIdentity(t *testing.T
 	firstBody, first := applyCodexAccountIdentityBody(codexAccountIdentityTestContext("caller-key-a"), auth, body)
 	secondBody, second := applyCodexAccountIdentityBody(codexAccountIdentityTestContext("caller-key-a"), auth, body)
 	if !first.enabled || !second.enabled || string(firstBody) != string(secondBody) {
-		t.Fatal("the same caller, credential, and raw identity must map deterministically")
+		t.Fatal("the same account and raw identity must map deterministically")
 	}
 	mappedSession := gjson.GetBytes(firstBody, "client_metadata.session_id").String()
 	if mappedSession == "" || mappedSession == "client-session-a" {
@@ -257,9 +257,22 @@ func TestCodexAccountIdentityScopesByCallerCredentialAndRawIdentity(t *testing.T
 		t.Fatalf("mapped Thread-Id = %q, want body thread %q", got, want)
 	}
 
-	differentCallerBody, _ := applyCodexAccountIdentityBody(codexAccountIdentityTestContext("caller-key-b"), auth, body)
-	if got := gjson.GetBytes(differentCallerBody, "client_metadata.session_id").String(); got == mappedSession {
-		t.Fatal("different downstream API keys must not share an upstream session identity")
+	for _, ctx := range []context.Context{codexAccountIdentityTestContext("caller-key-b"), codexAccountIdentityTestContext(""), context.Background()} {
+		differentCallerBody, differentCallerState := applyCodexAccountIdentityBody(ctx, auth, body)
+		if !bytes.Equal(differentCallerBody, firstBody) || differentCallerState.namespace != first.namespace {
+			t.Fatal("rotating or omitting the downstream API key must preserve all mapped identities")
+		}
+		otherHeaders := http.Header{
+			"Session-Id":              {"client-session-a"},
+			"Thread-Id":               {"client-thread-a"},
+			"X-Codex-Installation-Id": {"client-install-a"},
+		}
+		applyCodexAccountIdentityHeaders(otherHeaders, &differentCallerState)
+		for name := range headers {
+			if otherHeaders.Get(name) != headers.Get(name) {
+				t.Fatalf("rotating or omitting the downstream API key changed %s", name)
+			}
+		}
 	}
 	differentAuth := &cliproxyauth.Auth{
 		ID:       "local-auth-b",
@@ -285,7 +298,7 @@ func TestCodexAccountIdentityUsesStableOAuthAccountAndComposesWithDeviceMode(t *
 	secondAuth := &cliproxyauth.Auth{ID: "row-b", Provider: "codex", Metadata: map[string]any{"account_id": "shared-upstream-account"}}
 
 	firstScoped, firstIdentity := applyCodexAccountIdentityBody(ctx, firstAuth, body)
-	secondScoped, _ := applyCodexAccountIdentityBody(ctx, secondAuth, body)
+	secondScoped, _ := applyCodexAccountIdentityBody(codexAccountIdentityTestContext("rotated-caller-key"), secondAuth, body)
 	if string(firstScoped) != string(secondScoped) {
 		t.Fatal("two local auth rows for the same OAuth account must share an identity namespace")
 	}

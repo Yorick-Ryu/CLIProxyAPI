@@ -103,7 +103,7 @@ func TestCodexImageHeadersIdentityAndOverrides(t *testing.T) {
 	auth := &cliproxyauth.Auth{ID: "a", Provider: "codex", Metadata: map[string]any{"account_id": "a"}}
 	const turn = "019a0992-1500-7abc-8def-0123456789ab"
 	source := http.Header{"Version": {"0.100.0"}, "X-Codex-Image-Turn-Id": {turn}, "Accept": {"custom/client"}}
-	state := codexIdentityConfuseState{accountIdentity: resolveCodexAccountIdentityState(context.Background(), auth)}
+	state := codexIdentityConfuseState{accountIdentity: resolveCodexAccountIdentityState(auth)}
 	req, _ := http.NewRequest("POST", "https://chatgpt.com/backend-api/codex/images/edits", strings.NewReader("{}"))
 	applyCodexDirectImageHeaders(req, auth, "synthetic", false, cfg, source)
 	applyCodexImageCompatibilityHeaders(req, auth, cfg, &state, source)

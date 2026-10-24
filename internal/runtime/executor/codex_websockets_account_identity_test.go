@@ -11,7 +11,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-// Both serial and duplex streams must preserve tenant/account isolation after
+// Both serial and duplex streams must preserve account isolation after
 // the upstream request-preparation refactor.
 func TestPrepareCodexWebsocketStreamPreservesAccountIdentity(t *testing.T) {
 	exec := NewCodexWebsocketsExecutor(&config.Config{
@@ -63,13 +63,21 @@ func TestPrepareCodexWebsocketStreamPreservesAccountIdentity(t *testing.T) {
 	if got := gjson.GetBytes(first.clientBody, "prompt_cache_key").String(); got != "client-session" {
 		t.Fatal("client identity must remain available for response restoration")
 	}
-	if got := gjson.GetBytes(prepare("caller-a", "account-a").upstreamBody, "prompt_cache_key").String(); got != session {
-		t.Fatal("same caller and account must preserve the session across turns")
-	}
-	for _, other := range []*codexWebsocketPrepared{prepare("caller-b", "account-a"), prepare("caller-a", "account-b")} {
-		if gjson.GetBytes(other.upstreamBody, "prompt_cache_key").String() == session {
-			t.Fatal("session leaked across caller or account boundary")
+	for _, caller := range []string{"caller-a", "caller-b", ""} {
+		other := prepare(caller, "account-a")
+		for _, path := range []string{"prompt_cache_key", "client_metadata.session_id", "client_metadata.thread_id", "client_metadata.x-codex-window-id", "client_metadata.x-codex-installation-id"} {
+			if gjson.GetBytes(other.upstreamBody, path).String() != gjson.GetBytes(first.upstreamBody, path).String() {
+				t.Fatalf("rotating or omitting the caller key changed %s", path)
+			}
 		}
+		for _, header := range []string{"Session-Id", "Thread-Id", "X-Client-Request-Id", "X-Codex-Window-Id"} {
+			if other.wsHeaders.Get(header) != first.wsHeaders.Get(header) {
+				t.Fatalf("rotating or omitting the caller key changed %s", header)
+			}
+		}
+	}
+	if gjson.GetBytes(prepare("caller-a", "account-b").upstreamBody, "prompt_cache_key").String() == session {
+		t.Fatal("session leaked across accounts")
 	}
 	if first.wsHeaders.Get("X-Client-Request-Id") != first.wsHeaders.Get("Thread-Id") {
 		t.Fatal("client request and thread headers must retain their shared identity")

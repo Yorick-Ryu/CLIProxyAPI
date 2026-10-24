@@ -146,10 +146,10 @@ func (e *CodexExecutor) codexAlphaSearchCompatibility(req *http.Request, auth *c
 }
 
 // prepareCodexAlphaSearch keeps native search metadata and its request id in
-// the same caller/account namespace as Responses, without adding Responses
+// the same account namespace as Responses, without adding Responses
 // session headers or payload fields. Preparation can run twice in the manager.
 func (e *CodexExecutor) prepareCodexAlphaSearch(req *http.Request, auth *cliproxyauth.Auth, token string) error {
-	identity := resolveCodexAccountIdentityState(req.Context(), auth)
+	identity := resolveCodexAccountIdentityState(auth)
 	prepared, _ := req.Context().Value(codexAlphaSearchPreparedKey{}).(*codexAlphaSearchPrepared)
 	if prepared != nil && prepared.scope == identity.namespace {
 		return nil
@@ -223,7 +223,7 @@ func (e *CodexExecutor) prepareCodexAlphaSearch(req *http.Request, auth *cliprox
 	req.Body = io.NopCloser(bytes.NewReader(mapped))
 	req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(mapped)), nil }
 	req.ContentLength = int64(len(mapped))
-	mark := &codexAlphaSearchPrepared{scope: resolveCodexAccountIdentityState(req.Context(), auth).namespace, source: source, body: body}
+	mark := &codexAlphaSearchPrepared{scope: resolveCodexAccountIdentityState(auth).namespace, source: source, body: body}
 	*req = *req.WithContext(context.WithValue(req.Context(), codexAlphaSearchPreparedKey{}, mark))
 	return nil
 }
