@@ -1,0 +1,57 @@
+name: CPA runtime review artifacts
+
+on:
+  push:
+    branches:
+      - beiapi-production
+      - dmit/v8.0.22-json-opt
+    paths:
+      - .github/workflows/cpa-runtime-review.yml
+      - .github/scripts/cpa-test-resources.go
+      - internal/runtime/executor/codex_runtime_review_test.go
+      - internal/runtime/executor/codex_body_batch_wire_test.go
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpa-runtime-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  artifacts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Validate identity and protocol behavior
+        run: |
+          go test ./internal/runtime/executor -run 'TestCodex(RuntimeReview|AccountIdentity|IdentityConvergence|Convergence|MemoryMetadata|TurnMetadata|ChildIdentity|GuardianAndFork|TurnStateOnWire|ForkPayloadBarrier)' -count=1
+          go test ./internal/runtime/executor/helps -run 'TestCodex(Identity|Cookies|TurnState|HTTPHeader|WebsocketHeader|ResponsesHeader|WebsocketHandshake|HTTPPool|HTTPConnection|TLS)' -count=1
+      - name: Build Linux container test programs
+        run: |
+          mkdir -p runtime-review/bin
+          for entry in 'executor internal/runtime/executor' 'helps internal/runtime/executor/helps' 'auth sdk/cliproxy/auth' 'pluginhost internal/pluginhost' 'thinking internal/thinking' 'translator sdk/translator'; do
+            set -- $entry
+            go test -c -o "runtime-review/bin/$1.test" "./$2"
+          done
+          go build -o runtime-review/bin/server ./cmd/server
+          go build -o runtime-review/bin/resources .github/scripts/cpa-test-resources.go
+          git rev-parse HEAD > runtime-review/revision.txt
+          go version > runtime-review/toolchain.txt
+          git archive HEAD | gzip > runtime-review/source.tar.gz
+          (cd runtime-review && sha256sum bin/* > SHA256SUMS)
+          tar -czf runtime-review-linux-amd64.tar.gz runtime-review
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-review-${{ github.sha }}
+          path: runtime-review-linux-amd64.tar.gz
+          retention-days: 7
+          if-no-files-found: error
