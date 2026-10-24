@@ -30,11 +30,11 @@ func TestCodexAlphaSearchNativeHeadersAndScopedIdentity(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Codex.HTTPTLSProfile = "linux"
 	e := NewCodexExecutor(cfg)
-	seen := map[string]bool{}
+	seen := map[string]string{}
 	for _, account := range []string{"a", "b"} {
 		for _, caller := range []string{"one", "two"} {
 			ctx := contextWithGinHeaders(map[string]string{"User-Agent": "codex-tui/0.163.0 native", "Version": "0.163.0", "Originator": "codex-tui", "X-Codex-Turn-Metadata": metadata})
-			// The caller identity is part of the same namespace used by Responses.
+			// Rotating the caller key must preserve the account namespace used by Responses.
 			g := ctx.Value("gin").(interface{ Set(string, any) })
 			g.Set("userApiKey", caller)
 			auth := &cliproxyauth.Auth{ID: account, Provider: "codex", Metadata: map[string]any{"access_token": "synthetic", "account_id": account}}
@@ -59,11 +59,19 @@ func TestCodexAlphaSearchNativeHeadersAndScopedIdentity(t *testing.T) {
 			if mappedID == thread || m.Get("session_id").String() != mappedID || m.Get("thread_id").String() != mappedID {
 				t.Fatal("search id and metadata lost their association")
 			}
-			expected := codexAccountIdentityUUID(resolveCodexAccountIdentityState(ctx, auth), "thread", thread)
-			if mappedID != expected || seen[mappedID] {
-				t.Fatal("caller/account namespace differs from Responses or was reused")
+			expected := codexAccountIdentityUUID(resolveCodexAccountIdentityState(auth), "thread", thread)
+			if mappedID != expected {
+				t.Fatal("account namespace differs from Responses")
 			}
-			seen[mappedID] = true
+			if previous := seen[account]; previous != "" && previous != mappedID {
+				t.Fatal("rotating the caller key changed the search identity")
+			}
+			for otherAccount, previous := range seen {
+				if otherAccount != account && previous == mappedID {
+					t.Fatal("search identity leaked across accounts")
+				}
+			}
+			seen[account] = mappedID
 			u, err := uuid.Parse(mappedID)
 			if err != nil || u.Version() != 7 || u.String()[:13] != thread[:13] {
 				t.Fatal("UUIDv7 timestamp changed")

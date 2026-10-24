@@ -13,7 +13,7 @@ import (
 
 // The unbatched implementation checks byte-for-byte JSON editing compatibility.
 func legacyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth, rawJSON []byte) ([]byte, codexAccountIdentityState) {
-	state := resolveCodexAccountIdentityState(ctx, auth)
+	state := resolveCodexAccountIdentityState(auth)
 	if !state.enabled || len(rawJSON) == 0 || !gjson.ParseBytes(rawJSON).IsObject() {
 		return rawJSON, state
 	}

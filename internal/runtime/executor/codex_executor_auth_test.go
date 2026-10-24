@@ -720,7 +720,7 @@ func TestCodexExecutorUseSIWCExecuteAndStream(t *testing.T) {
 		t.Fatalf("X-Codex-Routing-Hint should not be sent in SIWC mode, got %q", got)
 	}
 	// SIWC retains the account-scoped session identity used by OAuth requests.
-	wantSession := codexAccountIdentityUUID(resolveCodexAccountIdentityState(context.Background(), auth), "session", "sess-123")
+	wantSession := codexAccountIdentityUUID(resolveCodexAccountIdentityState(auth), "session", "sess-123")
 	if got := gotHeaders.Get("session_id"); got != wantSession {
 		t.Fatalf("session_id = %q, want scoped session %q", got, wantSession)
 	}
@@ -897,7 +897,7 @@ func TestCodexWebsocketsExecutorUseSIWCExecuteAndStream(t *testing.T) {
 		t.Fatalf("User-Agent = %q, want %q", got, codexSIWCUserAgent(cfgWithRules))
 	}
 	// SIWC retains the account-scoped session identity used by OAuth requests.
-	wantSession := codexAccountIdentityUUID(resolveCodexAccountIdentityState(context.Background(), auth), "session", "ws-sess-456")
+	wantSession := codexAccountIdentityUUID(resolveCodexAccountIdentityState(auth), "session", "ws-sess-456")
 	if got := gotHeaders.Get("session_id"); got != wantSession {
 		t.Fatalf("session_id = %q, want scoped session %q", got, wantSession)
 	}

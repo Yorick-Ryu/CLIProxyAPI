@@ -96,7 +96,7 @@ credentials and a disabled Linux profile retain their previous behavior.
 Forward existing turn metadata without applying the Responses struct layout:
 keep the extension map's field order and use ASCII JSON escapes. Search body
 `id`, metadata session/thread/turn references and existing history turn IDs use
-the same caller/account namespace as Responses, preserving UUIDv7 timestamps.
+the same account namespace as Responses, preserving UUIDv7 timestamps.
 Do not synthesize absent metadata or Responses-only headers. Request preparation
 is idempotent across manager preparation/execution; a new account rebuilds from
 the original request. Any context-provided payload finalizer runs after these
