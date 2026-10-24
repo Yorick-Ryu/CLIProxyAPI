@@ -29,6 +29,8 @@ func TestManager_MarkResult_ConnectionLifecycleDoesNotCooldown(t *testing.T) {
 		{name: "websocket 1000", err: &Error{Message: "websocket: close 1000 (normal)"}},
 		{name: "websocket 1001", err: &Error{Message: "websocket: close 1001 (going away)"}},
 		{name: "websocket 1006", err: &Error{Message: "websocket: close 1006 (abnormal closure): unexpected EOF"}},
+		{name: "websocket 1012", err: &Error{Message: "websocket: close 1012"}},
+		{name: "wrapped websocket 1012", err: resultErrorFromError(fmt.Errorf("upstream read: %w", &websocket.CloseError{Code: websocket.CloseServiceRestart}))},
 		{name: "context canceled", err: &Error{Message: "context canceled"}},
 		{name: "context deadline exceeded", err: &Error{Message: "context deadline exceeded"}},
 		{name: "unexpected EOF", err: &Error{Message: "unexpected EOF"}},
@@ -174,6 +176,9 @@ func TestManager_MarkResult_HTTPStatusWithLifecycleTextStillCooldowns(t *testing
 		{name: "429 context canceled", httpStatus: http.StatusTooManyRequests, message: "context canceled", wantAuth: true},
 		{name: "500 unexpected EOF", httpStatus: http.StatusInternalServerError, message: "unexpected EOF"},
 		{name: "500 websocket 1006 text", httpStatus: http.StatusInternalServerError, message: "websocket: close 1006 (abnormal closure): unexpected EOF"},
+		{name: "401 websocket 1012 text", httpStatus: http.StatusUnauthorized, message: "websocket: close 1012", wantAuth: true},
+		{name: "429 websocket 1012 text", httpStatus: http.StatusTooManyRequests, message: "websocket: close 1012", wantAuth: true},
+		{name: "500 websocket 1012 text", httpStatus: http.StatusInternalServerError, message: "websocket: close 1012"},
 		{name: "401 http2 force closed", httpStatus: http.StatusUnauthorized, message: "http2: client connection force closed via ClientConn.Close", wantAuth: true},
 		{name: "429 http2 conn closed", httpStatus: http.StatusTooManyRequests, message: "http2: client conn is closed", wantAuth: true},
 		{name: "500 http2 force closed", httpStatus: http.StatusInternalServerError, message: "http2: client connection force closed via ClientConn.Close"},
@@ -277,10 +282,13 @@ func TestResultErrorFromError_ConnectionLifecycleDoesNotBecomeRequestScoped(t *t
 		&url.Error{Op: "Post", URL: "https://example.com", Err: context.DeadlineExceeded},
 		&websocket.CloseError{Code: websocket.CloseNormalClosure, Text: "normal"},
 		&websocket.CloseError{Code: websocket.CloseGoingAway, Text: "bye"},
+		&websocket.CloseError{Code: websocket.CloseServiceRestart},
+		fmt.Errorf("upstream read: %w", &websocket.CloseError{Code: websocket.CloseServiceRestart}),
 		&websocket.CloseError{Code: websocket.CloseAbnormalClosure, Text: "unexpected EOF"},
 		fmt.Errorf("upstream read: %w", &websocket.CloseError{Code: websocket.CloseAbnormalClosure, Text: "unexpected EOF"}),
 		fmt.Errorf("wrap: %w", io.ErrUnexpectedEOF),
 		errors.New("websocket: close 1000 (normal)"),
+		errors.New("websocket: close 1012"),
 		errors.New("websocket: close 1006 (abnormal closure): unexpected EOF"),
 		errors.New("context deadline exceeded"),
 		errors.New("unexpected EOF"),
@@ -314,6 +322,9 @@ func TestResultErrorFromError_ConnectionLifecycleDoesNotBecomeRequestScoped(t *t
 func TestIsConnectionLifecycleError_StatusBearingErrorsStayCoolable(t *testing.T) {
 	cases := []error{
 		&statusBearingError{status: http.StatusUnauthorized, msg: "unexpected EOF"},
+		&statusBearingError{status: http.StatusUnauthorized, msg: "websocket: close 1012"},
+		&statusBearingError{status: http.StatusTooManyRequests, msg: "websocket: close 1012"},
+		&statusBearingError{status: http.StatusBadGateway, msg: "websocket: close 1012"},
 		&statusBearingError{status: http.StatusTooManyRequests, msg: "context canceled"},
 		&statusBearingError{status: http.StatusInternalServerError, msg: "unexpected EOF"},
 		&statusBearingError{status: http.StatusBadGateway, msg: "websocket: close 1006 (abnormal closure): unexpected EOF"},
@@ -404,5 +415,51 @@ func assertNoCooldown(t *testing.T, m *Manager, authID, model string) {
 		if state.Unavailable || !state.NextRetryAfter.IsZero() {
 			t.Fatalf("expected no model cooldown, got %#v", state)
 		}
+	}
+}
+
+func TestManager_MarkResult_WebsocketServiceRestartAuthLevelDoesNotCooldown(t *testing.T) {
+	previous := quotaCooldownDisabled.Load()
+	quotaCooldownDisabled.Store(false)
+	t.Cleanup(func() { quotaCooldownDisabled.Store(previous) })
+	previousTransient := transientErrorCooldownSeconds.Load()
+	SetTransientErrorCooldownSeconds(5)
+	t.Cleanup(func() { transientErrorCooldownSeconds.Store(previousTransient) })
+
+	m := NewManager(nil, nil, nil)
+	credential := &Auth{ID: "auth-service-restart", Provider: "codex"}
+	if _, err := m.Register(context.Background(), credential); err != nil {
+		t.Fatal(err)
+	}
+	m.MarkResult(context.Background(), Result{
+		AuthID:   credential.ID,
+		Provider: credential.Provider,
+		Error:    resultErrorFromError(&websocket.CloseError{Code: websocket.CloseServiceRestart}),
+	})
+	updated, ok := m.GetByID(credential.ID)
+	if !ok || updated == nil {
+		t.Fatal("expected credential to remain registered")
+	}
+	if updated.Unavailable || !updated.NextRetryAfter.IsZero() {
+		t.Fatalf("service restart must not cool credential: unavailable=%v, retry=%v", updated.Unavailable, updated.NextRetryAfter)
+	}
+}
+
+func TestWebsocketOtherFailureCodesStillCooldown(t *testing.T) {
+	for _, code := range []int{
+		websocket.CloseProtocolError, websocket.CloseUnsupportedData,
+		websocket.CloseInvalidFramePayloadData, websocket.ClosePolicyViolation,
+		websocket.CloseMessageTooBig, websocket.CloseMandatoryExtension,
+		websocket.CloseInternalServerErr, websocket.CloseTryAgainLater,
+		websocket.CloseTLSHandshake,
+	} {
+		t.Run(fmt.Sprint(code), func(t *testing.T) {
+			err := &websocket.CloseError{Code: code}
+			for _, source := range []error{err, errors.New(err.Error())} {
+				if shouldSkipCredentialCooldown(resultErrorFromError(source)) {
+					t.Fatalf("close code %d unexpectedly exempted", code)
+				}
+			}
+		})
 	}
 }
