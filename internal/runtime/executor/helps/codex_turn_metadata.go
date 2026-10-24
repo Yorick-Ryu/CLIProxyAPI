@@ -301,7 +301,7 @@ func CanonicalCodexTurnMetadataBody(body []byte) []byte {
 	return updated
 }
 
-// CanonicalCodexTurnMetadataHeaders runs after identity and analytics rewrites.
+// CanonicalCodexTurnMetadataHeaders runs after identity rewrites.
 // It retains header casing and multiplicity without mutating shared value slices.
 func CanonicalCodexTurnMetadataHeaders(headers http.Header) {
 	for key, values := range headers {

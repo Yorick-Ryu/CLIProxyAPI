@@ -78,9 +78,6 @@ func TestCodexTurnMetadataSerializationOnWire(t *testing.T) {
 						SDKConfig: config.SDKConfig{DisableImageGeneration: config.DisableImageGenerationAll},
 						Codex:     config.CodexConfig{IdentityConvergence: true, RequestCompression: config.CodexRequestCompressionConfig{Enabled: true}},
 					}
-					if mode != "api-key" {
-						cfg.Codex.AnalyticsEnabled = new(false)
-					}
 					if mode == "payload-override" {
 						cfg.Payload.Override = []config.PayloadRule{{Models: []config.PayloadModelRule{{Name: "*"}}, Params: map[string]any{"client_metadata.x-codex-turn-metadata": override}}}
 					} else if mode == "payload-filter" {
@@ -123,7 +120,7 @@ func TestCodexTurnMetadataSerializationOnWire(t *testing.T) {
 					}
 					actual := got.headers.Get("X-Codex-Turn-Metadata")
 					parsed := gjson.Parse(actual)
-					want := fmt.Sprintf(`{"installation_id":%q,"session_id":%q,"thread_id":%q,"turn_id":%q,"request_kind":"turn","history_initialization":"new","turn_started_at_unix_ms":9007199254740993,"analytics_enabled":false,"z_extension":"<>&\u6771\u4eac\ud83d\ude80\b\f"}`, parsed.Get("installation_id").String(), parsed.Get("session_id").String(), parsed.Get("thread_id").String(), parsed.Get("turn_id").String())
+					want := fmt.Sprintf(`{"installation_id":%q,"session_id":%q,"thread_id":%q,"turn_id":%q,"request_kind":"turn","history_initialization":"new","turn_started_at_unix_ms":9007199254740993,"analytics_enabled":true,"z_extension":"<>&\u6771\u4eac\ud83d\ude80\b\f"}`, parsed.Get("installation_id").String(), parsed.Get("session_id").String(), parsed.Get("thread_id").String(), parsed.Get("turn_id").String())
 					if actual != want || !strings.Contains(actual, `"turn_id":"019a0992-1470-7`) {
 						t.Fatalf("header lost native formatting or the UUIDv7 timestamp\ngot: %q\nwant: %q", actual, want)
 					}
