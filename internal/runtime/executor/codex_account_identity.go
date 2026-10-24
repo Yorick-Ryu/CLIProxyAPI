@@ -155,17 +155,36 @@ func remapCodexAccountIdentityJSON(raw string, state codexAccountIdentityState) 
 	if !state.enabled || !gjson.Parse(raw).IsObject() {
 		return raw
 	}
+	// Malformed metadata keeps the original sequential editor's behavior.
+	if !gjson.Valid(raw) {
+		for _, field := range codexAccountIdentityTurnMetadataFields {
+			value := gjson.Get(raw, field.path)
+			if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
+				continue
+			}
+			if updated, err := sjson.Set(raw, field.path, codexAccountIdentityUUID(state, field.kind, value.String())); err == nil {
+				raw = updated
+			}
+		}
+		return raw
+	}
+	var edits []helps.JSONValueReplacement
 	for _, field := range codexAccountIdentityTurnMetadataFields {
 		value := gjson.Get(raw, field.path)
 		if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
 			continue
 		}
-		updated, err := sjson.Set(raw, field.path, codexAccountIdentityUUID(state, field.kind, value.String()))
-		if err == nil {
-			raw = updated
-		}
+		mapped := codexAccountIdentityUUID(state, field.kind, value.String())
+		edits = append(edits, helps.JSONValueReplacement{Value: value, Raw: []byte(`"` + mapped + `"`)})
 	}
-	return raw
+	if len(edits) == 0 {
+		return raw
+	}
+	updated, ok := helps.ReplaceJSONValues([]byte(raw), edits)
+	if !ok {
+		return raw
+	}
+	return string(updated)
 }
 
 // applyCodexAccountIdentityBody remaps existing client-owned identifiers into
@@ -211,22 +230,19 @@ func applyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth,
 			state.promptCacheKeyWasRemapped = true
 		}
 	}
-	rawJSON, _ = helps.ReplaceJSONValues(rawJSON, edits)
-	// History retains the turn that created each message, rather than adopting
-	// the current request's turn. Use the same namespace as turn metadata.
-	if input := gjson.GetBytes(rawJSON, "input"); input.IsArray() {
-		for i, item := range input.Array() {
+	// Collect history edits against the unchanged source, alongside metadata and
+	// cache edits, so a long history does not copy the whole request per turn.
+	if input := util.GetGJSONBytesNoCopy(rawJSON, "input"); input.IsArray() {
+		input.ForEach(func(_, item gjson.Result) bool {
 			value := item.Get("internal_chat_message_metadata_passthrough.turn_id")
-			if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
-				continue
+			if value.Type == gjson.String && strings.TrimSpace(value.String()) != "" {
+				mapped := codexAccountIdentityUUID(state, "turn", value.String())
+				edits = append(edits, helps.JSONValueReplacement{Value: value, Raw: []byte(`"` + mapped + `"`)})
 			}
-			path := fmt.Sprintf("input.%d.internal_chat_message_metadata_passthrough.turn_id", i)
-			updated, err := sjson.SetBytes(rawJSON, path, codexAccountIdentityUUID(state, "turn", value.String()))
-			if err == nil {
-				rawJSON = updated
-			}
-		}
+			return true
+		})
 	}
+	rawJSON, _ = helps.ReplaceJSONValues(rawJSON, edits)
 	return rawJSON, state
 }
 
