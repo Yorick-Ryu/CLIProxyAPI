@@ -1967,7 +1967,7 @@ func isConnectionLifecycleError(err error) bool {
 	var closeErr *websocket.CloseError
 	if errors.As(err, &closeErr) && closeErr != nil {
 		switch closeErr.Code {
-		case websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseAbnormalClosure:
+		case websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseServiceRestart:
 			return true
 		}
 	}
@@ -2015,7 +2015,8 @@ func isConnectionLifecycleMessage(message string) bool {
 	// gorilla/websocket CloseError.Error() and common wrappers.
 	if strings.Contains(lower, "websocket: close 1000") ||
 		strings.Contains(lower, "websocket: close 1001") ||
-		strings.Contains(lower, "websocket: close 1006") {
+		strings.Contains(lower, "websocket: close 1006") ||
+		strings.Contains(lower, "websocket: close 1012") {
 		return true
 	}
 	// Wrapped transport disconnects (e.g. "read tcp ...: unexpected EOF").
