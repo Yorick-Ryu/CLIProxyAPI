@@ -990,9 +990,20 @@ func applyCodexAccountHistoryIdentity(ctx context.Context, headers http.Header, 
 	if headers == nil || cfg == nil || !cfg.CodexHeaderDefaults.AccountUserAgent.Enabled || auth == nil || codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) || isCodexCloakingDisabled(cfg, auth) {
 		return
 	}
+	customUA := codexOperatorHeaderValue(ctx, auth, clientHeaders, "User-Agent")
 	ua, version := helps.CodexAccountUserAgent(codexCredentialIdentitySource(auth), versions)
 	if ua == "" {
+		// Cloaking may already have replaced the credential header. Keep an
+		// explicit UA even before a complete history is available.
+		if customUA != "" {
+			headers.Set("User-Agent", customUA)
+		}
 		return
+	}
+	if customUA != "" {
+		// Use the custom UA as its own fallback so unknown client identifiers
+		// remain intact. Only recognized Codex version tokens are rewritten.
+		ua = helps.CodexVersionUserAgent(customUA, customUA, version)
 	}
 	headers.Set("User-Agent", ua)
 	headers.Set("Version", version)

@@ -66,8 +66,18 @@ can use this cache while offline. With no cache and no complete lookup yet,
 existing configured headers remain in effect. An SDK configuration without an
 auth directory uses an in-memory window only.
 
-This mode replaces global and credential UA/Version values, as legacy version
-sync already replaces configured versions. Explicit credential `Originator`
+An explicit credential `headers.User-Agent` takes precedence over the generated
+Linux profile. Its system, architecture, terminal and any terminal version stay
+intact; recognized Codex version tokens advance with the account's assigned
+history slot, and `Version` uses the same assigned version. Unknown custom client
+identifiers are retained rather than replaced with the built-in UA. Header
+references such as `$User-Agent` use the existing resolver; an unresolved or
+empty reference falls back to the generated profile. Without a complete history,
+an explicit credential UA remains intact and configured version handling stays
+in effect. No custom UA is written back to the credential file.
+
+Accounts without an explicit UA use the generated profile. The assigned version
+overrides global and credential `Version` values. Explicit credential `Originator`
 and final model header overrides retain precedence. Disabled cloaking, API-key
 and SIWC requests retain their previous behavior. HTTP/SSE and new WebSocket
 handshakes share the profile; an existing WebSocket retains its handshake
