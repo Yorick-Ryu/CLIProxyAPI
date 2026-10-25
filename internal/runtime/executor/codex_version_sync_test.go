@@ -3,10 +3,14 @@ package executor
 import (
 	"context"
 	"net/http"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
@@ -61,6 +65,144 @@ func TestCodexVersionSyncIdentityPolicy(t *testing.T) {
 				if headers.Get("User-Agent") != "codex_exec/0.163.0" || headers.Get("Version") != "0.163.0" || headers.Get("Originator") != "pinned" {
 					t.Fatal("account version override or originator preservation failed")
 				}
+			}
+		})
+	}
+}
+
+func TestCodexAccountHistoryIdentityAcrossTransportsAndReauthentication(t *testing.T) {
+	versions := []string{"0.161.0", "0.162.0", "0.162.1", "0.163.0", "0.164.0"}
+	cfg := &config.Config{}
+	cfg.CodexHeaderDefaults.AccountUserAgent.Enabled = true
+	cfg.CodexHeaderDefaults.UserAgent = "configured/1"
+	cfg.CodexHeaderDefaults.Version = "1.0.0"
+	auth := &cliproxyauth.Auth{
+		ID: "original-file.json", Provider: "codex",
+		Metadata:   map[string]any{"account_id": "synthetic-account", "chatgpt_user_id": "synthetic-user"},
+		Attributes: map[string]string{"header:User-Agent": "operator/2", "header:Version": "2.0.0", "header:Originator": "operator"},
+	}
+	source := http.Header{"User-Agent": {"downstream/3"}, "Version": {"3.0.0"}}
+	var want http.Header
+	for _, mode := range []string{"http", "sse", "websocket", "reauthenticated", "image", "alpha-search"} {
+		t.Run(mode, func(t *testing.T) {
+			account := auth.Clone()
+			if mode == "reauthenticated" {
+				account.ID = "renamed-file.json"
+				account.Metadata["access_token"] = "new-synthetic-token"
+			}
+			request, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", nil)
+			applyCodexHeadersFromSources(request, account, "", mode != "http", cfg, source)
+			headers := request.Header
+			if mode == "websocket" {
+				headers = applyCodexWebsocketHeaders(context.Background(), http.Header{}, account, "", cfg, true, source)
+			}
+			if mode == "image" {
+				cfg.Codex.HTTPTLSProfile = "linux"
+				applyCodexDirectImageHeaders(request, account, "", true, cfg, source)
+				applyCodexImageCompatibilityHeaders(request, account, cfg, nil, source)
+			}
+			if mode == "alpha-search" {
+				cfg.Codex.HTTPTLSProfile = "linux"
+				request.URL.Path = "/backend-api/codex/alpha/search"
+				request.Method = http.MethodPost
+				if err := NewCodexExecutor(cfg).PrepareRequest(request, account); err != nil {
+					t.Fatal(err)
+				}
+				headers = request.Header
+			}
+			applyCodexAccountHistoryIdentity(request.Context(), headers, cfg, account, source, versions)
+			identity := http.Header{"User-Agent": {headers.Get("User-Agent")}, "Version": {headers.Get("Version")}, "Originator": {headers.Get("Originator")}}
+			version := identity.Get("Version")
+			if !strings.HasPrefix(identity.Get("User-Agent"), "codex-tui/"+version+" (") || !strings.HasSuffix(identity.Get("User-Agent"), "(codex-tui; "+version+")") || identity.Get("Originator") != "operator" {
+				t.Fatalf("inconsistent account identity: %v", identity)
+			}
+			if want == nil {
+				want = identity
+			} else if !reflect.DeepEqual(identity, want) {
+				t.Fatalf("account identity changed with transport or credentials: got %v, want %v", identity, want)
+			}
+		})
+	}
+}
+
+func TestCodexAccountHistoryIdentityScopeAndColdStart(t *testing.T) {
+	versions := []string{"0.161.0", "0.162.0", "0.162.1", "0.163.0", "0.164.0"}
+	for _, mode := range []string{"disabled", "legacy", "passthrough", "account-passthrough", "api-key", "siwc", "nil-auth", "no-identity", "cold-start"} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.CodexHeaderDefaults.AccountUserAgent.Enabled = true
+			auth := &cliproxyauth.Auth{ID: "test", Provider: "codex", Attributes: map[string]string{}}
+			history := versions
+			switch mode {
+			case "disabled":
+				cfg.CodexHeaderDefaults.AccountUserAgent.Enabled = false
+			case "legacy":
+				cfg.CodexHeaderDefaults.AccountUserAgent.Enabled = false
+				cfg.CodexHeaderDefaults.VersionSync.Enabled = true
+			case "passthrough":
+				cfg.Codex.DisableCodexCloaking = true
+			case "account-passthrough":
+				auth.Attributes[cliproxyauth.AttributeCodexDisableCloaking] = "true"
+			case "api-key":
+				auth.Attributes["api_key"] = "synthetic"
+			case "siwc":
+				auth.Metadata = map[string]any{"use_siwc": true}
+			case "nil-auth":
+				auth = nil
+			case "no-identity":
+				auth.ID = ""
+			case "cold-start":
+				history = nil
+			}
+			headers := http.Header{"User-Agent": {"unchanged/1"}, "Version": {"1"}, "Originator": {"unchanged"}}
+			before := headers.Clone()
+			applyCodexAccountHistoryIdentity(context.Background(), headers, cfg, auth, nil, history)
+			if !reflect.DeepEqual(before, headers) {
+				t.Fatalf("changed headers outside the active OAuth account history scope: %v", headers)
+			}
+		})
+	}
+}
+
+func TestCodexAccountHistoryCachedStartupFlowsIntoHeaders(t *testing.T) {
+	cfg := &config.Config{AuthDir: t.TempDir()}
+	cfg.ProxyURL = "http://127.0.0.1:1" // Discovery must never reach a real upstream in this test.
+	cfg.Codex.HTTPTLSProfile = "linux"
+	cfg.CodexHeaderDefaults.AccountUserAgent.Enabled = true
+	if err := os.WriteFile(filepath.Join(cfg.AuthDir, ".codex-version-history"), []byte(`["0.161.0","0.162.0","0.162.1","0.163.0","0.164.0"]`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	helps.StartCodexVersionUpdater(ctx, cfg)
+	cancel()
+	t.Cleanup(func() {
+		resetCtx, resetCancel := context.WithCancel(context.Background())
+		helps.StartCodexVersionUpdater(resetCtx, &config.Config{})
+		resetCancel()
+	})
+	auth := &cliproxyauth.Auth{ID: "account.json", Provider: "codex", Metadata: map[string]any{"account_id": "synthetic-account"}}
+	wantUA, wantVersion := helps.CodexAccountUserAgent(codexCredentialIdentitySource(auth), helps.CodexVersionHistory())
+	if wantUA == "" {
+		t.Fatal("cached history was not ready when startup returned")
+	}
+	for _, mode := range []string{"http", "sse", "websocket", "image", "alpha-search"} {
+		t.Run(mode, func(t *testing.T) {
+			request, _ := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", nil)
+			applyCodexHeadersFromSources(request, auth, "", mode == "sse", cfg, nil)
+			switch mode {
+			case "websocket":
+				request.Header = applyCodexWebsocketHeaders(request.Context(), nil, auth, "", cfg, true)
+			case "image":
+				applyCodexDirectImageHeaders(request, auth, "", false, cfg)
+				applyCodexImageCompatibilityHeaders(request, auth, cfg, nil, nil)
+			case "alpha-search":
+				request.URL.Path = "/backend-api/codex/alpha/search"
+				if err := NewCodexExecutor(cfg).PrepareRequest(request, auth); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if request.Header.Get("User-Agent") != wantUA || request.Header.Get("Version") != wantVersion || request.Header.Get("Originator") != "codex-tui" {
+				t.Fatalf("cached account profile did not reach %s request headers", mode)
 			}
 		})
 	}

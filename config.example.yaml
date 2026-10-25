@@ -1141,6 +1141,8 @@ oauth:
       #   beta-features: "multi_agent"
       #   version-sync:
       #     enabled: false # Check the official stable release once at service startup.
+      #   account-user-agent:
+      #     enabled: false # Independently assign stable Linux UAs and five version slots.
       # Only an enabled startup performs discovery; no periodic or hot-reload checks.
       # A successful check overrides global/account UA version tokens and Version.
       # Platform/terminal fields and Originator are preserved; unrecognized custom UAs
@@ -1148,6 +1150,17 @@ oauth:
       # Disabled cloaking and API-key/SIWC requests retain their existing behavior.
       # Until success (or on failure), configured headers remain in use.
       # Existing WebSockets use new headers on their next handshake.
+      # With account-user-agent.enabled: true, discover the five latest official stable releases once
+      # at service startup (including deployment startup), never periodically or on reload.
+      # Each account keeps a deterministic version slot,
+      # Linux system and terminal. A new release advances every slot; platform fields
+      # stay fixed. Generated UA/Version replace global and account UA/Version values.
+      # This mode works without version-sync.enabled and takes precedence when both are enabled.
+      # History is cached in <auth-dir>/.codex-version-history (no credentials), so
+      # failed discovery/restarts retain the last window. Without a usable cache or
+      # complete history, keep the configured identity. Discovery never runs on requests.
+      # This changes headers only; it does not select or validate TLS profiles.
+      # Updater mode is selected at startup; changing these flags requires a restart.
 
     # Antigravity provider behavior.
     antigravity:

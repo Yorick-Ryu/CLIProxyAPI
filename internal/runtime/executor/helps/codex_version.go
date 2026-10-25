@@ -21,15 +21,17 @@ var codexUAVersion = regexp.MustCompile(`(codex[-_a-zA-Z0-9]*)(/|; )[^ ;()]+`)
 var codexVersions = &codexVersionStore{}
 
 type codexVersionStore struct {
-	mu         sync.Mutex
-	lifetime   context.Context
-	generation uint64
-	version    string
-	fetch      func(context.Context, string) (string, error)
+	mu           sync.Mutex
+	lifetime     context.Context
+	generation   uint64
+	version      string
+	fetch        func(context.Context, string) (string, error)
+	history      []string
+	fetchHistory func(context.Context, string) ([]string, error)
 }
 
-// StartCodexVersionUpdater checks once per service lifetime, only when enabled
-// at startup. Config reloads and requests never trigger release discovery.
+// StartCodexVersionUpdater checks once at service startup, including in
+// per-account history mode. Reloads and requests never trigger release discovery.
 func StartCodexVersionUpdater(ctx context.Context, cfg *config.Config) { codexVersions.start(ctx, cfg) }
 
 // CodexCurrentVersion is empty until this startup's discovery succeeds.
@@ -57,7 +59,19 @@ func (s *codexVersionStore) start(ctx context.Context, cfg *config.Config) {
 	s.lifetime = ctx
 	s.generation++
 	s.version = ""
-	if cfg == nil || !cfg.CodexHeaderDefaults.VersionSync.Enabled {
+	s.history = nil
+	if cfg == nil {
+		return
+	}
+	if cfg.CodexHeaderDefaults.AccountUserAgent.Enabled {
+		path := codexVersionHistoryPath(cfg.AuthDir)
+		if versions, err := loadCodexVersionHistory(path); err == nil {
+			s.history = versions
+		}
+		go s.runHistory(ctx, s.generation, cfg.ProxyURL, path)
+		return
+	}
+	if !cfg.CodexHeaderDefaults.VersionSync.Enabled {
 		return
 	}
 	fetch := s.fetch

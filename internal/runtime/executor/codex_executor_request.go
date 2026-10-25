@@ -976,14 +976,35 @@ func codexTurnStateContext(ctx context.Context, auth *cliproxyauth.Auth, req cli
 	return helps.WithCodexTurnState(ctx, owner, headers, body, session)
 }
 
-// applyCodexSyncedIdentity projects one successful startup check into both
-// identity headers, overriding configured versions only while enabled.
+// applyCodexSyncedIdentity uses one account history snapshot or the legacy
+// startup latest-version check. Existing websocket handshakes are unchanged.
 func applyCodexSyncedIdentity(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders http.Header) {
+	if cfg != nil && cfg.CodexHeaderDefaults.AccountUserAgent.Enabled {
+		applyCodexAccountHistoryIdentity(ctx, headers, cfg, auth, clientHeaders, helps.CodexVersionHistory())
+		return
+	}
 	applyCodexSyncedIdentityVersion(ctx, headers, cfg, auth, clientHeaders, helps.CodexCurrentVersion())
 }
 
+func applyCodexAccountHistoryIdentity(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders http.Header, versions []string) {
+	if headers == nil || cfg == nil || !cfg.CodexHeaderDefaults.AccountUserAgent.Enabled || auth == nil || codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) || isCodexCloakingDisabled(cfg, auth) {
+		return
+	}
+	ua, version := helps.CodexAccountUserAgent(codexCredentialIdentitySource(auth), versions)
+	if ua == "" {
+		return
+	}
+	headers.Set("User-Agent", ua)
+	headers.Set("Version", version)
+	origin := codexOperatorHeaderValue(ctx, auth, clientHeaders, "Originator")
+	if origin == "" {
+		origin = codexOriginator
+	}
+	headers.Set("Originator", origin)
+}
+
 func applyCodexSyncedIdentityVersion(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders http.Header, version string) {
-	if version == "" || cfg == nil || !cfg.CodexHeaderDefaults.VersionSync.Enabled || auth == nil || codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) || isCodexCloakingDisabled(cfg, auth) {
+	if version == "" || cfg == nil || !cfg.CodexHeaderDefaults.VersionSync.Enabled || cfg.CodexHeaderDefaults.AccountUserAgent.Enabled || auth == nil || codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) || isCodexCloakingDisabled(cfg, auth) {
 		return
 	}
 	ua := codexOperatorHeaderValue(ctx, auth, clientHeaders, "User-Agent")
