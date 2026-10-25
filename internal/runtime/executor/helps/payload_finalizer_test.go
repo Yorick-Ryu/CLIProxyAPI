@@ -31,6 +31,71 @@ func TestPayloadFinalizerDefaultsUseOriginalAndNormalizeBeforeRules(t *testing.T
 	}
 }
 
+func TestPayloadFinalizerSnapshotsDefaultsBeforeBodyConditionsMatch(t *testing.T) {
+	for _, raw := range []bool{false, true} {
+		rule := config.PayloadRule{
+			Models: []config.PayloadModelRule{{Name: "alias", Match: []map[string]any{{"stage": "final"}}, Exist: []string{"stage"}}},
+			Params: map[string]any{"present": "default", "missing": "default"},
+		}
+		cfg := &config.Config{}
+		if raw {
+			rule.Params = map[string]any{"present": `"default"`, "missing": `"default"`}
+			cfg.Payload.DefaultRaw = []config.PayloadRule{rule}
+		} else {
+			cfg.Payload.Default = []config.PayloadRule{rule}
+		}
+		original := []byte(`{"present":null}`)
+		finalize := NewPayloadFinalizer(cfg, "codex", "model", "codex", "", original, cliproxyexecutor.Request{Model: "alias"}, cliproxyexecutor.Options{})
+		copy(original, bytes.Repeat([]byte(" "), len(original)))
+		out := finalize([]byte(`{"stage":"final","present":"built-in","missing":"built-in"}`))
+		if gjson.GetBytes(out, "present").String() != "built-in" || gjson.GetBytes(out, "missing").String() != "default" {
+			t.Fatalf("raw=%v: original existence or final-body matching changed: %s", raw, out)
+		}
+	}
+}
+
+func TestPayloadDefaultsMayMatchStaticGates(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		entry config.PayloadModelRule
+		want  bool
+	}{
+		{"alias", config.PayloadModelRule{Name: "alias"}, true},
+		{"other model", config.PayloadModelRule{Name: "other"}, false},
+		{"other target", config.PayloadModelRule{Name: "*", Protocol: "claude"}, false},
+		{"other source", config.PayloadModelRule{Name: "*", FromProtocol: "claude"}, false},
+		{"other header", config.PayloadModelRule{Name: "*", Headers: map[string]string{"X-Test": "other"}}, false},
+		{"body conditions deferred", config.PayloadModelRule{Name: "*", NotMatch: []map[string]any{{"late": true}}, NotExist: []string{"late"}}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{Payload: config.PayloadConfig{Default: []config.PayloadRule{{Models: []config.PayloadModelRule{tc.entry}, Params: map[string]any{"value": true}}}}}
+			if got := payloadDefaultsMayMatch(cfg, "model", "alias", "codex", "openai", http.Header{"X-Test": {"yes"}}); got != tc.want {
+				t.Fatalf("may match = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func BenchmarkPayloadFinalizerLargeRequest(b *testing.B) {
+	original := bytes.Repeat([]byte(" "), 64<<20)
+	for _, tc := range []struct {
+		name string
+		cfg  *config.Config
+	}{
+		{"no-rules", &config.Config{}},
+		{"unmatched-default", &config.Config{Payload: config.PayloadConfig{Default: []config.PayloadRule{{Models: []config.PayloadModelRule{{Name: "other"}}, Params: map[string]any{"value": true}}}}}},
+		{"matching-default", &config.Config{Payload: config.PayloadConfig{Default: []config.PayloadRule{{Models: []config.PayloadModelRule{{Name: "model"}}, Params: map[string]any{"value": true}}}}}},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				finalize := NewPayloadFinalizer(tc.cfg, "codex", "model", "codex", "", original, cliproxyexecutor.Request{Model: "model"}, cliproxyexecutor.Options{})
+				_ = finalize([]byte(`{}`))
+			}
+		})
+	}
+}
+
 func TestPayloadFinalizerDevinBusinessFieldsAndCredentials(t *testing.T) {
 	wire := BuildDevinGetChatMessageRequest("secret-token", "device", "model", "system", []DevinPrompt{{MessageID: "id", Source: 1, Content: "hello"}}, []DevinTool{{Name: "f", Parameters: []byte(`{"type":"object"}`)}}, nil, 1024, "session", "cascade", nil)
 	unchanged, _, errUnchanged := FinalizeDevinPayload(wire, func(body []byte) []byte { return body })

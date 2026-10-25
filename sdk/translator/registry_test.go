@@ -20,6 +20,15 @@ type fakePluginHooks struct {
 	normalizeAfter        func([]byte) []byte
 }
 
+func TestConfigurationUpdatesSnapshotSurvivesSourceMutation(t *testing.T) {
+	body := []byte(`{"input":[{"type":"message","content":"large input"},{"type":"configuration_update","reasoning":{"effort":"high"}}]}`)
+	updates := configurationUpdates(body)
+	clear(body)
+	if len(updates) != 1 || updates[0] != `{"type":"configuration_update","reasoning":{"effort":"high"}}` {
+		t.Fatal("configuration update snapshot retained a mutable source view")
+	}
+}
+
 func (h *fakePluginHooks) NormalizeRequest(ctx context.Context, from, to Format, model string, body []byte, stream bool) []byte {
 	h.calls = append(h.calls, "normalize-request")
 	if h.normalizeRequest != nil {

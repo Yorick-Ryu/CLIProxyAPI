@@ -9,6 +9,7 @@ import (
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -154,17 +155,36 @@ func remapCodexAccountIdentityJSON(raw string, state codexAccountIdentityState) 
 	if !state.enabled || !gjson.Parse(raw).IsObject() {
 		return raw
 	}
+	// Malformed metadata keeps the original sequential editor's behavior.
+	if !gjson.Valid(raw) {
+		for _, field := range codexAccountIdentityTurnMetadataFields {
+			value := gjson.Get(raw, field.path)
+			if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
+				continue
+			}
+			if updated, err := sjson.Set(raw, field.path, codexAccountIdentityUUID(state, field.kind, value.String())); err == nil {
+				raw = updated
+			}
+		}
+		return raw
+	}
+	var edits []helps.JSONValueReplacement
 	for _, field := range codexAccountIdentityTurnMetadataFields {
 		value := gjson.Get(raw, field.path)
 		if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
 			continue
 		}
-		updated, err := sjson.Set(raw, field.path, codexAccountIdentityUUID(state, field.kind, value.String()))
-		if err == nil {
-			raw = updated
-		}
+		mapped := codexAccountIdentityUUID(state, field.kind, value.String())
+		edits = append(edits, helps.JSONValueReplacement{Value: value, Raw: []byte(`"` + mapped + `"`)})
 	}
-	return raw
+	if len(edits) == 0 {
+		return raw
+	}
+	updated, ok := helps.ReplaceJSONValues([]byte(raw), edits)
+	if !ok {
+		return raw
+	}
+	return string(updated)
 }
 
 // applyCodexAccountIdentityBody remaps existing client-owned identifiers into
@@ -172,51 +192,57 @@ func remapCodexAccountIdentityJSON(raw string, state codexAccountIdentityState) 
 // not synthesize fields that the client omitted.
 func applyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth, rawJSON []byte) ([]byte, codexAccountIdentityState) {
 	state := resolveCodexAccountIdentityState(auth)
-	if !state.enabled || len(rawJSON) == 0 || !gjson.ParseBytes(rawJSON).IsObject() {
+	if !state.enabled || len(rawJSON) == 0 || !util.ParseGJSONBytesNoCopy(rawJSON).IsObject() {
 		return rawJSON, state
 	}
 
+	metadata := util.GetGJSONBytesNoCopy(rawJSON, "client_metadata")
+	metadataJSON := metadata.Raw
 	for _, field := range codexAccountIdentityBodyFields {
-		value := gjson.GetBytes(rawJSON, field.path)
+		path := strings.TrimPrefix(field.path, "client_metadata.")
+		value := gjson.Get(metadataJSON, path)
 		if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
 			continue
 		}
-		updated, err := sjson.SetBytes(rawJSON, field.path, codexAccountIdentityUUID(state, field.kind, value.String()))
+		updated, err := sjson.Set(metadataJSON, path, codexAccountIdentityUUID(state, field.kind, value.String()))
 		if err == nil {
-			rawJSON = updated
+			metadataJSON = updated
 		}
 	}
 
-	if turnMetadata := strings.TrimSpace(gjson.GetBytes(rawJSON, "client_metadata.x-codex-turn-metadata").String()); turnMetadata != "" {
-		rawJSON, _ = sjson.SetBytes(rawJSON, "client_metadata.x-codex-turn-metadata", remapCodexAccountIdentityJSON(turnMetadata, state))
+	if turnMetadata := strings.TrimSpace(gjson.Get(metadataJSON, "x-codex-turn-metadata").String()); turnMetadata != "" {
+		metadataJSON, _ = sjson.Set(metadataJSON, "x-codex-turn-metadata", remapCodexAccountIdentityJSON(turnMetadata, state))
 	}
 
-	promptCacheKey := strings.TrimSpace(gjson.GetBytes(rawJSON, "prompt_cache_key").String())
+	var edits []helps.JSONValueReplacement
+	if metadataJSON != metadata.Raw {
+		edits = append(edits, helps.JSONValueReplacement{Value: metadata, Raw: []byte(metadataJSON)})
+	}
+	cacheValue := util.GetGJSONBytesNoCopy(rawJSON, "prompt_cache_key")
+	promptCacheKey := strings.TrimSpace(cacheValue.String())
 	if promptCacheKey != "" {
-		state.originalPromptCacheKey = promptCacheKey
+		state.originalPromptCacheKey = strings.Clone(promptCacheKey)
 		// Forks can inherit a parent's cache key while carrying their own session
 		// identity. The mapping must not depend on the current request's session.
 		state.promptCacheKey = codexAccountIdentityUUID(state, "session", promptCacheKey)
 		if state.promptCacheKey != promptCacheKey {
-			rawJSON, _ = sjson.SetBytes(rawJSON, "prompt_cache_key", state.promptCacheKey)
+			edits = append(edits, helps.JSONValueReplacement{Value: cacheValue, Raw: []byte(`"` + state.promptCacheKey + `"`)})
 			state.promptCacheKeyWasRemapped = true
 		}
 	}
-	// History retains the turn that created each message, rather than adopting
-	// the current request's turn. Use the same namespace as turn metadata.
-	if input := gjson.GetBytes(rawJSON, "input"); input.IsArray() {
-		for i, item := range input.Array() {
+	// Collect history edits against the unchanged source, alongside metadata and
+	// cache edits, so a long history does not copy the whole request per turn.
+	if input := util.GetGJSONBytesNoCopy(rawJSON, "input"); input.IsArray() {
+		input.ForEach(func(_, item gjson.Result) bool {
 			value := item.Get("internal_chat_message_metadata_passthrough.turn_id")
-			if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
-				continue
+			if value.Type == gjson.String && strings.TrimSpace(value.String()) != "" {
+				mapped := codexAccountIdentityUUID(state, "turn", value.String())
+				edits = append(edits, helps.JSONValueReplacement{Value: value, Raw: []byte(`"` + mapped + `"`)})
 			}
-			path := fmt.Sprintf("input.%d.internal_chat_message_metadata_passthrough.turn_id", i)
-			updated, err := sjson.SetBytes(rawJSON, path, codexAccountIdentityUUID(state, "turn", value.String()))
-			if err == nil {
-				rawJSON = updated
-			}
-		}
+			return true
+		})
 	}
+	rawJSON, _ = helps.ReplaceJSONValues(rawJSON, edits)
 	return rawJSON, state
 }
 

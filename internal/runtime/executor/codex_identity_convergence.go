@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -170,7 +171,40 @@ func applyCodexIdentityConvergenceBody(cfg *config.Config, auth *cliproxyauth.Au
 	if !state.enabled || len(rawJSON) == 0 {
 		return rawJSON, state
 	}
+	metadata := util.GetGJSONBytesNoCopy(rawJSON, "client_metadata")
+	if !metadata.IsObject() || !gjson.Valid(metadata.Raw) {
+		return applyCodexIdentityConvergenceBodyValues(rawJSON, state)
+	}
+	cache := util.GetGJSONBytesNoCopy(rawJSON, "prompt_cache_key")
+	envelope := append([]byte(`{"client_metadata":`), metadata.Raw...)
+	if cache.Exists() {
+		envelope = append(envelope, `,"prompt_cache_key":`...)
+		envelope = append(envelope, cache.Raw...)
+	}
+	envelope = append(envelope, '}')
+	updated, state := applyCodexIdentityConvergenceBodyValues(envelope, state)
+	var edits []helps.JSONValueReplacement
+	for _, field := range []struct {
+		path   string
+		source gjson.Result
+	}{
+		{"client_metadata", metadata}, {"prompt_cache_key", cache},
+	} {
+		value := util.GetGJSONBytesNoCopy(updated, field.path)
+		if field.source.Exists() && value.Raw != field.source.Raw {
+			edits = append(edits, helps.JSONValueReplacement{Value: field.source, Raw: []byte(value.Raw)})
+		}
+	}
+	result, ok := helps.ReplaceJSONValues(rawJSON, edits)
+	if !ok {
+		return applyCodexIdentityConvergenceBodyValues(rawJSON, state)
+	}
+	return result, state
+}
 
+// Preserve field insertion order and malformed-value behavior while operating
+// on the small metadata envelope rather than the full conversation.
+func applyCodexIdentityConvergenceBodyValues(rawJSON []byte, state codexIdentityConvergenceState) ([]byte, codexIdentityConvergenceState) {
 	rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.x-codex-installation-id", state.installationID)
 	if state.mode != codexIdentityConvergenceDevice {
 		rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.session_id", state.sessionID)
