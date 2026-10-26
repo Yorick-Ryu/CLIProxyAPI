@@ -53,7 +53,7 @@ func parseCodexWebsocketErrorWithCooling(payload []byte, modelLevelCooling bool)
 		msg:              string(out),
 		credentialScoped: isUsageLimit && !modelLevelCooling,
 	}
-	if retryAfter := parseCodexRetryAfter(status, out, time.Now()); retryAfter != nil {
+	if retryAfter := parseCodexRetryAfter(status, out, time.Now(), headers); retryAfter != nil {
 		statusError.retryAfter = retryAfter
 	} else if isCodexWebsocketConnectionLimitError(payload) {
 		retryAfter := time.Duration(0)
@@ -111,29 +111,40 @@ func isCodexWebsocketConnectionLimitError(payload []byte) bool {
 }
 
 func parseCodexWebsocketErrorHeaders(payload []byte) http.Header {
-	headersNode := gjson.GetBytes(payload, "headers")
-	if !headersNode.Exists() || !headersNode.IsObject() {
-		return nil
-	}
 	mapped := make(http.Header)
-	headersNode.ForEach(func(key, value gjson.Result) bool {
-		name := strings.TrimSpace(key.String())
-		if name == "" {
+	// Native errors can place response headers alongside a wrapped body/error.
+	// Match Codex CLI: error-local advice wins, with outer headers as fallback.
+	for _, path := range []string{"error.headers", "response.error.headers", "headers", "body.error.headers", "body.headers"} {
+		node := gjson.GetBytes(payload, path)
+		if !node.IsObject() {
+			continue
+		}
+		node.ForEach(func(key, value gjson.Result) bool {
+			name := strings.TrimSpace(key.String())
+			if name == "" || len(mapped.Values(name)) > 0 {
+				return true
+			}
+			add := func(v gjson.Result) {
+				if v.Type == gjson.String || v.Type == gjson.Number || v.Type == gjson.True || v.Type == gjson.False {
+					if text := strings.TrimSpace(v.String()); text != "" {
+						if strings.EqualFold(name, "Retry-After") && helps.CodexRetryAfterHeader(http.Header{"Retry-After": {text}}, time.Now()) == nil {
+							return
+						}
+						mapped.Add(name, text)
+					}
+				}
+			}
+			if value.IsArray() {
+				for _, v := range value.Array() {
+					add(v)
+				}
+			} else {
+				add(value)
+			}
 			return true
-		}
-		switch value.Type {
-		case gjson.String:
-			if v := strings.TrimSpace(value.String()); v != "" {
-				mapped.Set(name, v)
-			}
-		case gjson.Number, gjson.True, gjson.False:
-			if v := strings.TrimSpace(value.Raw); v != "" {
-				mapped.Set(name, v)
-			}
-		default:
-		}
-		return true
-	})
+		})
+	}
+
 	if len(mapped) == 0 {
 		return nil
 	}

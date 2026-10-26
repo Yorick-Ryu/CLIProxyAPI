@@ -1725,8 +1725,8 @@ func TestParseCodexWebsocketErrorMarksConnectionLimitRetryable(t *testing.T) {
 	if !ok || retryable.RetryAfter() == nil {
 		t.Fatalf("expected retryable websocket connection limit error")
 	}
-	if got := *retryable.RetryAfter(); got != 0 {
-		t.Fatalf("retryAfter = %v, want connection-limit fallback 0", got)
+	if got := *retryable.RetryAfter(); got != time.Second {
+		t.Fatalf("retryAfter = %v, want upstream connection-limit hint 1s", got)
 	}
 	withHeaders, ok := err.(interface{ Headers() http.Header })
 	if !ok || withHeaders.Headers().Get("retry-after") != "1" {
