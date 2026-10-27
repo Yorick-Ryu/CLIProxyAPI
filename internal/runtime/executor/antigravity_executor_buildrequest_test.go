@@ -11,6 +11,7 @@ import (
 
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
+	"github.com/tidwall/gjson"
 )
 
 func TestResolveAntigravityRequestBaseURL(t *testing.T) {
@@ -565,6 +566,11 @@ func TestAntigravityBuildRequest_ClaudeProjectsToolUnionsOnly(t *testing.T) {
 			params := decl["parameters"].(map[string]any)
 			value := params["properties"].(map[string]any)["value"].(map[string]any)
 			request := body["request"].(map[string]any)
+			encoded, errMarshal := json.Marshal(body)
+			if errMarshal != nil {
+				t.Fatal(errMarshal)
+			}
+			promptSchema := model == "claude-opus-5-5"
 			if strings.Contains(model, "claude") {
 				if _, exists := value["anyOf"]; exists || value["type"] != "object" {
 					t.Fatalf("Claude tool union must project to object, got %v", value)
@@ -572,7 +578,11 @@ func TestAntigravityBuildRequest_ClaudeProjectsToolUnionsOnly(t *testing.T) {
 				if !strings.Contains(value["description"].(string), "Accepts: boolean | object | array") {
 					t.Fatalf("alternate type hints were lost: %v", value)
 				}
-				if request["toolConfig"].(map[string]any)["functionCallingConfig"].(map[string]any)["mode"] != "VALIDATED" {
+				mode := gjson.GetBytes(encoded, "request.toolConfig.functionCallingConfig.mode").String()
+				if promptSchema && (mode == "VALIDATED" || mode == "ANY") {
+					t.Fatalf("Claude 5.5 prompt schema restored forced tool mode %q", mode)
+				}
+				if !promptSchema && mode != "VALIDATED" {
 					t.Fatal("Claude VALIDATED mode was lost")
 				}
 			} else if branches, ok := value["anyOf"].([]any); !ok || len(branches) != 3 {
@@ -582,6 +592,13 @@ func TestAntigravityBuildRequest_ClaudeProjectsToolUnionsOnly(t *testing.T) {
 			args := parts[0].(map[string]any)["functionCall"].(map[string]any)["args"].(map[string]any)
 			if args["value"] != true || args["anyOf"] != "keep-history" {
 				t.Fatalf("conversation arguments were rewritten: %v", args)
+			}
+			if promptSchema {
+				if gjson.GetBytes(encoded, "request.generationConfig.responseJsonSchema").Exists() {
+					t.Fatal("Claude 5.5 retained unsupported native output schema")
+				}
+				assertIssue7000PromptSchema(t, gjson.GetBytes(encoded, "request.systemInstruction"), gjson.GetBytes(payload, "request.generationConfig.responseJsonSchema").Raw)
+				return
 			}
 			responseValue := request["generationConfig"].(map[string]any)["responseJsonSchema"].(map[string]any)["properties"].(map[string]any)["value"].(map[string]any)
 			if branches, ok := responseValue["anyOf"].([]any); !ok || len(branches) != 2 {

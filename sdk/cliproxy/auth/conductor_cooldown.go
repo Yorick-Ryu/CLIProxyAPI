@@ -899,6 +899,8 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 	cooldownStateChanged := false
 	scheduleUnauthorizedRefresh := false
 	now := time.Now()
+	// A 401 condemns the access token, except one a -and-cooldown rule matched: that only cools the credential.
+	rejectsToken := !result.Success && (result.Error == nil || result.Error.Code != ErrorCodeForceCooldown) && !shouldSkipCredentialCooldown(result.Error) && (statusCodeFromResult(result.Error) == http.StatusUnauthorized || isUnauthorizedError(result.Error))
 
 	releaseMutation := m.lockAuthMutation(result.AuthID)
 	defer releaseMutation()
@@ -906,7 +908,7 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 	if auth, ok := m.auths[result.AuthID]; ok && auth != nil {
 		if isStaleExecutionResult(result, auth) {
 			staleEpoch := result.RegistrationEpoch > 0 && result.RegistrationEpoch < auth.RegistrationEpoch
-			if !staleEpoch && !result.Success && !shouldSkipCredentialCooldown(result.Error) && (statusCodeFromResult(result.Error) == http.StatusUnauthorized || isUnauthorizedError(result.Error)) && result.AccessToken != "" {
+			if !staleEpoch && rejectsToken && result.AccessToken != "" {
 				if recordRejectedTokenOnAuth(auth, result.AccessToken) {
 					auth.Generation++
 					auth.UpdatedAt = now
@@ -1307,7 +1309,7 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 			}
 		}
 
-		if !result.Success && !shouldSkipCredentialCooldown(result.Error) && (statusCodeFromResult(result.Error) == http.StatusUnauthorized || isUnauthorizedError(result.Error)) {
+		if rejectsToken {
 			tokenToReject := result.AccessToken
 			if tokenToReject == "" {
 				tokenToReject = authAccessToken(auth)
@@ -1319,7 +1321,7 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 			auth.Status = StatusError
 			auth.NextRefreshAfter = time.Time{}
 			auth.NextRetryAfter = time.Time{}
-		} else if !result.Success && !shouldSkipCredentialCooldown(result.Error) && (statusCodeFromResult(result.Error) == http.StatusUnauthorized || isUnauthorizedError(result.Error)) && authHasRefreshCredential(auth) {
+		} else if rejectsToken && authHasRefreshCredential(auth) {
 			if auth.NextRefreshAfter.IsZero() {
 				if !auth.LastRefreshedAt.IsZero() && now.Sub(auth.LastRefreshedAt) < refreshFailureBackoff {
 					auth.NextRefreshAfter = now.Add(refreshFailureBackoff)
@@ -1904,6 +1906,28 @@ func isRequestScopedError(err error) bool {
 	return ok && requestErr != nil && requestErr.IsRequestScoped()
 }
 
+// isStreamTruncatedError reports locally synthesized failures for accepted
+// upstream streams that ended without a terminal frame. Unlike a received
+// HTTP refusal, the generation was already submitted upstream.
+func isStreamTruncatedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	truncatedErr, ok := errors.AsType[cliproxyexecutor.StreamTruncatedError](err)
+	if ok && truncatedErr != nil && truncatedErr.IsStreamTruncated() {
+		return true
+	}
+	var authErr *Error
+	if errors.As(err, &authErr) && authErr != nil && authErr.Code == streamTruncatedErrorCode {
+		return true
+	}
+	return false
+}
+
+func isStreamTruncatedResultError(err *Error) bool {
+	return err != nil && err.Code == streamTruncatedErrorCode
+}
+
 func resultErrorFromError(err error) *Error {
 	if err == nil {
 		return nil
@@ -1919,6 +1943,10 @@ func resultErrorFromError(err error) *Error {
 		resultErr.HTTPStatus = statusCodeFromError(err)
 	}
 	switch {
+	case isStreamTruncatedError(err):
+		// Preserve the local truncation classification alongside the public
+		// 502 status so MarkResult can skip credential cooldown.
+		resultErr.Code = streamTruncatedErrorCode
 	case isExplicitModelNotFoundError(err, ""):
 		if resultErr.Code == "" || resultErr.Code == requestScopedErrorCode {
 			resultErr.Code = "model_not_found"
@@ -1954,7 +1982,7 @@ func shouldSkipCredentialCooldown(err *Error) bool {
 	if err != nil && err.Code == ErrorCodeForceCooldown {
 		return false
 	}
-	return isRequestScopedResultError(err) || isConnectionLifecycleResultError(err) || isTransientTransportResultError(err)
+	return isRequestScopedResultError(err) || isConnectionLifecycleResultError(err) || isTransientTransportResultError(err) || isStreamTruncatedResultError(err)
 }
 
 // isConnectionLifecycleError reports transport/session lifecycle failures that must
@@ -2652,6 +2680,11 @@ func isMissingModelPhrase(value string) bool {
 func isRequestInvalidError(err error) bool {
 	if err == nil {
 		return false
+	}
+	if isStreamTruncatedError(err) {
+		// A truncated accepted stream must stop here: the generation was
+		// already submitted and must not be replayed on another credential.
+		return true
 	}
 	if isRequestScopedError(err) {
 		return true
