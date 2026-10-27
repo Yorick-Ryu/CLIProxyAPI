@@ -249,7 +249,7 @@ func (cfg *Config) EffectiveResponseCompression() ResponseCompressionConfig {
 	if cfg == nil {
 		return ResponseCompressionConfig{}
 	}
-	if cfg.ResponseCompression.Enabled != nil || cfg.ResponseCompression.MinBytes != 0 {
+	if cfg.ResponseCompression.Enabled != nil {
 		return cfg.ResponseCompression
 	}
 	return cfg.ServerResponseCompression

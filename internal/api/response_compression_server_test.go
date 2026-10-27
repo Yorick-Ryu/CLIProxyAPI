@@ -17,20 +17,17 @@ import (
 func TestResponseCompressionServerHotReload(t *testing.T) {
 	cfg := &config.Config{}
 	server := newTestServerWithConfig(t, cfg)
-	body := strings.Repeat("response text ", 128)
+	body := "small response"
 	server.engine.GET("/compression-test", func(c *gin.Context) { c.String(http.StatusOK, body) })
 	for _, tc := range []struct {
 		enabled  bool
-		minBytes int
 		encoding string
 	}{
 		{enabled: true, encoding: "zstd"},
 		{enabled: false},
-		{enabled: true, minBytes: len(body) + 1},
-		{enabled: true, minBytes: 1, encoding: "zstd"},
+		{enabled: true, encoding: "zstd"},
 	} {
 		cfg.ServerResponseCompression.Enabled = &tc.enabled
-		cfg.ServerResponseCompression.MinBytes = tc.minBytes
 		server.UpdateClients(cfg)
 		request := httptest.NewRequest(http.MethodGet, "/compression-test", nil)
 		request.Header.Set("Accept-Encoding", "zstd")
@@ -60,7 +57,6 @@ func TestResponseCompressionFlushError(t *testing.T) {
 			writer := &responseCompressionWriter{
 				ResponseWriter: &compressionErrorWriter{ResponseWriter: context.Writer},
 				encoding:       encoding,
-				minBytes:       1024,
 			}
 			_, _ = writer.WriteString("data: test\n\n")
 			if errFlush := httpwire.FlushResponse(writer); !errors.Is(errFlush, io.ErrClosedPipe) {

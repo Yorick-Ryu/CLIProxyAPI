@@ -37,10 +37,9 @@ server:
   # Negotiate permessage-deflate on client-facing Responses WebSockets only.
   responses-websocket-compression: false
 
-  # Compress HTTP responses (including SSE) when the client advertises gzip or zstd.
+  # Compress HTTP responses of any size (including SSE) when the client advertises gzip or zstd.
   response-compression:
     enabled: true
-    min-bytes: 1024
 
   # Global token for GitHub requests (for example, release and asset downloads).
   # A non-empty config token takes precedence over the GITHUB_TOKEN environment variable.

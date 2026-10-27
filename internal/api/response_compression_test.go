@@ -75,14 +75,14 @@ func TestResponseCompression(t *testing.T) {
 		{name: "small_identity_refused", accept: "gzip, identity;q=0", body: "{}", encoding: "gzip"},
 		{name: "small_known_length_identity_refused", accept: "gzip, identity;q=0", body: "{}", encoding: "gzip", contentLength: true},
 		{name: "small_wildcard_identity_refused", accept: "gzip, *;q=0", body: "{}", encoding: "gzip"},
-		{name: "small_identity_overrides_wildcard", accept: "gzip, *;q=0, identity;q=1", body: "{}"},
+		{name: "small_identity_overrides_wildcard", accept: "gzip, *;q=0, identity;q=1", body: "{}", encoding: "gzip"},
 		{name: "identity_refused_no_encoding", accept: "identity;q=0,*;q=0", body: "{}"},
 		{name: "wildcard", accept: "*;q=0.5", encoding: "zstd"},
 		{name: "wildcard_explicit_exclusion", accept: "*;q=1,zstd;q=0", encoding: "gzip"},
 		{name: "all_excluded", accept: "*;q=1,zstd;q=0,gzip;q=0"},
 		{name: "invalid_quality", accept: "zstd;q=invalid,gzip;q=2"},
-		{name: "small", accept: "zstd", body: "{}"},
-		{name: "small_known_length", accept: "gzip", body: "{}", contentLength: true},
+		{name: "small", accept: "zstd", body: "{}", encoding: "zstd"},
+		{name: "small_known_length", accept: "gzip", body: "{}", encoding: "gzip", contentLength: true},
 		{name: "existing_encoding", accept: "gzip", existingEncoding: "br"},
 		{name: "binary", accept: "zstd", contentType: "image/png"},
 		{name: "json_suffix", accept: "gzip", contentType: "application/problem+json; charset=utf-8", encoding: "gzip"},
@@ -92,7 +92,7 @@ func TestResponseCompression(t *testing.T) {
 		{name: "informational", accept: "gzip", status: http.StatusEarlyHints},
 		{name: "head", accept: "gzip", method: http.MethodHead},
 		{name: "string_writer", accept: "gzip", encoding: "gzip", writeString: true},
-		{name: "explicit_header", accept: "gzip", body: "{}", forceHeader: true},
+		{name: "explicit_header", accept: "gzip", body: "{}", encoding: "gzip", forceHeader: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			payload := body

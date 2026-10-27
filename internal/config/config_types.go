@@ -249,21 +249,11 @@ type AntigravityConnectionPoolConfig struct {
 type ResponseCompressionConfig struct {
 	// Enabled defaults to true when unset.
 	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
-	// MinBytes defaults to 1024 when zero or negative.
-	MinBytes int `yaml:"min-bytes" json:"min-bytes"`
 }
 
 // IsEnabled reports whether negotiated response compression is enabled.
 func (c ResponseCompressionConfig) IsEnabled() bool {
 	return c.Enabled == nil || *c.Enabled
-}
-
-// EffectiveMinBytes returns the minimum non-streaming response size to compress.
-func (c ResponseCompressionConfig) EffectiveMinBytes() int {
-	if c.MinBytes <= 0 {
-		return 1024
-	}
-	return c.MinBytes
 }
 
 // CodexConfig configures provider-wide Codex request behavior.

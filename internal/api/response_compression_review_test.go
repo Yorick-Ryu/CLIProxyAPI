@@ -21,16 +21,15 @@ func TestResponseCompressionVary(t *testing.T) {
 		name          string
 		accept        string
 		encoding      string
-		minBytes      int
 		vary          []string
 		addVary       []string
 		contentLength bool
 		forceHeader   bool
 	}{
-		{name: "below_min", accept: "gzip"},
-		{name: "below_min_origin", accept: "gzip", vary: []string{"Origin"}},
-		{name: "below_min_known_length", accept: "gzip", contentLength: true},
-		{name: "below_min_header_now", accept: "gzip", forceHeader: true},
+		{name: "small", accept: "gzip", encoding: "gzip"},
+		{name: "small_origin", accept: "gzip", encoding: "gzip", vary: []string{"Origin"}},
+		{name: "small_known_length", accept: "gzip", encoding: "gzip", contentLength: true},
+		{name: "small_header_now", accept: "gzip", encoding: "gzip", forceHeader: true},
 		{name: "no_acceptable_encoding", accept: "br"},
 		{name: "identity", accept: "identity"},
 		{name: "identity_origin", accept: "identity", vary: []string{"Origin"}},
@@ -40,16 +39,16 @@ func TestResponseCompressionVary(t *testing.T) {
 		{name: "identity_refused_no_encoding", accept: "*;q=0, identity;q=0"},
 		{name: "empty_accept"},
 		{name: "no_accept_origin", vary: []string{"Origin"}},
-		{name: "gzip_origin", accept: "gzip", minBytes: 1, encoding: "gzip", vary: []string{"Origin"}},
-		{name: "zstd_origin", accept: "zstd", minBytes: 1, encoding: "zstd", vary: []string{"Origin"}},
-		{name: "gzip_existing_token", accept: "gzip", minBytes: 1, encoding: "gzip", vary: []string{"Origin", "accept-encoding"}},
-		{name: "gzip_duplicate_tokens", accept: "gzip", minBytes: 1, encoding: "gzip", vary: []string{"Origin, Accept-Encoding"}, addVary: []string{"accept-encoding"}},
-		{name: "zstd_duplicate_tokens", accept: "zstd", minBytes: 1, encoding: "zstd", vary: []string{"Origin, Accept-Encoding"}, addVary: []string{"ACCEPT-ENCODING"}},
-		{name: "plaintext_existing_token", accept: "gzip", vary: []string{"Origin, ACCEPT-ENCODING"}},
+		{name: "gzip_origin", accept: "gzip", encoding: "gzip", vary: []string{"Origin"}},
+		{name: "zstd_origin", accept: "zstd", encoding: "zstd", vary: []string{"Origin"}},
+		{name: "gzip_existing_token", accept: "gzip", encoding: "gzip", vary: []string{"Origin", "accept-encoding"}},
+		{name: "gzip_duplicate_tokens", accept: "gzip", encoding: "gzip", vary: []string{"Origin, Accept-Encoding"}, addVary: []string{"accept-encoding"}},
+		{name: "zstd_duplicate_tokens", accept: "zstd", encoding: "zstd", vary: []string{"Origin, Accept-Encoding"}, addVary: []string{"ACCEPT-ENCODING"}},
+		{name: "small_existing_token", accept: "gzip", encoding: "gzip", vary: []string{"Origin, ACCEPT-ENCODING"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			engine := gin.New()
-			engine.Use(responseCompressionMiddleware(&config.Config{ServerResponseCompression: config.ResponseCompressionConfig{MinBytes: tc.minBytes}}))
+			engine.Use(responseCompressionMiddleware(&config.Config{}))
 			engine.GET("/", func(c *gin.Context) {
 				c.Header("Content-Type", "application/json")
 				if len(tc.vary) > 0 {
@@ -209,7 +208,7 @@ func TestResponseCompressionVaryCommitPaths(t *testing.T) {
 	}
 }
 
-func TestResponseCompressionVaryChangedWhileBuffered(t *testing.T) {
+func TestResponseCompressionVaryChangedAfterWrite(t *testing.T) {
 	for _, accept := range []string{"gzip", "zstd"} {
 		t.Run(accept, func(t *testing.T) {
 			engine := gin.New()
@@ -225,8 +224,8 @@ func TestResponseCompressionVaryChangedWhileBuffered(t *testing.T) {
 			req.Header.Set("Accept-Encoding", accept)
 			response := httptest.NewRecorder()
 			engine.ServeHTTP(response, req)
-			if got := response.Result().Header.Get("Vary"); got != "Origin, Accept-Encoding" {
-				t.Errorf("Vary=%q, want Origin, Accept-Encoding", got)
+			if got := response.Result().Header.Get("Vary"); got != "Accept-Encoding" {
+				t.Errorf("Vary=%q, want committed Accept-Encoding", got)
 			}
 		})
 	}
@@ -316,52 +315,50 @@ func TestResponseCompressionPlaintextHijack(t *testing.T) {
 }
 
 func TestResponseCompressionWriterContract(t *testing.T) {
-	for _, minBytes := range []int{1, 1024} {
-		for _, flush := range []bool{false, true} {
-			t.Run("min="+strconv.Itoa(minBytes)+"/flush="+strconv.FormatBool(flush), func(t *testing.T) {
-				engine := gin.New()
-				engine.Use(responseCompressionMiddleware(&config.Config{ServerResponseCompression: config.ResponseCompressionConfig{MinBytes: minBytes}}))
-				response := httptest.NewRecorder()
-				engine.GET("/", func(c *gin.Context) {
-					if c.Writer.Written() || c.Writer.Size() != -1 || c.Writer.Status() != http.StatusOK {
-						t.Errorf("initial state: written=%v size=%d status=%d", c.Writer.Written(), c.Writer.Size(), c.Writer.Status())
-					}
-					c.Header("Content-Type", "application/json")
-					c.Writer.WriteHeader(http.StatusAccepted)
-					if _, errWrite := c.Writer.Write([]byte(`{"partial":`)); errWrite != nil {
-						t.Fatal(errWrite)
-					}
-					if !c.Writer.Written() || c.Writer.Size() != len(`{"partial":`) || c.Writer.Status() != http.StatusAccepted {
-						t.Errorf("after write: written=%v size=%d status=%d", c.Writer.Written(), c.Writer.Size(), c.Writer.Status())
-					}
-					c.Writer.WriteHeader(http.StatusInternalServerError)
-					if got := c.Writer.Status(); got != http.StatusAccepted {
-						t.Errorf("late WriteHeader changed status to %d", got)
-					}
-					if flush {
-						c.Writer.Flush()
-						if !response.Flushed || response.Body.Len() == 0 {
-							t.Error("Flush did not commit buffered data")
-						}
-					}
-					if _, errWriteString := c.Writer.WriteString(`true}`); errWriteString != nil {
-						t.Fatal(errWriteString)
-					}
-					if got := c.Writer.Size(); got != len(`{"partial":true}`) {
-						t.Errorf("logical size=%d, want %d", got, len(`{"partial":true}`))
-					}
-				})
-				req := httptest.NewRequest(http.MethodGet, "/", nil)
-				req.Header.Set("Accept-Encoding", "gzip")
-				engine.ServeHTTP(response, req)
-				if response.Code != http.StatusAccepted {
-					t.Errorf("final status=%d, want %d", response.Code, http.StatusAccepted)
+	for _, flush := range []bool{false, true} {
+		t.Run("flush="+strconv.FormatBool(flush), func(t *testing.T) {
+			engine := gin.New()
+			engine.Use(responseCompressionMiddleware(&config.Config{}))
+			response := httptest.NewRecorder()
+			engine.GET("/", func(c *gin.Context) {
+				if c.Writer.Written() || c.Writer.Size() != -1 || c.Writer.Status() != http.StatusOK {
+					t.Errorf("initial state: written=%v size=%d status=%d", c.Writer.Written(), c.Writer.Size(), c.Writer.Status())
 				}
-				if got := string(compressionTestBody(t, response.Header().Get("Content-Encoding"), response.Body.Bytes())); got != `{"partial":true}` {
-					t.Errorf("body=%q", got)
+				c.Header("Content-Type", "application/json")
+				c.Writer.WriteHeader(http.StatusAccepted)
+				if _, errWrite := c.Writer.Write([]byte(`{"partial":`)); errWrite != nil {
+					t.Fatal(errWrite)
+				}
+				if !c.Writer.Written() || c.Writer.Size() != len(`{"partial":`) || c.Writer.Status() != http.StatusAccepted {
+					t.Errorf("after write: written=%v size=%d status=%d", c.Writer.Written(), c.Writer.Size(), c.Writer.Status())
+				}
+				c.Writer.WriteHeader(http.StatusInternalServerError)
+				if got := c.Writer.Status(); got != http.StatusAccepted {
+					t.Errorf("late WriteHeader changed status to %d", got)
+				}
+				if flush {
+					c.Writer.Flush()
+					if !response.Flushed || response.Body.Len() == 0 {
+						t.Error("Flush did not commit buffered data")
+					}
+				}
+				if _, errWriteString := c.Writer.WriteString(`true}`); errWriteString != nil {
+					t.Fatal(errWriteString)
+				}
+				if got := c.Writer.Size(); got != len(`{"partial":true}`) {
+					t.Errorf("logical size=%d, want %d", got, len(`{"partial":true}`))
 				}
 			})
-		}
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("Accept-Encoding", "gzip")
+			engine.ServeHTTP(response, req)
+			if response.Code != http.StatusAccepted {
+				t.Errorf("final status=%d, want %d", response.Code, http.StatusAccepted)
+			}
+			if got := string(compressionTestBody(t, response.Header().Get("Content-Encoding"), response.Body.Bytes())); got != `{"partial":true}` {
+				t.Errorf("body=%q", got)
+			}
+		})
 	}
 }
 
@@ -386,7 +383,7 @@ func TestResponseCompressionWriterHeaderNowContract(t *testing.T) {
 
 func TestResponseCompressionPanicFinalization(t *testing.T) {
 	for _, encoding := range []string{"gzip", "zstd"} {
-		for _, stage := range []string{"empty", "buffered", "committed", "flushed"} {
+		for _, stage := range []string{"empty", "small", "committed", "flushed"} {
 			t.Run(encoding+"/"+stage, func(t *testing.T) {
 				engine := gin.New()
 				var original gin.ResponseWriter
@@ -397,7 +394,7 @@ func TestResponseCompressionPanicFinalization(t *testing.T) {
 					if value != "test compression panic" {
 						t.Errorf("panic value=%v", value)
 					}
-					if stage == "empty" || stage == "buffered" {
+					if stage == "empty" {
 						if c.Writer != original {
 							t.Error("uncommitted panic did not restore original writer for recovery")
 						}
@@ -428,7 +425,7 @@ func TestResponseCompressionPanicFinalization(t *testing.T) {
 				if !recovered {
 					t.Fatal("compression middleware swallowed the panic")
 				}
-				if stage == "empty" || stage == "buffered" {
+				if stage == "empty" {
 					if response.Code != http.StatusInternalServerError || response.Body.Len() != 0 || response.Header().Get("Content-Encoding") != "" {
 						t.Fatalf("expected clean 500: status=%d body=%q encoding=%q", response.Code, response.Body.Bytes(), response.Header().Get("Content-Encoding"))
 					}

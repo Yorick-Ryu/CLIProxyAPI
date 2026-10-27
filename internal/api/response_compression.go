@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -60,14 +59,9 @@ func responseCompressionMiddleware(cfg *config.Config) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		minBytes := cfg.EffectiveResponseCompression().EffectiveMinBytes()
-		if !identityAllowed {
-			minBytes = 0
-		}
 		writer = &responseCompressionWriter{
 			ResponseWriter: commitWriter,
 			encoding:       encoding,
-			minBytes:       minBytes,
 		}
 		c.Writer = writer
 		c.Next()
@@ -164,8 +158,6 @@ type responseCompressor interface {
 type responseCompressionWriter struct {
 	gin.ResponseWriter
 	encoding   string
-	minBytes   int
-	buffer     bytes.Buffer
 	compressor responseCompressor
 	decided    bool
 	writeErr   error
@@ -210,13 +202,7 @@ func (w *responseCompressionWriter) Write(data []byte) (n int, err error) {
 		if w.Header().Get("Content-Type") == "" && len(data) > 0 {
 			w.Header().Set("Content-Type", http.DetectContentType(data))
 		}
-		w.decide(false, w.buffer.Len()+len(data))
-	}
-	if !w.decided {
-		return w.buffer.Write(data)
-	}
-	if errDrain := w.drain(); errDrain != nil {
-		return 0, errDrain
+		w.decide()
 	}
 	if w.compressor != nil {
 		n, w.writeErr = w.compressor.Write(data)
@@ -233,10 +219,7 @@ func (w *responseCompressionWriter) WriteString(data string) (int, error) {
 
 func (w *responseCompressionWriter) WriteHeaderNow() {
 	w.written = true
-	w.decide(true, w.buffer.Len())
-	if errDrain := w.drain(); errDrain != nil {
-		log.Debugf("response compression header write failed: %v", errDrain)
-	}
+	w.decide()
 	w.ResponseWriter.WriteHeaderNow()
 }
 
@@ -252,10 +235,7 @@ func (w *responseCompressionWriter) FlushError() error {
 		return w.writeErr
 	}
 	w.written = true
-	w.decide(true, w.buffer.Len())
-	if errDrain := w.drain(); errDrain != nil {
-		return errDrain
-	}
+	w.decide()
 	if w.compressor != nil {
 		if errFlush := w.compressor.Flush(); errFlush != nil {
 			w.writeErr = errFlush
@@ -266,7 +246,7 @@ func (w *responseCompressionWriter) FlushError() error {
 	return w.writeErr
 }
 
-func (w *responseCompressionWriter) decide(force bool, size int) {
+func (w *responseCompressionWriter) decide() {
 	if w.decided {
 		return
 	}
@@ -281,17 +261,6 @@ func (w *responseCompressionWriter) decide(force bool, size int) {
 		w.Header().Get("Content-Encoding") != "" || !compressible {
 		w.decided = true
 		return
-	}
-	streaming := mediaType == "text/event-stream"
-	if !streaming {
-		if contentLength, errParseInt := strconv.ParseInt(w.Header().Get("Content-Length"), 10, 64); errParseInt == nil && contentLength >= 0 && contentLength < int64(w.minBytes) {
-			w.decided = true
-			return
-		}
-		if size < w.minBytes {
-			w.decided = force
-			return
-		}
 	}
 	var compressor responseCompressor
 	if w.encoding == "gzip" {
@@ -332,24 +301,8 @@ func appendCompressionVary(header http.Header) {
 	header.Set("Vary", strings.Join(tokens, ", "))
 }
 
-func (w *responseCompressionWriter) drain() error {
-	if w.writeErr != nil || w.buffer.Len() == 0 {
-		return w.writeErr
-	}
-	var target io.Writer = w.ResponseWriter
-	if w.compressor != nil {
-		target = w.compressor
-	}
-	_, w.writeErr = target.Write(w.buffer.Bytes())
-	w.buffer.Reset()
-	return w.writeErr
-}
-
 func (w *responseCompressionWriter) finish() {
-	w.decide(true, w.buffer.Len())
-	if errDrain := w.drain(); errDrain != nil {
-		log.Debugf("response compression final write failed: %v", errDrain)
-	}
+	w.decide()
 	if w.compressor != nil {
 		if errClose := w.compressor.Close(); errClose != nil {
 			if w.writeErr != nil || errors.Is(errClose, context.Canceled) || errors.Is(errClose, net.ErrClosed) ||

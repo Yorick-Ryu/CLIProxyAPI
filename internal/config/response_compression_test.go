@@ -9,14 +9,13 @@ import (
 
 func TestResponseCompressionConfig(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		input    string
-		enabled  bool
-		minBytes int
+		name    string
+		input   string
+		enabled bool
 	}{
-		{name: "defaults", input: "{}", enabled: true, minBytes: 1024},
-		{name: "disabled", input: "server:\n  response-compression:\n    enabled: false\n    min-bytes: 64", minBytes: 64},
-		{name: "enabled", input: "server:\n  response-compression:\n    enabled: true\n    min-bytes: -1", enabled: true, minBytes: 1024},
+		{name: "defaults", input: "{}", enabled: true},
+		{name: "disabled", input: "server:\n  response-compression:\n    enabled: false\n    min-bytes: 64"},
+		{name: "legacy threshold ignored", input: "server:\n  response-compression:\n    enabled: true\n    min-bytes: -1", enabled: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var cfg Config
@@ -26,18 +25,24 @@ func TestResponseCompressionConfig(t *testing.T) {
 			if got := cfg.ServerResponseCompression.IsEnabled(); got != tc.enabled {
 				t.Fatalf("IsEnabled() = %v, want %v", got, tc.enabled)
 			}
-			if got := cfg.ServerResponseCompression.EffectiveMinBytes(); got != tc.minBytes {
-				t.Fatalf("EffectiveMinBytes() = %d, want %d", got, tc.minBytes)
-			}
 			encoded, errMarshal := json.Marshal(cfg)
 			if errMarshal != nil {
 				t.Fatal(errMarshal)
+			}
+			var fields struct {
+				Compression map[string]json.RawMessage `json:"response-compression"`
+			}
+			if err := json.Unmarshal(encoded, &fields); err != nil {
+				t.Fatal(err)
+			}
+			if _, exists := fields.Compression["min-bytes"]; exists {
+				t.Fatal("removed HTTP size threshold was serialized")
 			}
 			var roundTrip Config
 			if errUnmarshal := json.Unmarshal(encoded, &roundTrip); errUnmarshal != nil {
 				t.Fatal(errUnmarshal)
 			}
-			if roundTrip.ServerResponseCompression.IsEnabled() != tc.enabled || roundTrip.ServerResponseCompression.EffectiveMinBytes() != tc.minBytes {
+			if roundTrip.ServerResponseCompression.IsEnabled() != tc.enabled {
 				t.Fatal("JSON round trip changed compression configuration")
 			}
 		})
