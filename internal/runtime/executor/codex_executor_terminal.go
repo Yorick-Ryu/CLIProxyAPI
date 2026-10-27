@@ -157,7 +157,7 @@ func codexTerminalStreamErrWithCooling(eventData []byte, modelLevelCooling bool)
 	if !ok || !codexTerminalStreamErrShouldHandle(body) {
 		return statusErr{}, nil, false
 	}
-	return newCodexStatusErrWithCooling(http.StatusBadRequest, body, modelLevelCooling, parseCodexWebsocketErrorHeaders(eventData)), body, true
+	return newCodexStatusErrWithCooling(http.StatusBadRequest, body, modelLevelCooling), body, true
 }
 
 func codexTerminalFailureErr(eventData []byte) (statusErr, []byte, bool) {
@@ -172,7 +172,7 @@ func codexTerminalFailureErrWithCooling(eventData []byte, modelLevelCooling bool
 	if !ok {
 		return statusErr{}, nil, false
 	}
-	return newCodexStatusErrWithCooling(codexTerminalFailureStatus(body), body, modelLevelCooling, parseCodexWebsocketErrorHeaders(eventData)), body, true
+	return newCodexStatusErrWithCooling(codexTerminalFailureStatus(body), body, modelLevelCooling), body, true
 }
 
 func codexTerminalFailureStatus(body []byte) int {
@@ -314,7 +314,7 @@ func newCodexStatusErr(statusCode int, body []byte) statusErr {
 	return newCodexStatusErrWithCooling(statusCode, body, false)
 }
 
-func newCodexStatusErrWithCooling(statusCode int, body []byte, modelLevelCooling bool, headers ...http.Header) statusErr {
+func newCodexStatusErrWithCooling(statusCode int, body []byte, modelLevelCooling bool) statusErr {
 	errCode := statusCode
 	isUsageLimit := isCodexUsageLimitError(body)
 	credentialScoped := isUsageLimit && !modelLevelCooling
@@ -323,7 +323,7 @@ func newCodexStatusErrWithCooling(statusCode int, body []byte, modelLevelCooling
 	}
 	body = classifyCodexStatusError(errCode, body)
 	err := statusErr{code: errCode, msg: string(body), credentialScoped: credentialScoped}
-	if retryAfter := parseCodexRetryAfter(errCode, body, time.Now(), headers...); retryAfter != nil {
+	if retryAfter := parseCodexRetryAfter(errCode, body, time.Now()); retryAfter != nil {
 		err.retryAfter = retryAfter
 	}
 	return err
@@ -421,42 +421,27 @@ func isCodexUsageLimitError(errorBody []byte) bool {
 	return false
 }
 
-func parseCodexRetryAfter(statusCode int, errorBody []byte, now time.Time, headers ...http.Header) *time.Duration {
-	if statusCode != http.StatusTooManyRequests && statusCode != http.StatusServiceUnavailable {
+func parseCodexRetryAfter(statusCode int, errorBody []byte, now time.Time) *time.Duration {
+	if statusCode != http.StatusTooManyRequests || len(errorBody) == 0 {
 		return nil
 	}
-	var retryAfter *time.Duration
-	for _, header := range headers {
-		if hint := helps.CodexRetryAfterHeader(header, now); hint != nil && (retryAfter == nil || *hint > *retryAfter) {
-			retryAfter = hint
-		}
-	}
-	if statusCode != http.StatusTooManyRequests {
-		return retryAfter
-	}
-	// A short admission hint must not shorten a genuine quota reset window.
 	for _, quota := range []gjson.Result{gjson.GetBytes(errorBody, "error"), gjson.ParseBytes(errorBody)} {
 		if !strings.EqualFold(strings.TrimSpace(quota.Get("type").String()), "usage_limit_reached") {
 			continue
 		}
-		var reset *time.Duration
-		if at := quota.Get("resets_at").Int(); at > 0 {
-			if deadline := time.Unix(at, 0); deadline.After(now) {
-				delay := deadline.Sub(now)
-				reset = &delay
+		if resetsAt := quota.Get("resets_at").Int(); resetsAt > 0 {
+			resetAtTime := time.Unix(resetsAt, 0)
+			if resetAtTime.After(now) {
+				retryAfter := resetAtTime.Sub(now)
+				return &retryAfter
 			}
 		}
-		if reset == nil {
-			if seconds := quota.Get("resets_in_seconds").Int(); seconds > 0 && seconds <= (1<<63-1)/int64(time.Second) {
-				delay := time.Duration(seconds) * time.Second
-				reset = &delay
-			}
-		}
-		if reset != nil && (retryAfter == nil || *reset > *retryAfter) {
-			retryAfter = reset
+		if resetsInSeconds := quota.Get("resets_in_seconds").Int(); resetsInSeconds > 0 {
+			retryAfter := time.Duration(resetsInSeconds) * time.Second
+			return &retryAfter
 		}
 	}
-	return retryAfter
+	return nil
 }
 
 // codexBootstrapNowMu protects codexBootstrapNow across concurrent tests and goroutines.
