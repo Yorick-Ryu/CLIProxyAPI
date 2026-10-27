@@ -303,6 +303,8 @@ func writeResponsesWebsocketPayload(writer *responsesWebsocketWriter, wsTimeline
 	if writer.closing.Load() {
 		return websocket.ErrCloseSent
 	}
+	// Keep short streaming deltas plain; negotiated large frames save bandwidth.
+	writer.conn.EnableWriteCompression(len(payload) >= 1024)
 	return writer.conn.WriteMessage(websocket.TextMessage, payload)
 }
 

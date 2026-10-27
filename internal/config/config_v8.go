@@ -82,6 +82,8 @@ func buildV8Paths() []configPath {
 		{"transient-error-cooldown-seconds", "routing.cooldown.transient-error-cooldown-seconds"},
 		{"proxy-url", "requests.proxy-url"}, {"tls-handshake-timeout-seconds", "requests.tls-handshake-timeout-seconds"}, {"passthrough-headers", "requests.passthrough-headers"},
 		{"nonstream-keepalive-interval", "requests.nonstream-keepalive-interval"}, {"streaming", "requests.streaming"}, {"payload", "requests.payload"},
+		{"response-compression", "server.response-compression"},
+		{"responses-websocket-compression", "server.responses-websocket-compression"},
 		{"auth-dir", "oauth.auth-dir"}, {"auth-auto-refresh-workers", "oauth.auth-auto-refresh-workers"},
 		{"oauth-model-alias", "oauth.model-alias"}, {"oauth-excluded-models", "oauth.excluded-models"},
 		{"oauth-request-scoped-errors", "oauth.request-scoped-errors"}, {"oauth-settings", "oauth.settings"}, {"ws-auth", "oauth.providers.aistudio.ws-auth"},
@@ -239,6 +241,29 @@ func legacyPath(root *yaml.Node, path string) *yaml.Node {
 	return node
 }
 
+// EffectiveResponseCompression returns the downstream response compression
+// settings from their canonical storage (SDKConfig.ResponseCompression, YAML
+// server.response-compression), falling back to the JSON/programmatic mirror
+// on the outer Config when the canonical value was never populated.
+func (cfg *Config) EffectiveResponseCompression() ResponseCompressionConfig {
+	if cfg == nil {
+		return ResponseCompressionConfig{}
+	}
+	if cfg.ResponseCompression.Enabled != nil {
+		return cfg.ResponseCompression
+	}
+	return cfg.ServerResponseCompression
+}
+
+// SyncServerResponseCompression copies the canonical response compression
+// settings into the JSON-visible mirror on the outer Config.
+func (cfg *Config) SyncServerResponseCompression() {
+	if cfg == nil {
+		return
+	}
+	cfg.ServerResponseCompression = cfg.ResponseCompression
+}
+
 // UnmarshalYAML accepts both layouts, including partially migrated documents.
 // Presence, rather than Go zero values, determines which setting wins.
 func (cfg *Config) UnmarshalYAML(node *yaml.Node) error {
@@ -254,6 +279,7 @@ func (cfg *Config) UnmarshalYAML(node *yaml.Node) error {
 		return errValidate
 	}
 	*cfg = Config(decoded)
+	cfg.SyncServerResponseCompression()
 	cfg.OAuthOnlyFields = nil
 	source := expandConfigAliases(node)
 	for _, path := range v8Paths {

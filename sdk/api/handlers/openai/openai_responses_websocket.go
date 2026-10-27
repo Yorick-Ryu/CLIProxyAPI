@@ -175,6 +175,7 @@ func (w *responsesWebsocketWriter) closeWithPayload(payload []byte) (bool, error
 	}
 	defer w.writeMu.Unlock()
 
+	w.conn.EnableWriteCompression(len(payload) >= 1024)
 	errWrite := w.conn.WriteMessage(websocket.TextMessage, payload)
 	errClose := w.conn.Close()
 	if errWrite != nil {
@@ -267,10 +268,15 @@ func truncateWebsocketCloseReason(reason string, maxBytes int) string {
 // response events back as JSON websocket text messages. `response.interrupt`
 // is forwarded to the current Codex upstream socket without starting a new turn.
 func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
-	conn, err := responsesWebsocketUpgrader.Upgrade(c.Writer, c.Request, websocketUpgradeHeaders(c.Request))
+	upgrader := responsesWebsocketUpgrader
+	if cfg := h.CurrentConfig(); cfg != nil {
+		upgrader.EnableCompression = cfg.ResponsesWebsocketCompression
+	}
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, websocketUpgradeHeaders(c.Request))
 	if err != nil {
 		return
 	}
+	_ = conn.SetCompressionLevel(6)
 	writer := newResponsesWebsocketWriter(conn)
 	passthroughSessionID := uuid.NewString()
 	socketCtx, cancelSocket := context.WithCancelCause(c.Request.Context())

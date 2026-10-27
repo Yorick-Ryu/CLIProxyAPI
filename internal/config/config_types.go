@@ -245,6 +245,17 @@ type AntigravityConnectionPoolConfig struct {
 	MaxIdleConnsPerHost *int `yaml:"max-idle-conns-per-host,omitempty" json:"max-idle-conns-per-host,omitempty"`
 }
 
+// ResponseCompressionConfig controls downstream HTTP response compression.
+type ResponseCompressionConfig struct {
+	// Enabled defaults to true when unset.
+	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+}
+
+// IsEnabled reports whether negotiated response compression is enabled.
+func (c ResponseCompressionConfig) IsEnabled() bool {
+	return c.Enabled == nil || *c.Enabled
+}
+
 // CodexConfig configures provider-wide Codex request behavior.
 type CodexConfig struct {
 	// HTTPTLSProfile selects chrome (default) or the captured Linux CLI HTTP ClientHello.
