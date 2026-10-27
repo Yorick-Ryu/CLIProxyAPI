@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - v*
+      - '!v*-beiapi.*'
+      - '!v*.beiapi.*'
 
 env:
   APP_NAME: CLIProxyAPI

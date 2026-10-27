@@ -5,6 +5,8 @@ on:
     # run only against tags
     tags:
       - '*'
+      - '!v*-beiapi.*'
+      - '!v*.beiapi.*'
 
 permissions:
   contents: write

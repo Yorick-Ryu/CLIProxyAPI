@@ -24,7 +24,10 @@ switch ($choice) {
         Write-Host "--- Building from Source and Running ---"
 
         # Get Version Information
-        $VERSION = (git describe --tags --always --dirty)
+        $VERSION = (bash .github/scripts/beiapi-version.sh)
+        if ($LASTEXITCODE -ne 0) {
+            throw "Version calculation failed. Git Bash, full Git history and upstream tags are required."
+        }
         $COMMIT  = (git rev-parse --short HEAD)
         $BUILD_DATE = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
