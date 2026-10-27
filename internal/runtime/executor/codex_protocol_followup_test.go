@@ -107,7 +107,7 @@ func TestCodexWindowAndMemoryMetadataOnWire(t *testing.T) {
 func TestCodexTurnStateOnWireAndPayloadOverrides(t *testing.T) {
 	for _, transport := range []string{"http", "ws"} {
 		for _, stream := range []bool{false, true} {
-			for _, mode := range []string{"same", "foreign", "unknown", "override", "api-key"} {
+			for _, mode := range []string{"same", "foreign", "unknown", "override", "api-key", "siwc-same", "siwc-foreign"} {
 				t.Run(fmt.Sprintf("%s/stream=%t/%s", transport, stream, mode), func(t *testing.T) {
 					token := t.Name() + "-opaque"
 					payload, _ := json.Marshal(map[string]any{"model": "gpt-5.6-sol", "input": []any{}, "client_metadata": map[string]any{"x-codex-turn-state": token}})
@@ -118,6 +118,10 @@ func TestCodexTurnStateOnWireAndPayloadOverrides(t *testing.T) {
 						cfg.Payload.Override = []config.PayloadRule{{Models: []config.PayloadModelRule{{Name: "*"}}, Params: map[string]any{"client_metadata.x-codex-turn-state": token}}}
 					}
 					owner := &cliproxyauth.Auth{ID: "auth-a", Provider: "codex", Metadata: map[string]any{"account_id": "synthetic-a"}}
+					if mode == "siwc-same" || mode == "siwc-foreign" {
+						owner.Metadata["use_siwc"] = true
+						opts.Headers.Set("User-Agent", "codex-tui/0.162.0")
+					}
 					ctx := context.Background()
 					if mode != "unknown" {
 						helps.CodexTurnStateCommitObserver(codexTurnStateContext(ctx, owner, req, opts))(http.Header{"X-Codex-Turn-State": {token}}, nil)
@@ -151,7 +155,11 @@ func TestCodexTurnStateOnWireAndPayloadOverrides(t *testing.T) {
 					}))
 					defer server.Close()
 					auth := &cliproxyauth.Auth{ID: "auth-b", Provider: "codex", Attributes: map[string]string{"base_url": server.URL}, Metadata: map[string]any{"account_id": "synthetic-b"}}
-					if mode == "same" {
+					if mode == "siwc-same" || mode == "siwc-foreign" {
+						auth.Metadata["use_siwc"] = true
+						auth.Metadata["access_token"] = "synthetic-outer"
+					}
+					if mode == "same" || mode == "siwc-same" {
 						auth.ID = "renamed-auth-after-refresh"
 						auth.Metadata["account_id"] = "synthetic-a"
 					}
@@ -187,7 +195,7 @@ func TestCodexTurnStateOnWireAndPayloadOverrides(t *testing.T) {
 					got := <-captured
 					gotHeader, gotBody := got[0], got[1]
 					wantHeader, wantBody := token, token
-					if mode == "foreign" {
+					if mode == "foreign" || mode == "siwc-foreign" {
 						wantHeader, wantBody = "", ""
 					}
 					if mode == "override" {

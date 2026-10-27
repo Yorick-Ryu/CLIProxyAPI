@@ -64,15 +64,15 @@ func (e *CodexExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Aut
 	if req == nil {
 		return nil
 	}
-	apiKey, _ := codexCreds(auth)
-	if codexUseSIWC(auth) && req.URL != nil && req.URL.Scheme == "https" &&
+	apiKey, _ := codexCredsForRequest(req.Context(), auth, req.Header)
+	if codexUseSIWCForRequest(req.Context(), auth, req.Header) && req.URL != nil && req.URL.Scheme == "https" &&
 		req.URL.Host == "chatgpt.com" && req.URL.Path == "/backend-api/codex/alpha/search" {
 		// ChatGPT Alpha Search requires the original OAuth partition, not SIWC.
 		apiKey, _ = auth.Metadata["access_token"].(string)
 		if strings.TrimSpace(apiKey) == "" {
 			return statusErr{code: http.StatusUnauthorized, msg: "codex executor: original OAuth access_token is required for ChatGPT Alpha Search"}
 		}
-	} else if errSIWC := ensureCodexSIWCCredentials(auth, apiKey); errSIWC != nil {
+	} else if errSIWC := ensureCodexSIWCCredentialsForRequest(req.Context(), auth, apiKey, req.Header); errSIWC != nil {
 		return errSIWC
 	}
 	if strings.TrimSpace(apiKey) != "" {
@@ -140,9 +140,16 @@ type codexAlphaSearchPrepared struct {
 }
 
 func (e *CodexExecutor) codexAlphaSearchCompatibility(req *http.Request, auth *cliproxyauth.Auth) bool {
-	return req != nil && req.URL != nil && req.Method == http.MethodPost && strings.HasSuffix(req.URL.EscapedPath(), "/alpha/search") &&
+	if req == nil {
+		return false
+	}
+	source := req.Header
+	if prepared, _ := req.Context().Value(codexAlphaSearchPreparedKey{}).(*codexAlphaSearchPrepared); prepared != nil {
+		source = prepared.source
+	}
+	return req.URL != nil && req.Method == http.MethodPost && strings.HasSuffix(req.URL.EscapedPath(), "/alpha/search") &&
 		e.cfg != nil && strings.EqualFold(strings.TrimSpace(e.cfg.Codex.HTTPTLSProfile), "linux") &&
-		auth != nil && strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") && !codexAuthUsesAPIKey(auth) && !codexUseSIWC(auth)
+		auth != nil && strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") && !codexAuthUsesAPIKey(auth) && !codexUseSIWCForRequest(req.Context(), auth, source)
 }
 
 // prepareCodexAlphaSearch keeps native search metadata and its request id in
@@ -249,7 +256,7 @@ func (e *CodexExecutor) cacheHelper(ctx context.Context, from sdktranslator.Form
 	if err != nil {
 		return nil, nil, codexIdentityConfuseState{}, err
 	}
-	if err = e.setCodexRequestBody(httpReq, auth, body); err != nil {
+	if err = e.setCodexRequestBody(httpReq, auth, body, headerSets...); err != nil {
 		return nil, nil, codexIdentityConfuseState{}, err
 	}
 	return httpReq, body, identityState, nil
@@ -329,7 +336,7 @@ func (e *CodexExecutor) prepareCachedRequest(ctx context.Context, from sdktransl
 	}
 	if cache.ID != "" {
 		sessionID := cache.ID
-		if codexUseSIWC(auth) && accountIdentityState.promptCacheKeyWasRemapped {
+		if codexUseSIWCForRequest(ctx, auth, headers) && accountIdentityState.promptCacheKeyWasRemapped {
 			// SIWC copies this header into X-Client-Request-Id before the
 			// account header mapping, so both must start from the original ID.
 			sessionID = accountIdentityState.originalPromptCacheKey
@@ -339,9 +346,9 @@ func (e *CodexExecutor) prepareCachedRequest(ctx context.Context, from sdktransl
 	return httpReq, rawJSON, identityState, nil
 }
 
-func (e *CodexExecutor) setCodexRequestBody(httpReq *http.Request, auth *cliproxyauth.Auth, body []byte) error {
+func (e *CodexExecutor) setCodexRequestBody(httpReq *http.Request, auth *cliproxyauth.Auth, body []byte, clientHeaders ...http.Header) error {
 	wireBody := body
-	compressed := codexRequestCompressionEnabled(e.cfg, auth, httpReq, len(body))
+	compressed := codexRequestCompressionEnabled(e.cfg, auth, httpReq, len(body), clientHeaders...)
 	if compressed {
 		var errCompress error
 		wireBody, errCompress = helps.CompressCodexRequestBody(body)
@@ -363,11 +370,11 @@ func (e *CodexExecutor) setCodexRequestBody(httpReq *http.Request, auth *cliprox
 	return nil
 }
 
-func codexRequestCompressionEnabled(cfg *config.Config, auth *cliproxyauth.Auth, req *http.Request, bodyBytes int) bool {
+func codexRequestCompressionEnabled(cfg *config.Config, auth *cliproxyauth.Auth, req *http.Request, bodyBytes int, clientHeaders ...http.Header) bool {
 	if cfg == nil || !cfg.Codex.RequestCompression.Enabled || auth == nil {
 		return false
 	}
-	if codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) || req == nil || req.URL == nil || req.Method != http.MethodPost {
+	if codexAuthUsesAPIKey(auth) || req == nil || req.URL == nil || req.Method != http.MethodPost || codexUseSIWCForRequest(req.Context(), auth, clientHeaders...) {
 		return false
 	}
 	// Native Codex enables zstd on Responses HTTP, not legacy compaction.
@@ -519,7 +526,7 @@ func applyCodexHeaders(r *http.Request, auth *cliproxyauth.Auth, token string, s
 	} else if ginCtx, ok := r.Context().Value("gin").(*gin.Context); ok && ginCtx != nil && ginCtx.Request != nil {
 		ginHeaders = ginCtx.Request.Header
 	}
-	applyCodexHeadersFromSources(r, auth, token, stream, cfg, ginHeaders)
+	applyCodexHeadersWithSIWC(r, auth, codexUseSIWCForRequest(r.Context(), auth, ginHeaders), token, stream, cfg, ginHeaders)
 }
 
 // applyModelHeaderOverrides forces models.json config.override_header onto upstream headers.
@@ -542,6 +549,7 @@ func applyModelHeaderOverrides(headers http.Header, modelName string) {
 // applyCodexDirectImageHeaders sets Codex upstream headers for direct /images/* calls.
 // Downstream client User-Agent values are not forwarded to reduce Cloudflare 1010 blocks.
 func applyCodexDirectImageHeaders(r *http.Request, auth *cliproxyauth.Auth, token string, stream bool, cfg *config.Config, clientHeaders ...http.Header) {
+	useSIWC := codexUseSIWCForRequest(r.Context(), auth, clientHeaders...)
 	var ginHeaders http.Header
 	if len(clientHeaders) > 0 && clientHeaders[0] != nil {
 		ginHeaders = clientHeaders[0].Clone()
@@ -550,13 +558,13 @@ func applyCodexDirectImageHeaders(r *http.Request, auth *cliproxyauth.Auth, toke
 		ginHeaders = ginCtx.Request.Header.Clone()
 		ginHeaders.Del("User-Agent")
 	}
-	applyCodexHeadersFromSources(r, auth, token, stream, cfg, ginHeaders)
+	applyCodexHeadersWithSIWC(r, auth, useSIWC, token, stream, cfg, ginHeaders)
 }
 
 // applyCodexImageCompatibilityHeaders runs after identity mapping and before
 // model overrides. It changes headers only, never the final media payload.
 func applyCodexImageCompatibilityHeaders(r *http.Request, auth *cliproxyauth.Auth, cfg *config.Config, state *codexIdentityConfuseState, source http.Header) {
-	if cfg == nil || !strings.EqualFold(strings.TrimSpace(cfg.Codex.HTTPTLSProfile), "linux") || auth == nil || codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) {
+	if cfg == nil || !strings.EqualFold(strings.TrimSpace(cfg.Codex.HTTPTLSProfile), "linux") || auth == nil || codexAuthUsesAPIKey(auth) || codexUseSIWCForRequest(r.Context(), auth, source) {
 		return
 	}
 	if source == nil {
@@ -661,6 +669,10 @@ func stripCodexSIWCUnsupportedFields(body []byte, hasExplicitInstructions bool, 
 }
 
 func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, token string, stream bool, cfg *config.Config, ginHeaders http.Header) {
+	applyCodexHeadersWithSIWC(r, auth, codexUseSIWCForRequest(r.Context(), auth, ginHeaders), token, stream, cfg, ginHeaders)
+}
+
+func applyCodexHeadersWithSIWC(r *http.Request, auth *cliproxyauth.Auth, useSIWC bool, token string, stream bool, cfg *config.Config, ginHeaders http.Header) {
 	defer helps.GuardCodexTurnStateHeaders(r.Context(), r.Header)
 	r.Header.Set("Content-Type", "application/json")
 	if strings.TrimSpace(token) != "" {
@@ -669,7 +681,7 @@ func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, toke
 		r.Header.Del("Authorization")
 	}
 
-	if codexUseSIWC(auth) {
+	if useSIWC {
 		if sessionID := strings.TrimSpace(r.Header.Get("Session-Id")); sessionID != "" {
 			r.Header.Del("Session-Id")
 			setHeaderCasePreserved(r.Header, "session_id", sessionID)
@@ -740,7 +752,7 @@ func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, toke
 	}
 	util.ApplyCustomHeadersFromAttrs(r, attrs, ginHeaders)
 	applyCodexCloakingHeaders(r.Header, cfg, auth)
-	applyCodexSyncedIdentity(r.Context(), r.Header, cfg, auth, ginHeaders)
+	applyCodexSyncedIdentity(r.Context(), r.Header, cfg, auth, ginHeaders, useSIWC)
 }
 
 const codexRoutingHintHeader = "X-Codex-Routing-Hint"
@@ -762,7 +774,7 @@ const codexRoutingHintHeader = "X-Codex-Routing-Hint"
 // API-key requests are not touched, matching native Codex, which sends no hint
 // to API-key providers.
 func applyCodexRoutingHint(ctx context.Context, headers http.Header, auth *cliproxyauth.Auth, baseModel string, upstreamBody []byte, clientHeaders http.Header) {
-	if codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) {
+	if codexAuthUsesAPIKey(auth) || codexUseSIWCForRequest(ctx, auth, clientHeaders) {
 		return
 	}
 	deleteHeaderCaseInsensitive(headers, codexRoutingHintHeader)
@@ -953,7 +965,7 @@ func codexImageGenerationToolModel(body []byte) string {
 // codexTurnStateContext uses original client identities, before account mapping.
 func codexTurnStateContext(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) context.Context {
 	owner := ""
-	if auth != nil && !codexAuthUsesAPIKey(auth) && !codexUseSIWC(auth) {
+	if auth != nil && !codexAuthUsesAPIKey(auth) && !codexUseSIWCForRequest(ctx, auth, opts.Headers) {
 		owner = codexCredentialIdentitySource(auth)
 	}
 	body := req.Payload
@@ -978,16 +990,20 @@ func codexTurnStateContext(ctx context.Context, auth *cliproxyauth.Auth, req cli
 
 // applyCodexSyncedIdentity uses one account history snapshot or the legacy
 // startup latest-version check. Existing websocket handshakes are unchanged.
-func applyCodexSyncedIdentity(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders http.Header) {
+func applyCodexSyncedIdentity(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders http.Header, selectedSIWC ...bool) {
 	if cfg != nil && cfg.CodexHeaderDefaults.AccountUserAgent.Enabled {
-		applyCodexAccountHistoryIdentity(ctx, headers, cfg, auth, clientHeaders, helps.CodexVersionHistory())
+		applyCodexAccountHistoryIdentity(ctx, headers, cfg, auth, clientHeaders, helps.CodexVersionHistory(), selectedSIWC...)
 		return
 	}
-	applyCodexSyncedIdentityVersion(ctx, headers, cfg, auth, clientHeaders, helps.CodexCurrentVersion())
+	applyCodexSyncedIdentityVersion(ctx, headers, cfg, auth, clientHeaders, helps.CodexCurrentVersion(), selectedSIWC...)
 }
 
-func applyCodexAccountHistoryIdentity(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders http.Header, versions []string) {
-	if headers == nil || cfg == nil || !cfg.CodexHeaderDefaults.AccountUserAgent.Enabled || auth == nil || codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) || isCodexCloakingDisabled(cfg, auth) {
+func applyCodexAccountHistoryIdentity(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders http.Header, versions []string, selectedSIWC ...bool) {
+	useSIWC := codexUseSIWCForRequest(ctx, auth, clientHeaders)
+	if len(selectedSIWC) > 0 {
+		useSIWC = selectedSIWC[0]
+	}
+	if headers == nil || cfg == nil || !cfg.CodexHeaderDefaults.AccountUserAgent.Enabled || auth == nil || codexAuthUsesAPIKey(auth) || useSIWC || isCodexCloakingDisabled(cfg, auth) {
 		return
 	}
 	customUA := codexOperatorHeaderValue(ctx, auth, clientHeaders, "User-Agent")
@@ -1014,8 +1030,12 @@ func applyCodexAccountHistoryIdentity(ctx context.Context, headers http.Header, 
 	headers.Set("Originator", origin)
 }
 
-func applyCodexSyncedIdentityVersion(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders http.Header, version string) {
-	if version == "" || cfg == nil || !cfg.CodexHeaderDefaults.VersionSync.Enabled || cfg.CodexHeaderDefaults.AccountUserAgent.Enabled || auth == nil || codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) || isCodexCloakingDisabled(cfg, auth) {
+func applyCodexSyncedIdentityVersion(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders http.Header, version string, selectedSIWC ...bool) {
+	useSIWC := codexUseSIWCForRequest(ctx, auth, clientHeaders)
+	if len(selectedSIWC) > 0 {
+		useSIWC = selectedSIWC[0]
+	}
+	if version == "" || cfg == nil || !cfg.CodexHeaderDefaults.VersionSync.Enabled || cfg.CodexHeaderDefaults.AccountUserAgent.Enabled || auth == nil || codexAuthUsesAPIKey(auth) || useSIWC || isCodexCloakingDisabled(cfg, auth) {
 		return
 	}
 	ua := codexOperatorHeaderValue(ctx, auth, clientHeaders, "User-Agent")

@@ -236,11 +236,18 @@ func TestCodexAccountHistoryCachedStartupFlowsIntoHeaders(t *testing.T) {
 	if wantUA == "" {
 		t.Fatal("cached history was not ready when startup returned")
 	}
-	for _, mode := range []string{"http", "sse", "websocket", "image", "alpha-search", "manual-http", "manual-sse", "manual-websocket", "manual-image", "manual-alpha-search", "manual-unknown-websocket"} {
+	for _, mode := range []string{"http", "sse", "websocket", "image", "alpha-search", "manual-http", "manual-sse", "manual-websocket", "manual-image", "manual-alpha-search", "manual-unknown-websocket", "siwc-http", "siwc-sse", "siwc-websocket", "siwc-image", "siwc-alpha-search"} {
 		t.Run(mode, func(t *testing.T) {
 			account := auth.Clone()
 			expectedUA := wantUA
 			transport := strings.TrimPrefix(mode, "manual-")
+			var source http.Header
+			if strings.HasPrefix(mode, "siwc-") {
+				transport = strings.TrimPrefix(mode, "siwc-")
+				account.Metadata["use_siwc"] = true
+				account.Metadata["access_token"] = "synthetic-outer"
+				source = http.Header{"User-Agent": {"codex-tui/0.162.0"}}
+			}
 			if strings.HasPrefix(mode, "manual-") {
 				custom := "codex-tui/9.8.7 (Ubuntu 24.4.0; x86_64) kitty (codex-tui; 9.8.7)"
 				if transport == "unknown-websocket" {
@@ -251,13 +258,13 @@ func TestCodexAccountHistoryCachedStartupFlowsIntoHeaders(t *testing.T) {
 				expectedUA = strings.ReplaceAll(custom, "9.8.7", wantVersion)
 			}
 			request, _ := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", nil)
-			applyCodexHeadersFromSources(request, account, "", transport == "sse", cfg, nil)
+			applyCodexHeadersFromSources(request, account, "", transport == "sse", cfg, source)
 			switch transport {
 			case "websocket":
-				request.Header = applyCodexWebsocketHeaders(request.Context(), nil, account, "", cfg, true)
+				request.Header = applyCodexWebsocketHeaders(request.Context(), nil, account, "", cfg, true, source)
 			case "image":
-				applyCodexDirectImageHeaders(request, account, "", false, cfg)
-				applyCodexImageCompatibilityHeaders(request, account, cfg, nil, nil)
+				applyCodexDirectImageHeaders(request, account, "", false, cfg, source)
+				applyCodexImageCompatibilityHeaders(request, account, cfg, nil, source)
 			case "alpha-search":
 				request.URL.Path = "/backend-api/codex/alpha/search"
 				if err := NewCodexExecutor(cfg).PrepareRequest(request, account); err != nil {

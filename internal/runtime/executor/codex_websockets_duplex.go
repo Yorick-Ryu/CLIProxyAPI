@@ -281,7 +281,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 					// Steering carries business input but must not inherit response.create defaults.
 					steerReq := req
 					steerReq.Payload = payload
-					if codexUseSIWC(auth) {
+					if codexUseSIWCForRequest(ctx, auth, opts.Headers) {
 						payload = thinking.StripConfigurationUpdates(payload)
 					}
 					if auth != nil && !codexAuthUsesAPIKey(auth) {

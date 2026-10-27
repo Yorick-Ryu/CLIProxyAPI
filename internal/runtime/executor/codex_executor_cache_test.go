@@ -26,6 +26,7 @@ func TestCodexExecutorCacheHelper_RequestCompression(t *testing.T) {
 
 	tests := []struct {
 		name           string
+		headers        http.Header
 		cfg            *config.Config
 		auth           *cliproxyauth.Auth
 		url            string
@@ -77,6 +78,19 @@ func TestCodexExecutorCacheHelper_RequestCompression(t *testing.T) {
 			auth: &cliproxyauth.Auth{Provider: "codex", Metadata: map[string]any{"use_siwc": true}},
 		},
 		{
+			name:           "Codex client bypasses SIWC and keeps native compression",
+			cfg:            &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{Enabled: true}}},
+			auth:           &cliproxyauth.Auth{Provider: "codex", Metadata: map[string]any{"use_siwc": true}},
+			headers:        http.Header{"User-Agent": {"codex-tui/0.162.0"}},
+			wantCompressed: true,
+		},
+		{
+			name:    "Other client retains SIWC without native compression",
+			cfg:     &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{Enabled: true}}},
+			auth:    &cliproxyauth.Auth{Provider: "codex", Metadata: map[string]any{"use_siwc": true}},
+			headers: http.Header{"User-Agent": {"curl/8.7.1"}},
+		},
+		{
 			name: "legacy compact",
 			cfg:  &config.Config{Codex: config.CodexConfig{RequestCompression: config.CodexRequestCompressionConfig{Enabled: true}}},
 			auth: oauth,
@@ -108,7 +122,7 @@ func TestCodexExecutorCacheHelper_RequestCompression(t *testing.T) {
 			if url == "" {
 				url = "https://example.com/responses"
 			}
-			httpReq, upstreamBody, _, err := executor.cacheHelper(context.Background(), sdktranslator.FromString("openai-response"), url, tt.auth, req, req.Payload, rawJSON)
+			httpReq, upstreamBody, _, err := executor.cacheHelper(context.Background(), sdktranslator.FromString("openai-response"), url, tt.auth, req, req.Payload, rawJSON, tt.headers)
 			if err != nil {
 				t.Fatalf("cacheHelper error: %v", err)
 			}
