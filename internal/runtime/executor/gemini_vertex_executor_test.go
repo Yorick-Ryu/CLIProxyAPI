@@ -511,3 +511,31 @@ func TestGeminiVertexExecutorPromptFeedbackBlockWithoutCandidatesReturnsError(t 
 		})
 	}
 }
+
+func TestVertexBaseURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		location string
+		want     string
+	}{
+		{"", "https://aiplatform.googleapis.com"},
+		{"   ", "https://aiplatform.googleapis.com"},
+		{"global", "https://aiplatform.googleapis.com"},
+		{"us-central1", "https://us-central1-aiplatform.googleapis.com"},
+		{"us", "https://aiplatform.us.rep.googleapis.com"},
+		{"eu", "https://aiplatform.eu.rep.googleapis.com"},
+		{" US ", "https://aiplatform.us.rep.googleapis.com"},
+		{" EU ", "https://aiplatform.eu.rep.googleapis.com"},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.location, func(t *testing.T) {
+			t.Parallel()
+			if got := vertexBaseURL(tc.location); got != tc.want {
+				t.Errorf("vertexBaseURL(%q) = %q, want %q", tc.location, got, tc.want)
+			}
+		})
+	}
+}
