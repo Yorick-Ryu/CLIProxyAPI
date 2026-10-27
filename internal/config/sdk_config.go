@@ -18,9 +18,19 @@ import (
 
 // SDKConfig represents the application's configuration, loaded from a YAML file.
 type SDKConfig struct {
+	// ResponsesWebsocketCompression negotiates compression on client-facing Responses sockets.
+	// It does not control the separate Codex upstream connection.
+	ResponsesWebsocketCompression bool `yaml:"responses-websocket-compression" json:"responses-websocket-compression"`
+
 	// MaxRequestBodyBytes limits the size (in bytes) of incoming HTTP request bodies.
 	// Values <= 0 disable the limit (default).
 	MaxRequestBodyBytes int64 `yaml:"max-request-body-bytes" json:"max-request-body-bytes"`
+
+	// ResponseCompression controls negotiated compression of downstream HTTP responses.
+	// It is configured under server.response-compression. Config.ServerResponseCompression
+	// mirrors it for JSON and programmatic access; read the effective value via
+	// Config.EffectiveResponseCompression.
+	ResponseCompression ResponseCompressionConfig `yaml:"response-compression" json:"-"`
 
 	// Client configures client-facing compatibility behavior.
 	Client ClientConfig `yaml:"client" json:"client"`

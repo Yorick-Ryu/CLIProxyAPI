@@ -34,6 +34,14 @@ server:
   # Default is 0 (disabled / no limit).
   max-request-body-bytes: 0
 
+  # Negotiate permessage-deflate on client-facing Responses WebSockets only.
+  responses-websocket-compression: false
+
+  # Compress HTTP responses (including SSE) when the client advertises gzip or zstd.
+  response-compression:
+    enabled: true
+    min-bytes: 1024
+
   # Global token for GitHub requests (for example, release and asset downloads).
   # A non-empty config token takes precedence over the GITHUB_TOKEN environment variable.
   # Leave empty to use GITHUB_TOKEN, or unauthenticated requests if neither is set.

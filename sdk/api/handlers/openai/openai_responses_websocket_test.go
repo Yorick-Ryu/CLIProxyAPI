@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -7774,5 +7775,87 @@ func TestForwardResponsesWebsocketPingWriteFailureAbortsSession(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out awaiting cancel callback on ping write failure")
+	}
+}
+
+type responsesCompressionRecordedConn struct {
+	net.Conn
+	received bytes.Buffer
+}
+
+func (c *responsesCompressionRecordedConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	c.received.Write(p[:n])
+	return n, err
+}
+
+func TestResponsesWebsocketPayloadCompression(t *testing.T) {
+	for _, negotiate := range []bool{false, true} {
+		t.Run(fmt.Sprint(negotiate), func(t *testing.T) {
+			payloads := [][]byte{bytes.Repeat([]byte("x"), 1023), bytes.Repeat([]byte("y"), 1024), bytes.Repeat([]byte("z"), 8192), []byte("small")}
+			done := make(chan struct{})
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer close(done)
+				conn, err := (&websocket.Upgrader{EnableCompression: true}).Upgrade(w, r, nil)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				defer conn.Close()
+				_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+				_ = conn.SetCompressionLevel(6)
+				writer := newResponsesWebsocketWriter(conn)
+				for _, payload := range payloads {
+					if _, _, err := conn.ReadMessage(); err != nil {
+						t.Error(err)
+						return
+					}
+					if err := writeResponsesWebsocketPayload(writer, nil, payload, time.Time{}); err != nil {
+						t.Error(err)
+						return
+					}
+				}
+			}))
+			defer server.Close()
+			var wire *responsesCompressionRecordedConn
+			dialer := websocket.Dialer{EnableCompression: negotiate, NetDialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				conn, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+				if err != nil {
+					return nil, err
+				}
+				wire = &responsesCompressionRecordedConn{Conn: conn}
+				return wire, nil
+			}}
+			conn, _, err := dialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			for _, payload := range payloads {
+				wire.received.Reset()
+				if err := conn.WriteMessage(websocket.TextMessage, []byte("next")); err != nil {
+					t.Fatal(err)
+				}
+				_, got, err := conn.ReadMessage()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(got, payload) {
+					t.Fatal("decoded payload changed")
+				}
+				if wire.received.Len() == 0 {
+					t.Fatal("no wire bytes captured")
+				}
+				compressed := wire.received.Bytes()[0]&0x40 != 0
+				if want := negotiate && len(payload) >= 1024; compressed != want {
+					t.Fatalf("%d byte payload compressed=%v want %v", len(payload), compressed, want)
+				}
+				if compressed && wire.received.Len() >= len(payload) {
+					t.Fatal("compressible message did not save wire bytes")
+				}
+			}
+			<-done
+		})
 	}
 }
