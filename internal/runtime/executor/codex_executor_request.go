@@ -103,7 +103,7 @@ func (e *CodexExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Aut
 				}
 			}
 		}
-		applyCodexSyncedIdentity(req.Context(), req.Header, e.cfg, auth, source)
+		applyCodexAccountHeaders(req.Context(), req.Header, e.cfg, auth, source)
 	} else {
 		util.ApplyCustomHeadersFromAttrs(req, attrs)
 	}
@@ -578,7 +578,7 @@ func applyCodexImageCompatibilityHeaders(r *http.Request, auth *cliproxyauth.Aut
 			r.Header.Set(name, value)
 		}
 	}
-	applyCodexSyncedIdentity(r.Context(), r.Header, cfg, auth, source)
+	applyCodexAccountHeaders(r.Context(), r.Header, cfg, auth, source)
 	accept := source.Get("Accept")
 	if accept == "" {
 		accept = "*/*"
@@ -752,7 +752,7 @@ func applyCodexHeadersWithSIWC(r *http.Request, auth *cliproxyauth.Auth, useSIWC
 	}
 	util.ApplyCustomHeadersFromAttrs(r, attrs, ginHeaders)
 	applyCodexCloakingHeaders(r.Header, cfg, auth)
-	applyCodexSyncedIdentity(r.Context(), r.Header, cfg, auth, ginHeaders, useSIWC)
+	applyCodexAccountHeaders(r.Context(), r.Header, cfg, auth, ginHeaders, useSIWC)
 }
 
 const codexRoutingHintHeader = "X-Codex-Routing-Hint"
@@ -988,63 +988,19 @@ func codexTurnStateContext(ctx context.Context, auth *cliproxyauth.Auth, req cli
 	return helps.WithCodexTurnState(ctx, owner, headers, body, session)
 }
 
-// applyCodexSyncedIdentity uses one account history snapshot or the legacy
-// startup latest-version check. Existing websocket handshakes are unchanged.
-func applyCodexSyncedIdentity(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders http.Header, selectedSIWC ...bool) {
-	if cfg != nil && cfg.CodexHeaderDefaults.AccountUserAgent.Enabled {
-		applyCodexAccountHistoryIdentity(ctx, headers, cfg, auth, clientHeaders, helps.CodexVersionHistory(), selectedSIWC...)
-		return
-	}
-	applyCodexSyncedIdentityVersion(ctx, headers, cfg, auth, clientHeaders, helps.CodexCurrentVersion(), selectedSIWC...)
-}
-
-func applyCodexAccountHistoryIdentity(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders http.Header, versions []string, selectedSIWC ...bool) {
+// applyCodexAccountHeaders restores persisted OAuth account identity after cloaking.
+// Assignment and release discovery belong to the account operations plugin.
+func applyCodexAccountHeaders(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders http.Header, selectedSIWC ...bool) {
 	useSIWC := codexUseSIWCForRequest(ctx, auth, clientHeaders)
 	if len(selectedSIWC) > 0 {
 		useSIWC = selectedSIWC[0]
 	}
-	if headers == nil || cfg == nil || !cfg.CodexHeaderDefaults.AccountUserAgent.Enabled || auth == nil || codexAuthUsesAPIKey(auth) || useSIWC || isCodexCloakingDisabled(cfg, auth) {
+	if headers == nil || cfg == nil || auth == nil || codexAuthUsesAPIKey(auth) || useSIWC {
 		return
 	}
-	customUA := codexOperatorHeaderValue(ctx, auth, clientHeaders, "User-Agent")
-	ua, version := helps.CodexAccountUserAgent(codexCredentialIdentitySource(auth), versions)
-	if ua == "" {
-		// Cloaking may already have replaced the credential header. Keep an
-		// explicit UA even before a complete history is available.
-		if customUA != "" {
-			headers.Set("User-Agent", customUA)
+	for _, name := range []string{"User-Agent", "Version", "Originator"} {
+		if value := codexOperatorHeaderValue(ctx, auth, clientHeaders, name); value != "" {
+			headers.Set(name, value)
 		}
-		return
-	}
-	if customUA != "" {
-		// Use the custom UA as its own fallback so unknown client identifiers
-		// remain intact. Only recognized Codex version tokens are rewritten.
-		ua = helps.CodexVersionUserAgent(customUA, customUA, version)
-	}
-	headers.Set("User-Agent", ua)
-	headers.Set("Version", version)
-	origin := codexOperatorHeaderValue(ctx, auth, clientHeaders, "Originator")
-	if origin == "" {
-		origin = codexOriginator
-	}
-	headers.Set("Originator", origin)
-}
-
-func applyCodexSyncedIdentityVersion(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders http.Header, version string, selectedSIWC ...bool) {
-	useSIWC := codexUseSIWCForRequest(ctx, auth, clientHeaders)
-	if len(selectedSIWC) > 0 {
-		useSIWC = selectedSIWC[0]
-	}
-	if version == "" || cfg == nil || !cfg.CodexHeaderDefaults.VersionSync.Enabled || cfg.CodexHeaderDefaults.AccountUserAgent.Enabled || auth == nil || codexAuthUsesAPIKey(auth) || useSIWC || isCodexCloakingDisabled(cfg, auth) {
-		return
-	}
-	ua := codexOperatorHeaderValue(ctx, auth, clientHeaders, "User-Agent")
-	if ua == "" {
-		ua = headers.Get("User-Agent")
-	}
-	headers.Set("User-Agent", helps.CodexVersionUserAgent(ua, codexUserAgent, version))
-	headers.Set("Version", version)
-	if origin := codexOperatorHeaderValue(ctx, auth, clientHeaders, "Originator"); origin != "" {
-		headers.Set("Originator", origin)
 	}
 }

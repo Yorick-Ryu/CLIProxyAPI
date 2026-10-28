@@ -185,28 +185,12 @@ const (
 // CodexHeaderDefaults configures headers for OAuth/file-backed Codex requests.
 // UserAgent applies to HTTP and websocket requests and is the forced identity
 // when cloaking is enabled; an empty value uses the built-in identity.
-// Version overrides the client version unless a credential header or enabled startup sync overrides it.
+// Version overrides the client version unless a credential header overrides it.
 // BetaFeatures is a websocket fallback when the client omits it.
 type CodexHeaderDefaults struct {
-	// VersionSync discovers stable releases and overrides configured identity versions.
-	VersionSync CodexVersionSyncConfig `yaml:"version-sync" json:"version-sync"`
-	// AccountUserAgent independently enables stable Linux profiles with five version slots.
-	// When enabled it takes precedence over global VersionSync.
-	AccountUserAgent CodexAccountUserAgentConfig `yaml:"account-user-agent,omitempty" json:"account-user-agent,omitempty"`
-	UserAgent        string                      `yaml:"user-agent" json:"user-agent"`
-	Version          string                      `yaml:"version" json:"version"`
-	BetaFeatures     string                      `yaml:"beta-features" json:"beta-features"`
-}
-
-// CodexVersionSyncConfig controls opt-in stable CLI version discovery.
-type CodexVersionSyncConfig struct {
-	Enabled bool `yaml:"enabled" json:"enabled"`
-}
-
-// CodexAccountUserAgentConfig controls account UA assignment and its startup-only
-// five-release history check without depending on the global version-sync switch.
-type CodexAccountUserAgentConfig struct {
-	Enabled bool `yaml:"enabled" json:"enabled"`
+	UserAgent    string `yaml:"user-agent" json:"user-agent"`
+	Version      string `yaml:"version" json:"version"`
+	BetaFeatures string `yaml:"beta-features" json:"beta-features"`
 }
 
 // XAIConfig configures provider-wide xAI request behavior.

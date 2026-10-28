@@ -31,7 +31,7 @@ The connection pool includes the profile in its key, so changing profiles cannot
 reuse a connection established with the previous profile. In-flight requests keep
 their existing transport. The default UA now uses Linux TUI identity
 (Ubuntu 24.4.0; x86_64; xterm-256color), independently of TLS mode. Explicit UA
-configuration and the existing optional startup version synchronization still
+configuration and persisted account identity headers still
 apply; this is a fixed default identity, not runtime OS detection.
 
 Tests: TestCodexLinuxHTTPWireHello, TestCodexLinuxHTTPPooling,
@@ -82,7 +82,7 @@ header-order policy, selected per request even on reused connections. Their
 Accept default is `*/*`; Version follows the effective Codex UA unless explicitly
 pinned, and the image turn ID follows mapped turn metadata or an account-scoped
 client ID, with UUIDv7 generation when absent. Client Accept and account/model
-header overrides remain supported; startup version sync retains its precedence.
+header overrides remain supported; persisted account identity headers retain precedence.
 No extra payload mutations or TLS session cache are introduced.
 
 ### Standalone Alpha Search
@@ -90,7 +90,7 @@ No extra payload mutations or TLS session cache are introduced.
 With `oauth.providers.codex.http-tls-profile: linux`, native OAuth POST
 `/alpha/search` uses the observed Linux TUI header groups and defaults Accept
 to `*/*`. Its effective Originator, UA and Version follow the existing identity,
-cloaking, administrator-header and startup-version-sync settings. API-key/SIWC
+cloaking, administrator-header and persisted account identity settings. API-key/SIWC
 credentials and a disabled Linux profile retain their previous behavior.
 
 Forward existing turn metadata without applying the Responses struct layout:

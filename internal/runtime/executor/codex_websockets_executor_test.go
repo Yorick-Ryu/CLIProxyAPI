@@ -1233,14 +1233,16 @@ func TestApplyCodexWebsocketHeadersDefaultsToCodexCloaking(t *testing.T) {
 			headers = applyCodexWebsocketHeaders(ctx, headers, tt.auth, tt.token, cfg, false)
 
 			wantUserAgent := codexUserAgent
+			wantOriginator := codexOriginator
 			if tt.name == "OAuth" {
-				wantUserAgent = "config-ua"
+				wantUserAgent = "custom-ua"
+				wantOriginator = "custom-origin"
 			}
 			if got := headers.Get("User-Agent"); got != wantUserAgent {
 				t.Fatalf("User-Agent = %q, want %q", got, wantUserAgent)
 			}
-			if got := headers.Get("Originator"); got != codexOriginator {
-				t.Fatalf("Originator = %q, want %q", got, codexOriginator)
+			if got := headers.Get("Originator"); got != wantOriginator {
+				t.Fatalf("Originator = %q, want %q", got, wantOriginator)
 			}
 		})
 	}
