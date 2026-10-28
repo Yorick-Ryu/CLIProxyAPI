@@ -187,7 +187,7 @@ func (e *CodexExecutor) prepareCodexAlphaSearch(req *http.Request, auth *cliprox
 		}
 	}
 	// Rebuild only native search headers. Explicit account attributes are applied
-	// by PrepareRequest afterwards, and startup version sync keeps its precedence.
+	// by PrepareRequest afterwards and retain precedence over the defaults.
 	headers := make(http.Header)
 	for _, name := range []string{"Version", "X-Codex-Turn-Metadata"} {
 		if value := source.Get(name); value != "" {
@@ -572,12 +572,6 @@ func applyCodexImageCompatibilityHeaders(r *http.Request, auth *cliproxyauth.Aut
 			source = g.Request.Header
 		}
 	}
-	// Account identity overrides retain precedence over built-in cloaking.
-	for _, name := range []string{"User-Agent", "Originator"} {
-		if value := codexOperatorHeaderValue(r.Context(), auth, source, name); value != "" {
-			r.Header.Set(name, value)
-		}
-	}
 	applyCodexAccountHeaders(r.Context(), r.Header, cfg, auth, source)
 	accept := source.Get("Accept")
 	if accept == "" {
@@ -588,7 +582,7 @@ func applyCodexImageCompatibilityHeaders(r *http.Request, auth *cliproxyauth.Aut
 	}
 	r.Header.Set("Accept", accept)
 	if r.Header.Get("Version") == "" || (!isCodexCloakingDisabled(cfg, auth) && strings.TrimSpace(cfg.CodexHeaderDefaults.Version) == "" && codexOperatorHeaderValue(r.Context(), auth, source, "Version") == "") {
-		// Derive from the effective identity, including pinned/synchronized versions.
+		// Derive from the effective identity when no explicit version is configured.
 		for _, part := range strings.Fields(r.Header.Get("User-Agent")) {
 			if strings.HasPrefix(part, "codex") {
 				if _, version, ok := strings.Cut(part, "/"); ok {

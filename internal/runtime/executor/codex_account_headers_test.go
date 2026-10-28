@@ -32,18 +32,28 @@ func TestCodexPersistedAccountHeadersAcrossTransports(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.CodexHeaderDefaults.UserAgent = "global/1"
 	cfg.CodexHeaderDefaults.Version = "0.999.0"
-	auth := &cliproxyauth.Auth{ID: "account", Provider: "codex", Attributes: map[string]string{
+	authA := &cliproxyauth.Auth{ID: "account-a", Provider: "codex", Attributes: map[string]string{
 		"header:User-Agent": "codex-tui/0.163.0 (Debian 12.0.0; x86_64) kitty (codex-tui; 0.163.0)",
 		"header:Version":    "0.163.0", "header:Originator": "codex-tui",
 	}}
-	for _, client := range []http.Header{nil, {"User-Agent": {"caller/2"}, "Version": {"0.888.0"}}} {
-		request, _ := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", nil)
-		applyCodexHeadersFromSources(request, auth, "", true, cfg, client)
-		ws := applyCodexWebsocketHeaders(context.Background(), http.Header{}, auth, "", cfg, true, client)
-		for _, headers := range []http.Header{request.Header, ws} {
-			for _, name := range []string{"User-Agent", "Version", "Originator"} {
-				if got, want := headers.Get(name), auth.Attributes["header:"+name]; got != want {
-					t.Fatalf("%s = %q, want %q", name, got, want)
+	authB := &cliproxyauth.Auth{ID: "account-b", Provider: "codex", Attributes: map[string]string{
+		"header:User-Agent": "codex-tui/0.162.1 (Ubuntu 24.4.0; x86_64) Ghostty (codex-tui; 0.162.1)",
+		"header:Version":    "0.162.1", "header:Originator": "account-b-origin",
+	}}
+	for _, auth := range []*cliproxyauth.Auth{authA, authB, authA} {
+		for _, client := range []http.Header{nil, {"User-Agent": {"caller/2"}, "Version": {"0.888.0"}}} {
+			request, _ := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", nil)
+			applyCodexHeadersFromSources(request, auth, "", true, cfg, client)
+			ws := applyCodexWebsocketHeaders(context.Background(), http.Header{}, auth, "", cfg, true, client)
+			image, _ := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/codex/images/generations", nil)
+			cfg.Codex.HTTPTLSProfile = "linux"
+			applyCodexDirectImageHeaders(image, auth, "", true, cfg, client)
+			applyCodexImageCompatibilityHeaders(image, auth, cfg, nil, client)
+			for _, headers := range []http.Header{request.Header, ws, image.Header} {
+				for _, name := range []string{"User-Agent", "Version", "Originator"} {
+					if got, want := headers.Get(name), auth.Attributes["header:"+name]; got != want {
+						t.Fatalf("%s = %q, want %q", name, got, want)
+					}
 				}
 			}
 		}
