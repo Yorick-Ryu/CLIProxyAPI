@@ -105,6 +105,9 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
 			attrs = auth.Attributes
 		}
 		req := (&http.Request{Header: headers}).WithContext(ctx)
+		if auth != nil && !codexAuthUsesAPIKey(auth) {
+			helps.StripCodexTraceContextHeaders(headers)
+		}
 		util.ApplyCustomHeadersFromAttrs(req, attrs, ginHeaders)
 		return headers
 	}
@@ -184,6 +187,9 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
 		}
 	}
 	req := (&http.Request{Header: headers}).WithContext(ctx)
+	if auth != nil && !codexAuthUsesAPIKey(auth) {
+		helps.StripCodexTraceContextHeaders(headers)
+	}
 	util.ApplyCustomHeadersFromAttrs(req, attrs, ginHeaders)
 	applyCodexCloakingHeaders(headers, cfg, auth)
 	applyCodexAccountHeaders(ctx, headers, cfg, auth, ginHeaders)

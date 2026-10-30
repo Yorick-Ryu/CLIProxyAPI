@@ -868,7 +868,7 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
 	}
 	upstreamBody, identityState.convergence = applyCodexIdentityConvergenceBody(e.cfg, auth, convergenceSourcePayload, upstreamBody, opts.Headers)
 	if auth != nil && !codexAuthUsesAPIKey(auth) {
-		upstreamBody = helps.CanonicalCodexTurnMetadataBody(upstreamBody)
+		upstreamBody = helps.PrepareCodexRequestMetadata(upstreamBody)
 	}
 	upstreamBody = helps.GuardCodexTurnStateBody(ctx, upstreamBody)
 	upstreamBody = finalizePayload(upstreamBody)

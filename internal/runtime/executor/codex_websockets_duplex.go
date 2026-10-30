@@ -285,7 +285,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 						payload = thinking.StripConfigurationUpdates(payload)
 					}
 					if auth != nil && !codexAuthUsesAPIKey(auth) {
-						payload = helps.CanonicalCodexTurnMetadataBody(payload)
+						payload = helps.PrepareCodexRequestMetadata(payload)
 					}
 					payload = helps.GuardCodexTurnStateBody(streamCtx, payload)
 					payload = helps.NewPayloadFinalizer(e.cfg, "codex-websockets", thinking.ParseSuffix(req.Model).ModelName, "codex", "", payload, steerReq, opts)(payload)

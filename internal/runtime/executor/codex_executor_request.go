@@ -64,6 +64,9 @@ func (e *CodexExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Aut
 	if req == nil {
 		return nil
 	}
+	if auth != nil && !codexAuthUsesAPIKey(auth) {
+		helps.StripCodexTraceContextHeaders(req.Header)
+	}
 	apiKey, _ := codexCredsForRequest(req.Context(), auth, req.Header)
 	if codexUseSIWCForRequest(req.Context(), auth, req.Header) && req.URL != nil && req.URL.Scheme == "https" &&
 		req.URL.Host == "chatgpt.com" && req.URL.Path == "/backend-api/codex/alpha/search" {
@@ -225,6 +228,8 @@ func (e *CodexExecutor) prepareCodexAlphaSearch(req *http.Request, auth *cliprox
 	if metadata := headers.Get("X-Codex-Turn-Metadata"); metadata != "" {
 		headers.Set("X-Codex-Turn-Metadata", helps.CodexSearchTurnMetadata(metadata))
 	}
+	mapped = helps.StripCodexTraceContextBody(mapped)
+	helps.StripCodexTraceContextHeaders(headers)
 	mapped = helps.FinalizePayload(req.Context(), mapped)
 	req.Header = headers
 	req.Body = io.NopCloser(bytes.NewReader(mapped))
@@ -326,7 +331,7 @@ func (e *CodexExecutor) prepareCachedRequest(ctx context.Context, from sdktransl
 		cache.ID = identityState.convergence.sessionID
 	}
 	if auth != nil && !codexAuthUsesAPIKey(auth) {
-		rawJSON = helps.CanonicalCodexTurnMetadataBody(rawJSON)
+		rawJSON = helps.PrepareCodexRequestMetadata(rawJSON)
 	}
 	rawJSON = helps.GuardCodexTurnStateBody(ctx, rawJSON)
 	rawJSON = helps.FinalizePayload(ctx, rawJSON)
@@ -691,6 +696,9 @@ func applyCodexHeadersWithSIWC(r *http.Request, auth *cliproxyauth.Auth, useSIWC
 		if auth != nil {
 			attrs = auth.Attributes
 		}
+		if auth != nil && !codexAuthUsesAPIKey(auth) {
+			helps.StripCodexTraceContextHeaders(r.Header)
+		}
 		util.ApplyCustomHeadersFromAttrs(r, attrs, ginHeaders)
 		return
 	}
@@ -743,6 +751,9 @@ func applyCodexHeadersWithSIWC(r *http.Request, auth *cliproxyauth.Auth, useSIWC
 		if version := strings.TrimSpace(cfg.CodexHeaderDefaults.Version); version != "" {
 			r.Header.Set("Version", version)
 		}
+	}
+	if auth != nil && !codexAuthUsesAPIKey(auth) {
+		helps.StripCodexTraceContextHeaders(r.Header)
 	}
 	util.ApplyCustomHeadersFromAttrs(r, attrs, ginHeaders)
 	applyCodexCloakingHeaders(r.Header, cfg, auth)

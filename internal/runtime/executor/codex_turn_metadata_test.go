@@ -21,8 +21,8 @@ import (
 )
 
 func TestCodexTurnMetadataSerializationOnWire(t *testing.T) {
-	const metadata = `{"z_extension":"<>&東京🚀\b\f","analytics_enabled":true,"turn_started_at_unix_ms":9007199254740993,"history_initialization":"new","request_kind":"turn","turn_id":"019a0992-1470-7abc-8def-0123456789ab","thread_id":"019a0992-1400-7abc-8def-0123456789ab","session_id":"019a0992-1400-7abc-8def-0123456789ab","installation_id":"client-device"}`
-	const override = ` {"z_extension":"override","analytics_enabled":true,"agent_name":"explicit"} `
+	const metadata = `{"traceparent":"client-trace","ws_request_header_tracestate":"client-state","z_extension":"<>&東京🚀\b\f","analytics_enabled":true,"turn_started_at_unix_ms":9007199254740993,"history_initialization":"new","request_kind":"turn","turn_id":"019a0992-1470-7abc-8def-0123456789ab","thread_id":"019a0992-1400-7abc-8def-0123456789ab","session_id":"019a0992-1400-7abc-8def-0123456789ab","installation_id":"client-device"}`
+	const override = ` {"traceparent":"operator-trace","z_extension":"override","analytics_enabled":true,"agent_name":"explicit"} `
 	for _, transport := range []string{"http", "ws"} {
 		for _, stream := range []bool{false, true} {
 			for _, mode := range []string{"oauth", "payload-override", "payload-filter", "api-key"} {
@@ -87,7 +87,7 @@ func TestCodexTurnMetadataSerializationOnWire(t *testing.T) {
 					if mode == "api-key" {
 						auth.Attributes["api_key"] = "synthetic-key"
 					}
-					body, err := json.Marshal(map[string]any{"model": "gpt-6-astra", "input": []any{}, "client_metadata": map[string]any{"x-codex-turn-metadata": metadata}})
+					body, err := json.Marshal(map[string]any{"model": "gpt-6-astra", "input": []any{}, "client_metadata": map[string]any{"x-codex-turn-metadata": metadata, "ws_request_header_traceparent": "client-trace", "ws_request_header_tracestate": "client-state"}})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -111,6 +111,7 @@ func TestCodexTurnMetadataSerializationOnWire(t *testing.T) {
 						t.Fatal(errExecute)
 					}
 					got := <-captured
+					assertCodexTraceCopies(t, got.body, mode == "api-key")
 					embedded := gjson.GetBytes(got.body, "client_metadata.x-codex-turn-metadata")
 					if mode == "api-key" {
 						if embedded.String() != metadata || got.headers.Get("X-Codex-Turn-Metadata") != metadata {
@@ -145,9 +146,9 @@ func TestCodexTurnMetadataSerializationOnWire(t *testing.T) {
 }
 
 func TestCodexDuplexTurnMetadataSerialization(t *testing.T) {
-	const original = `{"z":"<>&東京","agent_name":"steering"}`
+	const original = `{"traceparent":"client-trace","z":"<>&東京","agent_name":"steering"}`
 	const canonical = `{"agent_name":"steering","z":"<>&\u6771\u4eac"}`
-	const override = ` {"z":"explicit","agent_name":"override"} `
+	const override = ` {"traceparent":"operator-trace","z":"explicit","agent_name":"override"} `
 	for _, mode := range []string{"oauth", "payload-override", "payload-filter", "api-key"} {
 		t.Run(mode, func(t *testing.T) {
 			captured := make(chan []byte, 1)
@@ -193,7 +194,7 @@ func TestCodexDuplexTurnMetadataSerialization(t *testing.T) {
 			if mode == "api-key" {
 				auth.Attributes["api_key"] = "synthetic-key"
 			}
-			payload, err := json.Marshal(map[string]any{"type": "response.steer", "previous_response_id": "r1", "input": "steer", "client_metadata": map[string]any{"x-codex-turn-metadata": original}})
+			payload, err := json.Marshal(map[string]any{"type": "response.steer", "previous_response_id": "r1", "input": "steer", "client_metadata": map[string]any{"x-codex-turn-metadata": original, "ws_request_header_traceparent": "client-trace", "ws_request_header_tracestate": "client-state"}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -218,6 +219,7 @@ func TestCodexDuplexTurnMetadataSerialization(t *testing.T) {
 			}
 			select {
 			case got := <-captured:
+				assertCodexTraceCopies(t, got, mode == "api-key")
 				metadata := gjson.GetBytes(got, "client_metadata.x-codex-turn-metadata")
 				want := canonical
 				if mode == "api-key" {
@@ -265,6 +267,44 @@ func TestCodexTurnMetadataFormattingAuthScope(t *testing.T) {
 		}
 		if got := headers.Get("X-Codex-Turn-Metadata"); got != want {
 			t.Fatalf("apiKey=%v: metadata = %q, want %q", apiKey, got, want)
+		}
+	}
+}
+
+func assertCodexTraceCopies(t *testing.T, body []byte, preserved bool) {
+	t.Helper()
+	for _, field := range []string{"ws_request_header_traceparent", "ws_request_header_tracestate"} {
+		if gjson.GetBytes(body, "client_metadata."+field).Exists() != preserved {
+			t.Fatalf("unexpected trace preservation for %s", field)
+		}
+	}
+}
+
+func TestCodexTraceHeaderOverridePrecedence(t *testing.T) {
+	for _, transport := range []string{"http", "ws"} {
+		for _, override := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/override%v", transport, override), func(t *testing.T) {
+				auth := codexOAuthTestAuth("http://localhost")
+				if override {
+					auth.Attributes["header:Traceparent"] = "operator-trace"
+					auth.Attributes["header:X-Codex-Turn-Metadata"] = `{"traceparent":"operator-trace"}`
+				}
+				headers := http.Header{"Traceparent": {"downstream-trace"}, "X-Codex-Turn-Metadata": {`{"traceparent":"downstream-trace","keep":true}`}}
+				if transport == "ws" {
+					headers = applyCodexWebsocketHeaders(context.Background(), headers, auth, "synthetic-token", &config.Config{}, true)
+				} else {
+					req := httptest.NewRequest(http.MethodPost, "/responses", nil)
+					req.Header = headers
+					applyCodexHeaders(req, auth, "synthetic-token", true, &config.Config{})
+				}
+				if override {
+					if headers.Get("Traceparent") != "operator-trace" || gjson.Get(headers.Get("X-Codex-Turn-Metadata"), "traceparent").String() != "operator-trace" {
+						t.Fatal("explicit header override was removed")
+					}
+				} else if headers.Get("Traceparent") != "" || gjson.Get(headers.Get("X-Codex-Turn-Metadata"), "traceparent").Exists() || !gjson.Get(headers.Get("X-Codex-Turn-Metadata"), "keep").Bool() {
+					t.Fatal("downstream trace was retained or unrelated metadata was removed")
+				}
+			})
 		}
 	}
 }
