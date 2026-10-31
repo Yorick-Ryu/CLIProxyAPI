@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -715,6 +716,15 @@ func TestRequestLoggingMiddleware_StreamingPreservesFullUUIDForLogger(t *testing
 	if parsed.Version() != 7 {
 		t.Fatalf("streaming request ID version = %d, want 7", parsed.Version())
 	}
+	entries, errRead := os.ReadDir(logsDir)
+	if errRead != nil || len(entries) != 1 {
+		t.Fatalf("stream log files = %d, error = %v", len(entries), errRead)
+	}
+	logged, errRead := os.ReadFile(filepath.Join(logsDir, entries[0].Name()))
+	if errRead != nil || !bytes.Contains(logged, []byte("data: chunk")) {
+		t.Fatalf("stream finalization lost queued response data: %v", errRead)
+	}
+
 }
 
 // streamingZstdBomb is a small zstd body (a stream frame with a 1 MiB window, as zstd makes from a pipe) that expands to
