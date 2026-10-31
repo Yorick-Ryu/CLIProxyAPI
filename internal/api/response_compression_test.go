@@ -351,7 +351,7 @@ func TestResponseCompressionReusesPooledEncoders(t *testing.T) {
 				// A failed client write must not poison the encoder handed to the next response.
 				context, _ := gin.CreateTestContext(httptest.NewRecorder())
 				context.Header("Content-Type", "application/json")
-				writer := &responseCompressionWriter{ResponseWriter: &compressionErrorWriter{ResponseWriter: context.Writer}, encoding: encoding, minBytes: 1}
+				writer := &responseCompressionWriter{ResponseWriter: &compressionErrorWriter{ResponseWriter: context.Writer}, encoding: encoding}
 				_, _ = writer.WriteString(bodies[0])
 				writer.finish()
 				continue
@@ -386,7 +386,6 @@ func TestResponseCompressionReusesEncoderAfterWriteFailure(t *testing.T) {
 			failedWriter := &responseCompressionWriter{
 				ResponseWriter: &compressionErrorWriter{ResponseWriter: failedContext.Writer},
 				encoding:       encoding,
-				minBytes:       1,
 			}
 			_, errWrite := failedWriter.WriteString("data: failed\n\n")
 			if errWrite == nil {
@@ -404,7 +403,7 @@ func TestResponseCompressionReusesEncoderAfterWriteFailure(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			context, _ := gin.CreateTestContext(recorder)
 			context.Header("Content-Type", "application/json")
-			writer := &responseCompressionWriter{ResponseWriter: context.Writer, encoding: encoding, minBytes: 1}
+			writer := &responseCompressionWriter{ResponseWriter: context.Writer, encoding: encoding}
 			body := `{"message":"response after failure"}`
 			if _, errWrite = writer.WriteString(body); errWrite != nil {
 				t.Fatal(errWrite)
@@ -424,7 +423,7 @@ func TestResponseCompressionWriteAfterFinishFails(t *testing.T) {
 	for _, encoding := range []string{"zstd", "gzip"} {
 		context, _ := gin.CreateTestContext(httptest.NewRecorder())
 		context.Header("Content-Type", "text/event-stream")
-		writer := &responseCompressionWriter{ResponseWriter: context.Writer, encoding: encoding, minBytes: 1}
+		writer := &responseCompressionWriter{ResponseWriter: context.Writer, encoding: encoding}
 		if _, errWrite := writer.WriteString("data: one\n\n"); errWrite != nil {
 			t.Fatal(errWrite)
 		}
