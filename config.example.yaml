@@ -38,6 +38,7 @@ server:
   responses-websocket-compression: false
 
   # Compress HTTP responses of any size (including SSE) when the client advertises gzip or zstd.
+  # Encoders are pooled; each open stream retains its active encoder.
   response-compression:
     enabled: true
 
