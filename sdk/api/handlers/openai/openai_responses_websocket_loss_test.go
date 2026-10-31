@@ -18,7 +18,6 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	runtimeexecutor "github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
-	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
@@ -36,8 +35,8 @@ type lossFixture struct {
 	authIDs     sync.Map
 }
 
-// access, when given, authenticates the client with the header "Bearer key-1" on every turn.
-func newLossFixture(t *testing.T, steering bool, script func(index int, c *websocket.Conn, read func() []byte), access ...sdkaccess.Provider) *lossFixture {
+// A plugin may reject subsequent creates without enabling per-turn client reauthorization.
+func newLossFixture(t *testing.T, steering bool, script func(index int, c *websocket.Conn, read func() []byte), access ...handlers.PluginInterceptorHost) *lossFixture {
 	t.Helper()
 	f := &lossFixture{t: t}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -95,8 +94,7 @@ func newLossFixture(t *testing.T, steering bool, script func(index int, c *webso
 	h := NewOpenAIResponsesAPIHandler(f.base)
 	header := http.Header{}
 	if len(access) > 0 {
-		h.AccessManager = sdkaccess.NewManager()
-		h.AccessManager.SetProviders(access)
+		f.base.SetPluginHost(access[0])
 		header.Set("Authorization", "Bearer key-1")
 	}
 	router := gin.New()
@@ -404,10 +402,10 @@ func TestResponsesWebsocketDuplexLossBetweenTurnsReportsOnce(t *testing.T) {
 	}
 }
 
-// A create refused by the per-turn authorizer is answered locally. The EOF that follows is
+// A create refused by a request interceptor is answered locally. The EOF that follows is
 // an idle loss: the refused create is not an unsent operation.
 func TestResponsesWebsocketDuplexLossAfterRefusedCreateIsSilent(t *testing.T) {
-	provider := &revocableWebsocketAccessProvider{}
+	provider := &rejectingLossInterceptor{}
 	eof := make(chan struct{})
 	f := newLossFixture(t, true, func(index int, c *websocket.Conn, read func() []byte) {
 		read()
@@ -883,4 +881,18 @@ func TestResponsesWebsocketEarly429RetriesAnotherCredentialWithoutClosingDownstr
 			})
 		}
 	}
+}
+
+type rejectingLossInterceptor struct {
+	handlers.PluginInterceptorHost
+	revoked atomic.Bool
+}
+
+func (*rejectingLossInterceptor) HasRequestInterceptors() bool { return true }
+func (*rejectingLossInterceptor) HasStreamInterceptors() bool  { return false }
+func (h *rejectingLossInterceptor) InterceptRequestBeforeAuth(_ context.Context, req pluginapi.RequestInterceptRequest) pluginapi.RequestInterceptResponse {
+	return pluginapi.RequestInterceptResponse{Terminate: h.revoked.Load(), StatusCode: http.StatusForbidden}
+}
+func (*rejectingLossInterceptor) InterceptRequestAfterAuth(context.Context, pluginapi.RequestInterceptRequest) pluginapi.RequestInterceptResponse {
+	return pluginapi.RequestInterceptResponse{}
 }
