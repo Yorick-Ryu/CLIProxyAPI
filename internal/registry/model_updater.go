@@ -200,11 +200,24 @@ func loadModelsFromBytes(data []byte, source string) error {
 	if err := validateModelsCatalog(&parsed); err != nil {
 		return fmt.Errorf("%s: validate models catalog: %w", source, err)
 	}
+	removeLunaCatalogHeaderOverrides(&parsed)
 
 	modelsCatalogStore.mu.Lock()
 	modelsCatalogStore.data = &parsed
 	modelsCatalogStore.mu.Unlock()
 	return nil
+}
+
+// Keep the maintained Luna identity policy across embedded and remote catalogs.
+// Account-assigned headers must not be replaced by the upstream Luna preset.
+func removeLunaCatalogHeaderOverrides(data *staticModelsJSON) {
+	for _, models := range [][]*ModelInfo{data.CodexFree, data.CodexTeam, data.CodexPlus, data.CodexPro} {
+		for _, model := range models {
+			if model != nil && model.ID == "gpt-5.6-luna" && model.Config != nil {
+				model.Config.OverrideHeader = nil
+			}
+		}
+	}
 }
 
 func getModels() *staticModelsJSON {
