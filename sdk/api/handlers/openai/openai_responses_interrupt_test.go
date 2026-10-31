@@ -327,7 +327,7 @@ func TestResponsesInterruptStopsHTTPUpstream(t *testing.T) {
 		ID:         authID,
 		Provider:   "codex",
 		Status:     coreauth.StatusActive,
-		Attributes: map[string]string{"api_key": "test-key"},
+		Attributes: map[string]string{"api_key": "test-key", "websockets": "false"},
 	})
 	if errRegister != nil {
 		t.Fatal(errRegister)
