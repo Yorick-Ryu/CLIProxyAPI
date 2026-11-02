@@ -1085,13 +1085,15 @@ oauth:
 
     # Codex provider behavior.
     codex:
-      # off preserves client dates/timezones; local uses the CPA process environment;
-      # egress queries the account's actual exit timezone. Default: off.
-      # local/egress generate both fields from one current instant in the latest
-      # environment block only; earlier historical blocks remain unchanged.
-      # See docs/codex-timezone.md for account overrides and migration.
-      timezone:
-        mode: off
+      # Shared request location for Codex time context and Web Search.
+      # Accounts may set codex_request_location_mode to inherit, off, on, or egress.
+      # See docs/codex-timezone.md.
+      request-location:
+        enabled: false
+        country: CN
+        region: Shanghai
+        city: Shanghai
+        timezone: Asia/Shanghai
       # Used by downstream WebSocket requests; per-account settings override it.
       websockets-default: true
       # Complete uncompressed upstream WS message limit; <= 0 disables the check.

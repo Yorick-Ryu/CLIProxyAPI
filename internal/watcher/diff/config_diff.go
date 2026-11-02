@@ -140,8 +140,8 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 		changes = append(changes, fmt.Sprintf("antigravity.connection-pool.max-idle-conns-per-host: %s -> %s", oldMaxIdle, newMaxIdle))
 	}
 
-	if !reflect.DeepEqual(oldCfg.Codex.Timezone, newCfg.Codex.Timezone) {
-		changes = append(changes, "codex.timezone: updated")
+	if !reflect.DeepEqual(oldCfg.Codex.RequestLocation, newCfg.Codex.RequestLocation) {
+		changes = append(changes, "codex.request-location: updated")
 	}
 	if oldCfg.Codex.HTTPTLSProfile != newCfg.Codex.HTTPTLSProfile {
 		changes = append(changes, "codex.http-tls-profile: updated (separate connection pool)")

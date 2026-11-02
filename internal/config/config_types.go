@@ -246,8 +246,8 @@ type CodexConfig struct {
 	HTTPTLSProfile string `yaml:"http-tls-profile,omitempty" json:"http-tls-profile,omitempty"`
 	// WebsocketTLSProfile selects native (default) or the captured Codex rustls ClientHello.
 	WebsocketTLSProfile string `yaml:"websocket-tls-profile,omitempty" json:"websocket-tls-profile,omitempty"`
-	// Timezone controls opt-in generation of the current Codex environment date and timezone.
-	Timezone CodexTimezoneConfig `yaml:"timezone" json:"timezone"`
+	// RequestLocation is the shared location override for Codex time context and Web Search.
+	RequestLocation CodexRequestLocationConfig `yaml:"request-location" json:"request-location"`
 	// WebsocketsDefault applies when a Codex credential omits websockets. Nil means true.
 	WebsocketsDefault *bool `yaml:"websockets-default,omitempty" json:"websockets-default,omitempty"`
 	// WebsocketMaxMessageBytes limits complete uncompressed upstream WS messages.

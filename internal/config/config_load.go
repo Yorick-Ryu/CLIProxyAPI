@@ -239,9 +239,10 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	if err := cfg.Codex.normalizeWebsocketTLSProfile(); err != nil {
 		return nil, err
 	}
-	if errValidate := cfg.Codex.Timezone.Validate(); errValidate != nil {
+	if errValidate := cfg.Codex.RequestLocation.Validate(); errValidate != nil {
 		return nil, errValidate
 	}
+	cfg.Codex.RequestLocation.CodexRequestLocation = cfg.Codex.RequestLocation.Normalize()
 	if errValidate := cfg.Codex.LiveMediaRelay.Validate(); errValidate != nil {
 		return nil, errValidate
 	}

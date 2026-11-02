@@ -268,7 +268,7 @@ func (e *CodexExecutor) cacheHelper(ctx context.Context, from sdktranslator.Form
 }
 
 func (e *CodexExecutor) prepareCachedRequest(ctx context.Context, from sdktranslator.Format, url string, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, userPayload []byte, rawJSON []byte, headerSets ...http.Header) (*http.Request, []byte, codexIdentityConfuseState, error) {
-	rawJSON = helps.ApplyCodexTimezone(ctx, e.cfg, auth, rawJSON)
+	rawJSON = helps.ApplyCodexRequestLocation(ctx, e.cfg, auth, rawJSON)
 	var headers http.Header
 	if len(headerSets) > 0 {
 		headers = headerSets[0]

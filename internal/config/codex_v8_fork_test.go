@@ -8,8 +8,12 @@ import (
 
 func TestV8MigrationPreservesForkCodexPolicies(t *testing.T) {
 	raw := []byte(`codex:
-  timezone:
-    mode: local
+  request-location:
+    enabled: true
+    country: US
+    region: Ohio
+    city: Piketon
+    timezone: America/New_York
   websockets-default: false
   websocket-max-message-bytes: 17416099
   identity-convergence: true

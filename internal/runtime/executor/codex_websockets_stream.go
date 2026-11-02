@@ -945,7 +945,7 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
 	if errPromptCache != nil {
 		return nil, errPromptCache
 	}
-	body = helps.ApplyCodexTimezone(ctx, e.cfg, auth, body)
+	body = helps.ApplyCodexRequestLocation(ctx, e.cfg, auth, body)
 	body = helps.SanitizeCodexInputItemIDs(body)
 	if useSIWC {
 		body = applyCodexSIWCWebsocketBodyRules(body, hasExplicitInstructions, cliproxyexecutor.Options{KeepTopLevelEffort: thinking.HasThinkingSuffix(req.Model)})

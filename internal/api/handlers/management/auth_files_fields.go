@@ -377,8 +377,11 @@ func applyAuthFileFieldsPatch(targetAuth *coreauth.Auth, req map[string]json.Raw
 		if fieldPath == "" {
 			return &authFileFieldPatchError{message: "field name is required"}
 		}
-		if strings.HasPrefix(fieldPath, "codex_timezone.") || strings.HasPrefix(fieldPath, "codex_timezone_mode.") {
-			return &authFileFieldPatchError{message: "Codex timezone settings do not support nested fields"}
+		if fieldPath == "codex_timezone" || fieldPath == "codex_timezone_mode" || strings.HasPrefix(fieldPath, "codex_timezone.") || strings.HasPrefix(fieldPath, "codex_timezone_mode.") {
+			return &authFileFieldPatchError{message: "Codex timezone settings were removed; use codex_request_location_mode and codex_request_location"}
+		}
+		if strings.HasPrefix(fieldPath, "codex_request_location_mode.") || strings.HasPrefix(fieldPath, "codex_request_location.") {
+			return &authFileFieldPatchError{message: "Codex request location settings do not support nested fields"}
 		}
 		value, errDecode := decodeAuthFileFieldValue(rawValue)
 		if errDecode != nil {
@@ -401,9 +404,6 @@ func applyAuthFileFieldsPatch(targetAuth *coreauth.Auth, req map[string]json.Raw
 					return &authFileFieldPatchError{message: "excluded_models must be a string array or null"}
 				}
 			}
-		}
-		if fieldPath == "codex_timezone" && value != nil {
-			return &authFileFieldPatchError{message: "codex_timezone is retired; use codex_timezone_mode: off, local, or egress"}
 		}
 		if targetAuth.Metadata == nil {
 			targetAuth.Metadata = make(map[string]any)
@@ -445,8 +445,10 @@ func applyAuthFileFieldsPatch(targetAuth *coreauth.Auth, req map[string]json.Raw
 		}
 		changed = true
 	}
-	if _, modeTouched := touchedRoots["codex_timezone_mode"]; modeTouched {
-		if _, err := config.CodexTimezoneFromMetadata(targetAuth.Metadata); err != nil {
+	_, modeTouched := touchedRoots["codex_request_location_mode"]
+	_, locationTouched := touchedRoots["codex_request_location"]
+	if modeTouched || locationTouched {
+		if _, err := config.CodexRequestLocationFromMetadata(targetAuth.Metadata); err != nil {
 			return &authFileFieldPatchError{message: err.Error()}
 		}
 	}

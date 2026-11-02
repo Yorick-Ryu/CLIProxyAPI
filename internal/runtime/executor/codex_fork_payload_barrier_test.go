@@ -68,7 +68,7 @@ func TestCodexForkPayloadBarrier(t *testing.T) {
 				cfg := &config.Config{
 					Codex: config.CodexConfig{
 						IdentityConvergence: true,
-						Timezone:            config.CodexTimezoneConfig{Mode: "local"},
+						RequestLocation:     config.CodexRequestLocationConfig{Enabled: true, CodexRequestLocation: config.CodexRequestLocation{Country: "US", Region: "California", City: "Los Angeles", Timezone: "America/Los_Angeles"}},
 						RequestCompression:  config.CodexRequestCompressionConfig{Enabled: true},
 					},
 					Payload: config.PayloadConfig{

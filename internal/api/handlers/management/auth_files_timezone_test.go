@@ -16,7 +16,7 @@ import (
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
-func TestPatchAuthFileTimezoneSettings(t *testing.T) {
+func TestPatchAuthFileRequestLocationSettings(t *testing.T) {
 	authDir := t.TempDir()
 	store := fileauth.NewFileTokenStore()
 	store.SetBaseDir(authDir)
@@ -33,10 +33,9 @@ func TestPatchAuthFileTimezoneSettings(t *testing.T) {
 		ctx.Request = httptest.NewRequest(http.MethodPatch, "/v0/management/auth-files/fields", strings.NewReader(`{"name":"account.json",`+fields+`}`))
 		h.PatchAuthFileFields(ctx)
 		if rec.Code != want {
-			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+			t.Fatalf("%s: status %d: %s", fields, rec.Code, rec.Body.String())
 		}
 	}
-	patch(`"codex_timezone_mode":"local"`, 200)
 	get := func() *coreauth.Auth {
 		a, ok := manager.GetByID("account.json")
 		if !ok {
@@ -44,9 +43,8 @@ func TestPatchAuthFileTimezoneSettings(t *testing.T) {
 		}
 		return a
 	}
-	if get().Metadata["codex_timezone_mode"] != "local" {
-		t.Fatal("not saved")
-	}
+	location := `{"country":"US","region":"Ohio","city":"Piketon","timezone":"America/New_York"}`
+	patch(`"codex_request_location_mode":"on","codex_request_location":`+location, 200)
 	data, err := os.ReadFile(filepath.Join(authDir, "account.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -55,27 +53,40 @@ func TestPatchAuthFileTimezoneSettings(t *testing.T) {
 	if err = json.Unmarshal(data, &saved); err != nil {
 		t.Fatal(err)
 	}
-	if saved["codex_timezone_mode"] != "local" {
+	if saved["codex_request_location_mode"] != "on" || saved["codex_request_location"] == nil {
 		t.Fatal("settings not persisted")
 	}
 	entry := h.buildAuthFileEntry(get(), authFileQuotaContext{})
-	if entry["codex_timezone_mode"] != "local" {
-		t.Fatal("account list omits timezone")
+	if entry["codex_request_location_mode"] != "on" {
+		t.Fatal("account list omits request location mode")
 	}
-	patch(`"codex_timezone_mode":"fixed"`, 400)
-	patch(`"codex_timezone":"Asia/Tokyo"`, 400)
-	if get().Metadata["codex_timezone_mode"] != "local" {
+	if got, ok := entry["codex_request_location"].(config.CodexRequestLocation); !ok || got.Timezone != "America/New_York" {
+		t.Fatalf("account list location = %#v", entry["codex_request_location"])
+	}
+	for _, invalid := range []string{
+		`"codex_request_location_mode":"local"`,
+		`"codex_request_location_mode":true`,
+		`"codex_request_location":{"timezone":"America/New_York"}`,
+		`"codex_request_location":{"country":"US","region":"Ohio","city":"Piketon","timezone":"Mars/Base"}`,
+		`"codex_request_location.timezone":"Asia/Tokyo"`,
+		`"codex_request_location_mode.nested":"off"`,
+		`"codex_timezone_mode":"egress"`,
+		`"codex_timezone":"Asia/Tokyo"`,
+	} {
+		patch(invalid, 400)
+	}
+	if get().Metadata["codex_request_location_mode"] != "on" {
 		t.Fatal("invalid patch changed live metadata")
 	}
-	patch(`"codex_timezone_mode.nested":"off"`, 400)
-	patch(`"codex_timezone_mode":"off"`, 200)
-	if get().Metadata["codex_timezone_mode"] != "off" {
-		t.Fatal("off not saved")
+	patch(`"codex_request_location_mode":"off"`, 200)
+	patch(`"codex_request_location_mode":"egress"`, 200)
+	patch(`"codex_request_location_mode":null,"codex_request_location":null`, 200)
+	policy, err := config.CodexRequestLocationFromMetadata(get().Metadata)
+	if err != nil || policy.Mode != "inherit" || policy.Location != nil {
+		t.Fatalf("inherit failed: %+v %v", policy, err)
 	}
-	patch(`"codex_timezone_mode":"egress"`, 200)
-	patch(`"codex_timezone_mode":null,"codex_timezone":null`, 200)
-	if policy, err := config.CodexTimezoneFromMetadata(get().Metadata); policy != nil || err != nil {
-		t.Fatal("inherit failed")
+	if entry := h.buildAuthFileEntry(get(), authFileQuotaContext{}); entry["codex_request_location_mode"] != "inherit" || entry["codex_request_location"] != nil {
+		t.Fatal("account list does not show inheritance")
 	}
 	if get().Metadata["untouched"] != "keep" {
 		t.Fatal("unrelated field changed")

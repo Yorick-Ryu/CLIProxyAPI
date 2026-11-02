@@ -786,8 +786,11 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quota authFileQu
 	if websockets, ok := authWebsocketsValue(auth); ok {
 		entry["websockets"] = websockets
 	}
-	if policy, err := config.CodexTimezoneFromMetadata(auth.Metadata); err == nil && policy != nil {
-		entry["codex_timezone_mode"] = policy.Mode
+	if policy, err := config.CodexRequestLocationFromMetadata(auth.Metadata); err == nil {
+		entry["codex_request_location_mode"] = policy.Mode
+		if policy.Location != nil {
+			entry["codex_request_location"] = *policy.Location
+		}
 	}
 	if requestRetry, ok := auth.RequestRetryOverride(); ok {
 		entry["request_retry"] = requestRetry

@@ -61,6 +61,10 @@ func ParseConfigBytes(data []byte) (*Config, error) {
 	if err := cfg.Codex.normalizeWebsocketTLSProfile(); err != nil {
 		return nil, err
 	}
+	if errValidate := cfg.Codex.RequestLocation.Validate(); errValidate != nil {
+		return nil, errValidate
+	}
+	cfg.Codex.RequestLocation.CodexRequestLocation = cfg.Codex.RequestLocation.Normalize()
 	if errValidate := cfg.Codex.LiveMediaRelay.Validate(); errValidate != nil {
 		return nil, errValidate
 	}

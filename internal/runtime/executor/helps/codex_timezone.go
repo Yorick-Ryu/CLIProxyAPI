@@ -4,15 +4,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
@@ -22,171 +22,152 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-var environmentBlock = regexp.MustCompile(`(?s)^\s*<environment_context>[^<]*(?:<[^>]+>[^<]*)*</environment_context>\s*$`)
-var timezoneTag = regexp.MustCompile(`<timezone>[^<>]*</timezone>`)
-var currentDateTag = regexp.MustCompile(`<current_date>[^<>]*</current_date>|<current_date\s+status="unavailable"\s*/>`)
-var codexEnvironmentNow = time.Now
-
-type environmentText struct {
-	path string
-	text string
-}
-
-// latestEnvironmentText selects the last standalone user environment block.
-// Earlier snapshots are historical context and must not be regenerated as today.
-func latestEnvironmentText(body []byte) (environmentText, bool) {
+// alignEnvironmentTime updates supported Codex time-context XML in-place.
+// Dates remain client facts; only the root timezone field is replaced.
+func alignEnvironmentTime(body []byte, zone string) []byte {
 	if !gjson.ValidBytes(body) {
-		return environmentText{}, false
+		return body
 	}
-	var latest environmentText
-	found := false
+	updated := body
 	for i, item := range gjson.GetBytes(body, "input").Array() {
-		if item.Get("role").String() != "user" {
-			continue
-		}
-		kind := item.Get("type").String()
-		if kind != "" && kind != "message" {
+		role := item.Get("role").String()
+		if role != "user" && role != "developer" {
 			continue
 		}
 		content := item.Get("content")
 		prefix := fmt.Sprintf("input.%d.content", i)
-		add := func(path string, value gjson.Result) {
-			if value.Type == gjson.String && environmentBlock.MatchString(value.Str) {
-				latest, found = environmentText{path: path, text: value.Str}, true
-			}
+		contextTag := "environment_context"
+		contentKind := "environments.environment_context"
+		if role == "developer" {
+			contextTag = "codex_apps_client_time_context"
+			contentKind = "additional_content.codex_apps_client_time_context"
 		}
-		if content.Type == gjson.String {
-			add(prefix, content)
-			continue
-		}
+		kindValue := item.Get("internal_chat_message_metadata_passthrough.content_item_kinds")
+		kinds := kindValue.Array()
 		for j, part := range content.Array() {
-			if part.Get("type").String() == "input_text" {
-				add(fmt.Sprintf("%s.%d.text", prefix, j), part.Get("text"))
+			if part.Get("type").String() != "input_text" {
+				continue
+			}
+			if kindValue.IsArray() && (j >= len(kinds) || kinds[j].String() != contentKind) {
+				continue
+			}
+			text := part.Get("text")
+			if text.Type != gjson.String {
+				continue
+			}
+			aligned := alignTimeContextText(text.String(), contextTag, zone)
+			if aligned != text.String() {
+				if next, err := sjson.SetBytes(updated, fmt.Sprintf("%s.%d.text", prefix, j), aligned); err == nil {
+					updated = next
+				}
 			}
 		}
-	}
-	return latest, found
-}
-
-// rewriteEnvironmentTime uses one instant and location for both fields and
-// preserves the surrounding text, message order, and historical snapshots.
-func rewriteEnvironmentTime(body []byte, env environmentText, zone string, now time.Time) []byte {
-	if zone == "" || zone == "Local" {
-		return body
-	}
-	loc, err := time.LoadLocation(zone)
-	if err != nil {
-		return body
-	}
-	date := "<current_date>" + now.In(loc).Format("2006-01-02") + "</current_date>"
-	timezone := "<timezone>" + zone + "</timezone>"
-	text := env.text
-	var missing []string
-	if currentDateTag.MatchString(text) {
-		text = currentDateTag.ReplaceAllString(text, date)
-	} else {
-		missing = append(missing, date)
-	}
-	if timezoneTag.MatchString(text) {
-		text = timezoneTag.ReplaceAllString(text, timezone)
-	} else {
-		missing = append(missing, timezone)
-	}
-	if len(missing) != 0 {
-		text = strings.Replace(text, "</environment_context>", "  "+strings.Join(missing, "\n  ")+"\n</environment_context>", 1)
-	}
-	if text == env.text {
-		return body
-	}
-	updated, err := sjson.SetBytes(body, env.path, text)
-	if err != nil {
-		return body
 	}
 	return updated
 }
 
-// localEnvironmentTimezone reads the CPA process environment, never its IP.
-// Like Codex CLI, an unresolvable IANA name falls back to UTC for both fields.
-func localEnvironmentTimezone() string {
-	if value, present := os.LookupEnv("TZ"); present {
-		value = strings.TrimPrefix(value, ":")
-		if value == "" {
-			return "Etc/UTC"
-		}
-		if zone := environmentTimezoneName(value); zone != "" {
-			return zone
-		}
-		return "Etc/UTC"
+func alignTimeContextText(text, contextTag, zone string) string {
+	if zone == "" || zone == "Local" {
+		return text
 	}
-	if target, err := filepath.EvalSymlinks("/etc/localtime"); err == nil {
-		if zone := environmentTimezoneName(target); zone != "" {
-			return zone
+	trimmed := strings.TrimSpace(text)
+	if !strings.HasPrefix(trimmed, "<"+contextTag+">") || !strings.HasSuffix(trimmed, "</"+contextTag+">") {
+		return text
+	}
+	// Validate the whole document before applying byte-range replacements.
+	decoder := xml.NewDecoder(strings.NewReader(text))
+	type span struct{ start, end int }
+	var spans []span
+	depth, roots, start := 0, 0, -1
+	for {
+		before := int(decoder.InputOffset())
+		token, err := decoder.Token()
+		if err == io.EOF {
+			break
 		}
-	}
-	if raw, err := os.ReadFile("/etc/timezone"); err == nil {
-		if zone := environmentTimezoneName(strings.TrimSpace(string(raw))); zone != "" {
-			return zone
-		}
-	}
-	if zone := environmentTimezoneName(time.Local.String()); zone != "" {
-		return zone
-	}
-	return "Etc/UTC"
-}
-
-func environmentTimezoneName(value string) string {
-	if filepath.IsAbs(value) {
-		target, err := filepath.EvalSymlinks(value)
 		if err != nil {
-			return ""
+			return text
 		}
-		path := filepath.ToSlash(target)
-		_, value, _ = strings.Cut(path, "/zoneinfo/")
-		value = strings.TrimPrefix(strings.TrimPrefix(value, "posix/"), "right/")
+		switch node := token.(type) {
+		case xml.StartElement:
+			if depth == 0 {
+				roots++
+				if roots != 1 || node.Name.Local != contextTag || node.Name.Space != "" {
+					return text
+				}
+			}
+			depth++
+			if depth == 2 && node.Name.Local == "timezone" {
+				start = before
+			}
+		case xml.EndElement:
+			if depth == 2 && start >= 0 {
+				spans = append(spans, span{start, int(decoder.InputOffset())})
+				start = -1
+			}
+			depth--
+		case xml.CharData:
+			if depth == 0 && strings.TrimSpace(string(node)) != "" {
+				return text
+			}
+		case xml.Directive:
+			return text
+		}
 	}
-	if value == "" || value == "Local" {
-		return ""
+	if depth != 0 || roots != 1 {
+		return text
 	}
-	if _, err := time.LoadLocation(value); err != nil {
-		return ""
+	for i := len(spans) - 1; i >= 0; i-- {
+		r := spans[i]
+		text = text[:r.start] + "<timezone>" + zone + "</timezone>" + text[r.end:]
 	}
-	return value
+	return text
 }
 
-// ApplyCodexTimezone is shared by HTTP, compact, and WebSocket preparation.
-// GeoIP failures preserve the entire input, without partial date/timezone updates.
-func ApplyCodexTimezone(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, body []byte) []byte {
-	if cfg == nil {
+// ApplyCodexRequestLocation is shared by HTTP, compact, and WebSocket preparation.
+// Account off disables the feature; egress uses the selected route; on uses the
+// account/proxy location before the global one; inherit follows the global switch.
+func ApplyCodexRequestLocation(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, body []byte) []byte {
+	if cfg == nil || !gjson.ValidBytes(body) {
 		return body
 	}
-	policy := cfg.Codex.Timezone
+	policy := config.CodexRequestLocationPolicy{Mode: "inherit"}
 	if auth != nil {
-		override, err := config.CodexTimezoneFromMetadata(auth.Metadata)
+		var err error
+		policy, err = config.CodexRequestLocationFromMetadata(auth.Metadata)
 		if err != nil {
 			return body
 		}
-		if override != nil {
-			policy = *override
+	}
+	var location codexRequestLocation
+	switch policy.Mode {
+	case "off":
+		return body
+	case "egress":
+		location = codexTimezoneCache.resolve(ctx, cfg, auth)
+	case "on":
+		if policy.Location != nil {
+			location = codexRequestLocation(*policy.Location)
+		} else if cfg.Codex.RequestLocation.CodexRequestLocation.Validate() == nil {
+			location = codexRequestLocation(cfg.Codex.RequestLocation.CodexRequestLocation)
 		}
-	}
-	if policy.Mode == "" || policy.Mode == "off" || policy.Validate() != nil {
+	case "inherit":
+		if !cfg.Codex.RequestLocation.Enabled {
+			return body
+		}
+		location = codexRequestLocation(cfg.Codex.RequestLocation.CodexRequestLocation)
+	default:
 		return body
 	}
-	env, found := latestEnvironmentText(body)
-	if !found {
+	if location.Timezone == "" {
 		return body
 	}
-	var zone string
-	if policy.Mode == "local" {
-		zone = localEnvironmentTimezone()
-	} else {
-		zone = codexTimezoneCache.resolve(ctx, cfg, auth)
-	}
-	return rewriteEnvironmentTime(body, env, zone, codexEnvironmentNow())
+	body = alignEnvironmentTime(body, location.Timezone)
+	return alignWebSearchLocation(body, location)
 }
 
 type timezoneEntry struct {
-	zone  string
+	zone  codexRequestLocation
 	until time.Time
 }
 type timezoneResolver struct {
@@ -194,19 +175,19 @@ type timezoneResolver struct {
 	entries map[[32]byte]timezoneEntry
 	group   singleflight.Group
 	now     func() time.Time
-	lookup  func(context.Context, *config.Config, *cliproxyauth.Auth) string
+	lookup  func(context.Context, *config.Config, *cliproxyauth.Auth) codexRequestLocation
 }
 
 var codexTimezoneCache = &timezoneResolver{entries: make(map[[32]byte]timezoneEntry), now: time.Now, lookup: lookupEgressTimezone}
 
-func (r *timezoneResolver) resolve(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth) string {
+func (r *timezoneResolver) resolve(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth) codexRequestLocation {
 	id := ""
 	if auth != nil {
 		id = auth.ID
 	}
 	// Include injected transport identity so different execution routes cannot share a result.
 	key := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%p", id, effectiveProxyURL(ctx, cfg, auth), ctx.Value("cliproxy.roundtripper"))))
-	get := func() (string, bool) {
+	get := func() (codexRequestLocation, bool) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		e, ok := r.entries[key]
@@ -221,7 +202,7 @@ func (r *timezoneResolver) resolve(ctx context.Context, cfg *config.Config, auth
 		}
 		zone := r.lookup(ctx, cfg, auth)
 		ttl := 6 * time.Hour
-		if zone == "" {
+		if zone.Timezone == "" {
 			ttl = time.Minute
 		}
 		r.mu.Lock()
@@ -244,53 +225,91 @@ func (r *timezoneResolver) resolve(ctx context.Context, cfg *config.Config, auth
 	})
 	select {
 	case <-ctx.Done():
-		return ""
+		return codexRequestLocation{}
 	case result := <-ch:
-		zone, _ := result.Val.(string)
+		zone, _ := result.Val.(codexRequestLocation)
 		return zone
 	}
 }
 
-func lookupEgressTimezone(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth) string {
+func lookupEgressTimezone(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth) codexRequestLocation {
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	proxy := effectiveProxyURL(ctx, cfg, auth)
 	if proxy != "" {
 		transport, _, err := proxyutil.BuildHTTPTransport(proxy)
 		if err != nil || transport == nil {
-			return ""
+			return codexRequestLocation{}
 		}
 		defer transport.CloseIdleConnections()
 		client.Transport = transport
 	} else if rt, ok := ctx.Value("cliproxy.roundtripper").(http.RoundTripper); ok {
 		client.Transport = rt
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://ipwho.is/?fields=success,timezone.id", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://ipwho.is/?fields=success,country_code,region,city,timezone.id", nil)
 	if err != nil {
-		return ""
+		return codexRequestLocation{}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return ""
+		return codexRequestLocation{}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		return codexRequestLocation{}
 	}
 	var result struct {
-		Success  bool `json:"success"`
+		Success  bool   `json:"success"`
+		Country  string `json:"country_code"`
+		Region   string `json:"region"`
+		City     string `json:"city"`
 		Timezone struct {
 			ID string `json:"id"`
 		} `json:"timezone"`
 	}
 	if json.NewDecoder(io.LimitReader(resp.Body, 16384)).Decode(&result) != nil || !result.Success {
-		return ""
+		return codexRequestLocation{}
 	}
 	zone := strings.TrimSpace(result.Timezone.ID)
 	if zone == "" || zone == "Local" {
-		return ""
+		return codexRequestLocation{}
 	}
 	if _, err = time.LoadLocation(zone); err != nil {
-		return ""
+		return codexRequestLocation{}
 	}
-	return zone
+	return codexRequestLocation{Timezone: zone, Country: strings.TrimSpace(result.Country), Region: strings.TrimSpace(result.Region), City: strings.TrimSpace(result.City)}
+}
+
+// codexRequestLocation is the route-scoped GeoIP projection shared by both rewrites.
+type codexRequestLocation struct {
+	Country  string
+	Region   string
+	City     string
+	Timezone string
+}
+
+func alignWebSearchLocation(body []byte, location codexRequestLocation) []byte {
+	// A timezone alone cannot identify a city. Preserve the original search location
+	// when GeoIP has not supplied a complete location.
+	if len(location.Country) != 2 || location.Country[0] < 'A' || location.Country[0] > 'Z' || location.Country[1] < 'A' || location.Country[1] > 'Z' || location.Region == "" || location.City == "" || location.Timezone == "" {
+		return body
+	}
+	for _, field := range []string{location.Region, location.City} {
+		if utf8.RuneCountInString(field) > 128 || strings.IndexFunc(field, unicode.IsControl) >= 0 {
+			return body
+		}
+	}
+	if _, err := time.LoadLocation(location.Timezone); err != nil {
+		return body
+	}
+	value := map[string]string{"type": "approximate", "country": location.Country, "region": location.Region, "city": location.City, "timezone": location.Timezone}
+	for i, tool := range gjson.GetBytes(body, "tools").Array() {
+		kind := tool.Get("type").String()
+		if kind != "web_search" && !strings.HasPrefix(kind, "web_search_") {
+			continue
+		}
+		if next, err := sjson.SetBytes(body, fmt.Sprintf("tools.%d.user_location", i), value); err == nil {
+			body = next
+		}
+	}
+	return body
 }
