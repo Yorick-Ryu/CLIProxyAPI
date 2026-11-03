@@ -193,43 +193,61 @@ func (r *timezoneResolver) resolve(ctx context.Context, cfg *config.Config, auth
 		e, ok := r.entries[key]
 		return e.zone, ok && r.now().Before(e.until)
 	}
-	if zone, ok := get(); ok {
-		return zone
-	}
-	ch := r.group.DoChan(fmt.Sprintf("%x", key), func() (any, error) {
+	for ctx.Err() == nil {
 		if zone, ok := get(); ok {
-			return zone, nil
+			return zone
 		}
-		zone := r.lookup(ctx, cfg, auth)
-		ttl := 6 * time.Hour
-		if zone.Timezone == "" {
-			ttl = time.Minute
-		}
-		r.mu.Lock()
-		if len(r.entries) >= 1024 {
-			for k, e := range r.entries {
-				if !r.now().Before(e.until) {
-					delete(r.entries, k)
-				}
+		ch := r.group.DoChan(fmt.Sprintf("%x", key), func() (any, error) {
+			if zone, ok := get(); ok {
+				return zone, nil
 			}
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			zone := r.lookup(ctx, cfg, auth)
+			// Cancellation belongs to the caller, not the route. Never cache it.
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			ttl := 6 * time.Hour
+			if zone.Timezone == "" {
+				ttl = time.Minute
+			}
+			r.mu.Lock()
 			if len(r.entries) >= 1024 {
-				for k := range r.entries {
-					delete(r.entries, k)
-					break
+				for k, e := range r.entries {
+					if !r.now().Before(e.until) {
+						delete(r.entries, k)
+					}
+				}
+				if len(r.entries) >= 1024 {
+					for k := range r.entries {
+						delete(r.entries, k)
+						break
+					}
 				}
 			}
+			r.entries[key] = timezoneEntry{zone: zone, until: r.now().Add(ttl)}
+			r.mu.Unlock()
+			return zone, nil
+		})
+		select {
+		case <-ctx.Done():
+			return codexRequestLocation{}
+		case result := <-ch:
+			if ctx.Err() != nil {
+				return codexRequestLocation{}
+			}
+			if result.Err != nil {
+				// The previous leader canceled. Live waiters elect a new leader
+				// using their own context, while still sharing a single lookup.
+				continue
+			}
+			zone, _ := result.Val.(codexRequestLocation)
+			return zone
 		}
-		r.entries[key] = timezoneEntry{zone: zone, until: r.now().Add(ttl)}
-		r.mu.Unlock()
-		return zone, nil
-	})
-	select {
-	case <-ctx.Done():
-		return codexRequestLocation{}
-	case result := <-ch:
-		zone, _ := result.Val.(codexRequestLocation)
-		return zone
 	}
+	return codexRequestLocation{}
 }
 
 func lookupEgressTimezone(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth) codexRequestLocation {

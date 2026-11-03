@@ -53,7 +53,7 @@ Put a proxy-specific location in `codex_request_location` on the accounts that
 use that proxy, and set their mode to `on`. A stored location is used only in
 `on` mode. Missing, null, or empty mode means `inherit`.
 
-Use the authenticated `PATCH /v0/management/auth-files/fields` endpoint:
+Use the authenticated `PATCH /v8/management/credentials/fields` endpoint:
 
 ```json
 {
@@ -90,12 +90,31 @@ share this behavior. Payload rules run afterward.
 
 ## Egress lookup
 
+To use automatic exit location for an account, apply:
+
+```json
+{
+  "name": "existing-account.json",
+  "codex_request_location_mode": "egress",
+  "codex_request_location": null
+}
+```
+
+Set this mode on each Codex account that should use automatic lookup, including
+new accounts added later. The global `request-location.enabled` switch controls
+the fixed location inherited by accounts; it does not enable egress lookup.
+It can remain false when every intended account explicitly uses `egress`.
+Existing proxy routing is preserved; this setting uses its exit location and
+does not assign or change the outgoing IP.
+
 `egress` queries `https://ipwho.is/?fields=success,country_code,region,city,timezone.id`
 through the execution-scoped proxy, account proxy, global proxy, or inherited
 transport. Only the outgoing IP is exposed; prompts, tokens, and client headers
 are not sent. Results are cached per account and route for six hours, and
-failures for one minute. Invalid proxy configuration never falls back to a
-direct lookup. A failed lookup preserves the request. An incomplete location
+failures for one minute. Canceled lookups are not cached; callers still waiting
+retry through a new shared lookup using an active caller's context.
+Invalid proxy configuration never falls back to a direct lookup.
+A failed lookup preserves the request. An incomplete location
 can still update the timezone but leaves Web Search unchanged. GeoIP is
 approximate, and rotating exits can differ from the lookup.
 

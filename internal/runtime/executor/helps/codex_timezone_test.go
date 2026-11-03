@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
@@ -206,6 +207,82 @@ func TestCodexTimezoneCanceledLookupDoesNotBlockCaller(t *testing.T) {
 		t.Fatal("canceled lookup returned zone")
 	}
 	<-finished
+}
+
+func TestCodexTimezoneCanceledLeaderRetriesForWaiters(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		calls := 0
+		release := make(chan struct{})
+		r := &timezoneResolver{entries: make(map[[32]byte]timezoneEntry), now: time.Now, lookup: func(ctx context.Context, _ *config.Config, _ *cliproxyauth.Auth) codexRequestLocation {
+			calls++
+			if calls == 1 {
+				<-ctx.Done()
+				return codexRequestLocation{}
+			}
+			<-release
+			return codexRequestLocation{Timezone: "Asia/Tokyo"}
+		}}
+		cfg := &config.Config{}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		leader := make(chan codexRequestLocation, 1)
+		go func() { leader <- r.resolve(ctx, cfg, nil) }()
+		synctest.Wait()
+		waiters := make(chan codexRequestLocation, 2)
+		for range 2 {
+			go func() { waiters <- r.resolve(context.Background(), cfg, nil) }()
+		}
+		synctest.Wait()
+		cancel()
+		synctest.Wait()
+		close(release)
+		if got := <-leader; got.Timezone != "" {
+			t.Fatalf("canceled leader returned %v", got)
+		}
+		for range 2 {
+			if got := <-waiters; got.Timezone != "Asia/Tokyo" {
+				t.Errorf("live waiter lost location after leader cancellation: %v", got)
+			}
+		}
+		if got := r.resolve(context.Background(), cfg, nil); got.Timezone != "Asia/Tokyo" {
+			t.Errorf("cancellation poisoned cache: %v", got)
+		}
+		if calls != 2 {
+			t.Errorf("lookups = %d, want one canceled lookup and one shared retry", calls)
+		}
+	})
+}
+
+func TestCodexTimezoneCanceledWaiterLeavesLookupRunning(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		calls := 0
+		release := make(chan struct{})
+		r := &timezoneResolver{entries: make(map[[32]byte]timezoneEntry), now: time.Now, lookup: func(context.Context, *config.Config, *cliproxyauth.Auth) codexRequestLocation {
+			calls++
+			<-release
+			return codexRequestLocation{Timezone: "Asia/Tokyo"}
+		}}
+		cfg := &config.Config{}
+		leader := make(chan codexRequestLocation, 1)
+		go func() { leader <- r.resolve(context.Background(), cfg, nil) }()
+		synctest.Wait()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		waiter := make(chan codexRequestLocation, 1)
+		go func() { waiter <- r.resolve(ctx, cfg, nil) }()
+		synctest.Wait()
+		cancel()
+		if got := <-waiter; got.Timezone != "" {
+			t.Fatalf("canceled waiter returned %v", got)
+		}
+		close(release)
+		if got := <-leader; got.Timezone != "Asia/Tokyo" {
+			t.Fatalf("waiter cancellation affected leader: %v", got)
+		}
+		if got := r.resolve(context.Background(), cfg, nil); got.Timezone != "Asia/Tokyo" || calls != 1 {
+			t.Fatalf("successful shared lookup not cached: location=%v calls=%d", got, calls)
+		}
+	})
 }
 
 func TestCodexEgressSearchLocation(t *testing.T) {
