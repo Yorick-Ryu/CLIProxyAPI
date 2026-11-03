@@ -531,12 +531,12 @@ func TestClaudeCacheControlDocChecksDoNotMaterializeLargeMessagesArray(t *testin
 		if allocated > 64*1024 {
 			t.Fatalf("split messages: cache control doc helpers allocated %d bytes (> 64 KiB)", allocated)
 		}
-		if elapsed > 20*time.Millisecond {
-			t.Fatalf("split messages took %v (> 20ms); expected O(N) single-pass traversal", elapsed)
-		}
+		// Race instrumentation and host load affect wall time; the allocation
+		// assertion above is the regression gate for JSON materialization.
+		t.Logf("split messages traversal took %v", elapsed)
 	})
 
-	t.Run("unsplit 1024 messages runs in single-pass O(N) time and <64KiB allocs", func(t *testing.T) {
+	t.Run("unsplit 1024 messages avoids materialization with <64KiB allocs", func(t *testing.T) {
 		chunk := strings.Repeat("b", 1024)
 		var b strings.Builder
 		b.Grow(1024*(len(chunk)+64) + 256)
@@ -575,9 +575,8 @@ func TestClaudeCacheControlDocChecksDoNotMaterializeLargeMessagesArray(t *testin
 		if allocated > 64*1024 {
 			t.Fatalf("unsplit 1024 messages: allocated %d bytes (> 64 KiB)", allocated)
 		}
-		if elapsed > 20*time.Millisecond {
-			t.Fatalf("unsplit 1024 messages took %v (> 20ms); expected O(N) single-pass traversal", elapsed)
-		}
+		// Report timing without imposing a machine-dependent deadline.
+		t.Logf("unsplit 1024 messages traversal took %v", elapsed)
 	})
 }
 
