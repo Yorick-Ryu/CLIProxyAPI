@@ -4,21 +4,21 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 	"strings"
 	"testing"
+
+	"github.com/MoeForge/moego/ojson"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
 // Snapshot of the sequential cleanup used before combining metadata edits.
 func sequentialStripCodexTraceObject(raw string) string {
-	if !gjson.Parse(raw).IsObject() || !gjson.Valid(raw) {
+	if !ojson.Parse(raw).IsObject() || !ojson.Valid(raw) {
 		return raw
 	}
 	for _, key := range codexTraceFields {
-		for gjson.Get(raw, key).Exists() {
-			updated, err := sjson.Delete(raw, key)
+		for ojson.Get(raw, key).Exists() {
+			updated, err := ojson.Delete(raw, key)
 			if err != nil || updated == raw {
 				break
 			}
@@ -31,9 +31,9 @@ func sequentialStripCodexTraceObject(raw string) string {
 func sequentialStripCodexTraceMetadata(body []byte, field string) []byte {
 	value := util.GetGJSONBytesNoCopy(body, field)
 	switch {
-	case value.Type == gjson.String:
+	case value.Type == ojson.String:
 		if updated := sequentialStripCodexTraceObject(value.Str); updated != value.Str {
-			result, err := sjson.SetBytes(body, field, updated)
+			result, err := ojson.SetBytes(body, field, updated)
 			if err == nil {
 				return result
 			}
@@ -56,7 +56,7 @@ func sequentialStripCodexTraceContextBody(body []byte) []byte {
 	// Avoid validating or copying a large request when no trace field is present.
 	for _, key := range codexTraceFields {
 		for util.GetGJSONBytesNoCopy(body, key).Exists() {
-			updated, err := sjson.DeleteBytes(body, key)
+			updated, err := ojson.DeleteBytes(body, key)
 			if err != nil || len(updated) == len(body) {
 				break
 			}
@@ -108,7 +108,7 @@ func TestPrepareCodexRequestMetadataMatchesSequential(t *testing.T) {
 			want := CanonicalCodexTurnMetadataBody(sequentialStripCodexTraceContextBody(body))
 			got := PrepareCodexRequestMetadata(body)
 			// Removing fields may leave different insignificant whitespace at object boundaries.
-			if !gjson.ValidBytes(got) {
+			if !ojson.ValidBytes(got) {
 				t.Fatalf("invalid result: %s", got)
 			}
 			if string(got) != string(want) {

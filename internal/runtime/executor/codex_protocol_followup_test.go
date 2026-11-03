@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 func TestCodexWindowAndMemoryMetadataOnWire(t *testing.T) {
@@ -78,8 +78,8 @@ func TestCodexWindowAndMemoryMetadataOnWire(t *testing.T) {
 					}
 					h := (<-captured).Header
 					body := <-bodies
-					bodyMetadata := gjson.Parse(gjson.GetBytes(body, "client_metadata.x-codex-turn-metadata").String())
-					headerMetadata := gjson.Parse(h.Get("X-Codex-Turn-Metadata"))
+					bodyMetadata := ojson.Parse(ojson.GetBytes(body, "client_metadata.x-codex-turn-metadata").String())
+					headerMetadata := ojson.Parse(h.Get("X-Codex-Turn-Metadata"))
 					if h.Get("X-Openai-Memgen-Request") != "true" {
 						t.Fatal("memory request marker was lost")
 					}
@@ -91,11 +91,11 @@ func TestCodexWindowAndMemoryMetadataOnWire(t *testing.T) {
 					}
 					mappedWindow := bodyMetadata.Get("context_window_id").String()
 					assertCodexIdentityV7Timestamp(t, mappedWindow, window)
-					if mappedWindow == window || headerMetadata.Get("context_window_id").String() != mappedWindow || gjson.GetBytes(body, "client_metadata.context_window_id").String() != mappedWindow {
+					if mappedWindow == window || headerMetadata.Get("context_window_id").String() != mappedWindow || ojson.GetBytes(body, "client_metadata.context_window_id").String() != mappedWindow {
 						t.Fatal("context window is not consistently isolated")
 					}
 					windowID := bodyMetadata.Get("window_id").String()
-					if !strings.HasSuffix(windowID, ":3") || h.Get("X-Codex-Window-Id") != windowID || gjson.GetBytes(body, "client_metadata.window_id").String() != windowID || gjson.GetBytes(body, "client_metadata.x-codex-window-id").String() != windowID || headerMetadata.Get("window_id").String() != windowID || bodyMetadata.Get("window_number").Int() != 3 || headerMetadata.Get("window_number").Int() != 3 {
+					if !strings.HasSuffix(windowID, ":3") || h.Get("X-Codex-Window-Id") != windowID || ojson.GetBytes(body, "client_metadata.window_id").String() != windowID || ojson.GetBytes(body, "client_metadata.x-codex-window-id").String() != windowID || headerMetadata.Get("window_id").String() != windowID || bodyMetadata.Get("window_number").Int() != 3 || headerMetadata.Get("window_number").Int() != 3 {
 						t.Fatal("window ordinal or projections diverged")
 					}
 				})
@@ -142,12 +142,12 @@ func TestCodexTurnStateOnWireAndPayloadOverrides(t *testing.T) {
 								t.Error(err)
 								return
 							}
-							gotBody := gjson.GetBytes(body, "client_metadata.x-codex-turn-state").String()
+							gotBody := ojson.GetBytes(body, "client_metadata.x-codex-turn-state").String()
 							captured <- [2]string{gotHeader, gotBody}
 							_ = conn.WriteMessage(websocket.TextMessage, completed)
 						} else {
 							body, _ := io.ReadAll(r.Body)
-							gotBody := gjson.GetBytes(body, "client_metadata.x-codex-turn-state").String()
+							gotBody := ojson.GetBytes(body, "client_metadata.x-codex-turn-state").String()
 							captured <- [2]string{gotHeader, gotBody}
 							w.Header().Set("Content-Type", "text/event-stream")
 							_, _ = fmt.Fprintf(w, "data: %s\n\n", completed)

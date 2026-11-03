@@ -7,10 +7,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 // EnsureCodexWebSearchHistoryTool declares the hosted tool required to replay
@@ -20,14 +19,14 @@ func EnsureCodexWebSearchHistoryTool(body []byte, auth *cliproxyauth.Auth, heade
 	if auth == nil || strings.TrimSpace(auth.Attributes["api_key"]) != "" || !bytes.Contains(body, []byte("web_search_call")) {
 		return body, nil
 	}
-	input := gjson.GetBytes(body, "input")
+	input := ojson.GetBytes(body, "input")
 	if !input.IsArray() {
 		return body, nil
 	}
 	items := input.Array()
 	hasHistory, callerTools := false, false
 	additionalIndex := -1
-	containsSearch := func(tools gjson.Result) bool {
+	containsSearch := func(tools ojson.Result) bool {
 		if !tools.IsArray() {
 			return false
 		}
@@ -39,7 +38,7 @@ func EnsureCodexWebSearchHistoryTool(body []byte, auth *cliproxyauth.Auth, heade
 		}
 		return false
 	}
-	topTools := gjson.GetBytes(body, "tools")
+	topTools := ojson.GetBytes(body, "tools")
 	if containsSearch(topTools) {
 		return body, nil
 	}
@@ -68,16 +67,16 @@ func EnsureCodexWebSearchHistoryTool(body []byte, auth *cliproxyauth.Auth, heade
 	switch {
 	case !util.IsCodexResponsesLiteRequest(body, headers):
 		if topTools.IsArray() {
-			next, err = sjson.SetRawBytes(body, "tools.-1", []byte(tool))
+			next, err = ojson.SetRawBytes(body, "tools.-1", []byte(tool))
 		} else {
-			next, err = sjson.SetRawBytes(body, "tools", []byte("["+tool+"]"))
+			next, err = ojson.SetRawBytes(body, "tools", []byte("["+tool+"]"))
 		}
 	case additionalIndex >= 0:
 		path := fmt.Sprintf("input.%d.tools", additionalIndex)
 		if items[additionalIndex].Get("tools").IsArray() {
-			next, err = sjson.SetRawBytes(body, path+".-1", []byte(tool))
+			next, err = ojson.SetRawBytes(body, path+".-1", []byte(tool))
 		} else {
-			next, err = sjson.SetRawBytes(body, path, []byte("["+tool+"]"))
+			next, err = ojson.SetRawBytes(body, path, []byte("["+tool+"]"))
 		}
 	default:
 		at := len(items)
@@ -96,17 +95,17 @@ func EnsureCodexWebSearchHistoryTool(body []byte, auth *cliproxyauth.Auth, heade
 		var encoded []byte
 		encoded, err = json.Marshal(values)
 		if err == nil {
-			next, err = sjson.SetRawBytes(body, "input", encoded)
+			next, err = ojson.SetRawBytes(body, "input", encoded)
 		}
 	}
 	if err != nil {
 		return body, fmt.Errorf("declare Codex search history tool: %w", err)
 	}
 	if !callerTools {
-		choice := gjson.GetBytes(next, "tool_choice")
+		choice := ojson.GetBytes(next, "tool_choice")
 		normalized := strings.ToLower(strings.TrimSpace(choice.String()))
-		if !choice.Exists() || choice.Type == gjson.Null || (choice.Type == gjson.String && (normalized == "" || normalized == "auto" || normalized == "none")) {
-			next, err = sjson.SetBytes(next, "tool_choice", "none")
+		if !choice.Exists() || choice.Type == ojson.Null || (choice.Type == ojson.String && (normalized == "" || normalized == "auto" || normalized == "none")) {
+			next, err = ojson.SetBytes(next, "tool_choice", "none")
 			if err != nil {
 				return body, fmt.Errorf("preserve Codex no-tool choice: %w", err)
 			}

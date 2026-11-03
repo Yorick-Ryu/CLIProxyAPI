@@ -8,8 +8,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
+	"github.com/MoeForge/moego/ojson"
 	"golang.org/x/net/http/httpguts"
 )
 
@@ -99,10 +98,10 @@ func CanonicalCodexTurnMetadata(raw string) string {
 }
 
 func canonicalCodexTurnMetadata(raw string, header bool) string {
-	if !utf8.ValidString(raw) || !gjson.Valid(raw) {
+	if !utf8.ValidString(raw) || !ojson.Valid(raw) {
 		return raw
 	}
-	value := gjson.Parse(raw)
+	value := ojson.Parse(raw)
 	if !value.IsObject() {
 		return raw
 	}
@@ -115,19 +114,19 @@ func canonicalCodexTurnMetadata(raw string, header bool) string {
 	if header {
 		// Native compatibility headers omit the unbounded tool inventory.
 		// Validate the entire original first, including duplicate keys and UTF-8.
-		if projected, err := sjson.Delete(canonical, "tool_namespaces_info"); err == nil {
+		if projected, err := ojson.Delete(canonical, "tool_namespaces_info"); err == nil {
 			canonical = projected
 		}
 	}
 	return canonical
 }
 
-func writeCodexMetadataValue(output *strings.Builder, value gjson.Result, shape codexMetadataShape) bool {
+func writeCodexMetadataValue(output *strings.Builder, value ojson.Result, shape codexMetadataShape) bool {
 	switch {
 	case value.IsObject():
-		fields := make(map[string]gjson.Result)
+		fields := make(map[string]ojson.Result)
 		unique := true
-		value.ForEach(func(key, child gjson.Result) bool {
+		value.ForEach(func(key, child ojson.Result) bool {
 			if _, exists := fields[key.Str]; exists || !validCodexMetadataString(key.Raw) {
 				unique = false
 				return false
@@ -174,7 +173,7 @@ func writeCodexMetadataValue(output *strings.Builder, value gjson.Result, shape 
 		output.WriteByte('[')
 		valid := true
 		first := true
-		value.ForEach(func(_, child gjson.Result) bool {
+		value.ForEach(func(_, child ojson.Result) bool {
 			if !first {
 				output.WriteByte(',')
 			}
@@ -184,7 +183,7 @@ func writeCodexMetadataValue(output *strings.Builder, value gjson.Result, shape 
 		})
 		output.WriteByte(']')
 		return valid
-	case value.Type == gjson.String:
+	case value.Type == ojson.String:
 		if !validCodexMetadataString(value.Raw) {
 			return false
 		}
@@ -274,10 +273,10 @@ func writeCodexMetadataString(output *strings.Builder, value string) {
 // Call before payload rules so explicit administrator overrides stay final.
 func CanonicalCodexTurnMetadataBody(body []byte) []byte {
 	const path = "client_metadata.x-codex-turn-metadata"
-	metadata := gjson.GetBytes(body, path)
+	metadata := ojson.GetBytes(body, path)
 	var updated []byte
 	var err error
-	if metadata.Type == gjson.String {
+	if metadata.Type == ojson.String {
 		if !validCodexMetadataString(metadata.Raw) {
 			return body
 		}
@@ -285,13 +284,13 @@ func CanonicalCodexTurnMetadataBody(body []byte) []byte {
 		if canonical == metadata.Str {
 			return body
 		}
-		updated, err = sjson.SetBytes(body, path, canonical)
+		updated, err = ojson.SetBytes(body, path, canonical)
 	} else if metadata.IsObject() {
 		canonical := CanonicalCodexTurnMetadata(metadata.Raw)
 		if canonical == metadata.Raw {
 			return body
 		}
-		updated, err = sjson.SetRawBytes(body, path, []byte(canonical))
+		updated, err = ojson.SetRawBytes(body, path, []byte(canonical))
 	} else {
 		return body
 	}

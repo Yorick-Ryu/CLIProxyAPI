@@ -14,22 +14,21 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/proxyutil"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 	"golang.org/x/sync/singleflight"
 )
 
 // alignEnvironmentTime updates supported Codex time-context XML in-place.
 // Dates remain client facts; only the root timezone field is replaced.
 func alignEnvironmentTime(body []byte, zone string) []byte {
-	if !gjson.ValidBytes(body) {
+	if !ojson.ValidBytes(body) {
 		return body
 	}
 	updated := body
-	for i, item := range gjson.GetBytes(body, "input").Array() {
+	for i, item := range ojson.GetBytes(body, "input").Array() {
 		role := item.Get("role").String()
 		if role != "user" && role != "developer" {
 			continue
@@ -52,12 +51,12 @@ func alignEnvironmentTime(body []byte, zone string) []byte {
 				continue
 			}
 			text := part.Get("text")
-			if text.Type != gjson.String {
+			if text.Type != ojson.String {
 				continue
 			}
 			aligned := alignTimeContextText(text.String(), contextTag, zone)
 			if aligned != text.String() {
-				if next, err := sjson.SetBytes(updated, fmt.Sprintf("%s.%d.text", prefix, j), aligned); err == nil {
+				if next, err := ojson.SetBytes(updated, fmt.Sprintf("%s.%d.text", prefix, j), aligned); err == nil {
 					updated = next
 				}
 			}
@@ -128,7 +127,7 @@ func alignTimeContextText(text, contextTag, zone string) string {
 // Account off disables the feature; egress uses the selected route; on uses the
 // account/proxy location before the global one; inherit follows the global switch.
 func ApplyCodexRequestLocation(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, body []byte) []byte {
-	if cfg == nil || !gjson.ValidBytes(body) {
+	if cfg == nil || !ojson.ValidBytes(body) {
 		return body
 	}
 	policy := config.CodexRequestLocationPolicy{Mode: "inherit"}
@@ -320,12 +319,12 @@ func alignWebSearchLocation(body []byte, location codexRequestLocation) []byte {
 		return body
 	}
 	value := map[string]string{"type": "approximate", "country": location.Country, "region": location.Region, "city": location.City, "timezone": location.Timezone}
-	for i, tool := range gjson.GetBytes(body, "tools").Array() {
+	for i, tool := range ojson.GetBytes(body, "tools").Array() {
 		kind := tool.Get("type").String()
 		if kind != "web_search" && !strings.HasPrefix(kind, "web_search_") {
 			continue
 		}
-		if next, err := sjson.SetBytes(body, fmt.Sprintf("tools.%d.user_location", i), value); err == nil {
+		if next, err := ojson.SetBytes(body, fmt.Sprintf("tools.%d.user_location", i), value); err == nil {
 			body = next
 		}
 	}

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // The golden file was generated with the unmodified native ASCII formatter and
@@ -78,7 +78,7 @@ func TestCanonicalCodexTurnMetadataBodyAndHeaders(t *testing.T) {
 		body := []byte(` {"unrelated":1.2300,"client_metadata":{"x-codex-turn-metadata":` + value + `,"keep":"東京"},"tail":true} `)
 		before := bytes.Clone(body)
 		got := CanonicalCodexTurnMetadataBody(body)
-		metadata := gjson.GetBytes(got, "client_metadata.x-codex-turn-metadata")
+		metadata := ojson.GetBytes(got, "client_metadata.x-codex-turn-metadata")
 		formatted := metadata.Str
 		if asObject {
 			formatted = metadata.Raw
@@ -86,7 +86,7 @@ func TestCanonicalCodexTurnMetadataBodyAndHeaders(t *testing.T) {
 		if metadata.IsObject() != asObject || formatted != want {
 			t.Fatalf("metadata type or serialization changed: %q", got)
 		}
-		if !bytes.Equal(body, before) || gjson.GetBytes(got, "unrelated").Raw != "1.2300" || gjson.GetBytes(got, "client_metadata.keep").String() != "東京" || !bytes.HasPrefix(got, []byte(` {"unrelated":1.2300,`)) || !bytes.HasSuffix(got, []byte(`,"tail":true} `)) {
+		if !bytes.Equal(body, before) || ojson.GetBytes(got, "unrelated").Raw != "1.2300" || ojson.GetBytes(got, "client_metadata.keep").String() != "東京" || !bytes.HasPrefix(got, []byte(` {"unrelated":1.2300,`)) || !bytes.HasSuffix(got, []byte(`,"tail":true} `)) {
 			t.Fatal("formatting changed caller-owned or unrelated request bytes")
 		}
 	}
@@ -130,7 +130,7 @@ func TestCodexTurnMetadataHeaderOmitsOnlyToolInventory(t *testing.T) {
 	}
 	body := []byte(`{"client_metadata":{"x-codex-turn-metadata":{"tool_namespaces_info":{"n":{"name":"n","functions":{}}},"extension":"keep"}}}`)
 	normalized := CanonicalCodexTurnMetadataBody(body)
-	if !gjson.GetBytes(normalized, "client_metadata.x-codex-turn-metadata.tool_namespaces_info").Exists() {
+	if !ojson.GetBytes(normalized, "client_metadata.x-codex-turn-metadata.tool_namespaces_info").Exists() {
 		t.Fatal("header projection removed inventory from the body")
 	}
 }

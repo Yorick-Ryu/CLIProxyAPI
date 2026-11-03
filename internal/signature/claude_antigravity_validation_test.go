@@ -1,10 +1,10 @@
 package signature
 
 import (
-	"encoding/base64"
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/base64"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/signature/signaturetest"
 	"google.golang.org/protobuf/encoding/protowire"
 )

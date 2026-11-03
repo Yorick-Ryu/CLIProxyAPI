@@ -4,14 +4,14 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // CodexSearchTurnMetadata retains the native extension map's field order.
 // Search metadata is not serialized using the Responses struct layout. Only
 // non-ASCII characters are escaped, matching Codex's to_ascii_json_string.
 func CodexSearchTurnMetadata(raw string) string {
-	if !utf8.ValidString(raw) || !gjson.Valid(raw) {
+	if !utf8.ValidString(raw) || !ojson.Valid(raw) {
 		return raw
 	}
 	var output strings.Builder

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/tidwall/gjson"
 )
 
 func TestEnsureCodexWebSearchHistoryTool(t *testing.T) {
@@ -54,21 +54,21 @@ func TestEnsureCodexWebSearchHistoryTool(t *testing.T) {
 				}
 				return
 			}
-			if gjson.GetBytes(got, "tool_choice").String() != tc.choice {
+			if ojson.GetBytes(got, "tool_choice").String() != tc.choice {
 				t.Fatalf("tool choice: %s", got)
 			}
-			var tools gjson.Result
+			var tools ojson.Result
 			if tc.lite {
-				tools = gjson.GetBytes(got, `input.#(type=="additional_tools").tools`)
-				if gjson.GetBytes(got, `tools.#(type=="web_search")`).Exists() {
+				tools = ojson.GetBytes(got, `input.#(type=="additional_tools").tools`)
+				if ojson.GetBytes(got, `tools.#(type=="web_search")`).Exists() {
 					t.Fatal("Lite top-level hosted tool")
 				}
-				items := gjson.GetBytes(got, "input").Array()
+				items := ojson.GetBytes(got, "input").Array()
 				if items[len(items)-1].Get("type").String() != "compaction_trigger" {
 					t.Fatal("trigger moved")
 				}
 			} else {
-				tools = gjson.GetBytes(got, "tools")
+				tools = ojson.GetBytes(got, "tools")
 			}
 			found := false
 			for _, tool := range tools.Array() {
@@ -82,7 +82,7 @@ func TestEnsureCodexWebSearchHistoryTool(t *testing.T) {
 			if !found {
 				t.Fatal("missing hosted search declaration")
 			}
-			if gjson.GetBytes(got, `input.#(type=="web_search_call")`).Raw != history {
+			if ojson.GetBytes(got, `input.#(type=="web_search_call")`).Raw != history {
 				t.Fatal("search history changed")
 			}
 			again, err := EnsureCodexWebSearchHistoryTool(got, auth, headers)

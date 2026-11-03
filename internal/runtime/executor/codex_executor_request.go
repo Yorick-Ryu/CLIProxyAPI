@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
@@ -21,8 +22,6 @@ import (
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 const (
@@ -40,8 +39,14 @@ func translateCodexRequestPair(from, to sdktranslator.Format, model string, orig
 }
 
 func translateCodexRequestPairWithUpdateIntent(from, to sdktranslator.Format, model string, originalPayload, payload []byte, stream bool, preserveEmptyThinkingBlocks ...bool) ([]byte, []byte, bool, error) {
+	return translateCodexRequestPairWithUpdateIntentContext(context.Background(), from, to, model, originalPayload, payload, stream, preserveEmptyThinkingBlocks...)
+}
+
+func translateCodexRequestPairWithUpdateIntentContext(ctx context.Context, from, to sdktranslator.Format, model string, originalPayload, payload []byte, stream bool, preserveEmptyThinkingBlocks ...bool) ([]byte, []byte, bool, error) {
 	isCompat := len(preserveEmptyThinkingBlocks) > 0 && preserveEmptyThinkingBlocks[0]
-	ctx := context.Background()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	translate := func(raw []byte) ([]byte, bool, error) {
 		if isCompat && from == sdktranslator.FormatClaude && to == sdktranslator.FormatCodex {
 			body, err := helps.TranslateRequestReturningError(ctx, nil, nil, from, to, model, raw, stream, true)
@@ -220,7 +225,7 @@ func (e *CodexExecutor) prepareCodexAlphaSearch(req *http.Request, auth *cliprox
 		headers.Set("Authorization", "Bearer "+token)
 	}
 	mapped, identity := applyCodexAccountIdentityBodyForConfig(req.Context(), e.cfg, auth, body)
-	if id := gjson.GetBytes(mapped, "id"); id.Type == gjson.String && id.String() != "" {
+	if id := ojson.GetBytes(mapped, "id"); id.Type == ojson.String && id.String() != "" {
 		mapped = helps.SetStringIfDifferent(mapped, "id", codexAccountIdentityUUID(identity, "session", id.String()))
 	}
 	applyCodexAccountIdentityHeaders(headers, &identity)
@@ -275,7 +280,7 @@ func (e *CodexExecutor) prepareCachedRequest(ctx context.Context, from sdktransl
 	}
 	var cache helps.CodexCache
 	if sourceFormatEqual(from, sdktranslator.FormatClaude) {
-		modelName := strings.TrimSpace(gjson.GetBytes(rawJSON, "model").String())
+		modelName := strings.TrimSpace(ojson.GetBytes(rawJSON, "model").String())
 		if modelName == "" {
 			modelName = thinking.ParseSuffix(req.Model).ModelName
 		}
@@ -287,12 +292,12 @@ func (e *CodexExecutor) prepareCachedRequest(ctx context.Context, from sdktransl
 			cache = cached
 		}
 	} else if sourceFormatEqual(from, sdktranslator.FormatOpenAIResponse) {
-		promptCacheKey := gjson.GetBytes(req.Payload, "prompt_cache_key")
+		promptCacheKey := ojson.GetBytes(req.Payload, "prompt_cache_key")
 		if promptCacheKey.Exists() {
 			cache.ID = promptCacheKey.String()
 		}
 	} else if sourceFormatEqual(from, sdktranslator.FormatOpenAI) {
-		if promptCacheKey := gjson.GetBytes(req.Payload, "prompt_cache_key"); promptCacheKey.Exists() {
+		if promptCacheKey := ojson.GetBytes(req.Payload, "prompt_cache_key"); promptCacheKey.Exists() {
 			cache.ID = strings.TrimSpace(promptCacheKey.String())
 		}
 		if cache.ID == "" {
@@ -403,20 +408,20 @@ func applyCodexIdentityConfuseBody(cfg *config.Config, auth *cliproxyauth.Auth, 
 
 	state.enabled = true
 	state.authID = strings.TrimSpace(auth.ID)
-	if promptCacheKey := strings.TrimSpace(gjson.GetBytes(userPayload, "prompt_cache_key").String()); promptCacheKey != "" {
+	if promptCacheKey := strings.TrimSpace(ojson.GetBytes(userPayload, "prompt_cache_key").String()); promptCacheKey != "" {
 		state.originalPromptCacheKey = promptCacheKey
 		state.promptCacheKey = codexIdentityConfuseUUID(auth.ID, "prompt-cache", promptCacheKey)
 		rawJSON = helps.SetStringIfDifferent(rawJSON, "prompt_cache_key", state.promptCacheKey)
 	}
-	if installationID := strings.TrimSpace(gjson.GetBytes(userPayload, "client_metadata.x-codex-installation-id").String()); installationID != "" {
-		rawJSON, _ = sjson.SetBytes(rawJSON, "client_metadata.x-codex-installation-id", codexIdentityConfuseUUID(auth.ID, "installation", installationID))
+	if installationID := strings.TrimSpace(ojson.GetBytes(userPayload, "client_metadata.x-codex-installation-id").String()); installationID != "" {
+		rawJSON, _ = ojson.SetBytes(rawJSON, "client_metadata.x-codex-installation-id", codexIdentityConfuseUUID(auth.ID, "installation", installationID))
 	}
-	if turnMetadata := strings.TrimSpace(gjson.GetBytes(rawJSON, "client_metadata.x-codex-turn-metadata").String()); turnMetadata != "" {
-		rawJSON, _ = sjson.SetBytes(rawJSON, "client_metadata.x-codex-turn-metadata", applyCodexTurnMetadataIdentityConfuse(turnMetadata, &state))
+	if turnMetadata := strings.TrimSpace(ojson.GetBytes(rawJSON, "client_metadata.x-codex-turn-metadata").String()); turnMetadata != "" {
+		rawJSON, _ = ojson.SetBytes(rawJSON, "client_metadata.x-codex-turn-metadata", applyCodexTurnMetadataIdentityConfuse(turnMetadata, &state))
 	}
 	if state.promptCacheKey != "" {
-		if windowID := strings.TrimSpace(gjson.GetBytes(rawJSON, "client_metadata.x-codex-window-id").String()); windowID != "" {
-			rawJSON, _ = sjson.SetBytes(rawJSON, "client_metadata.x-codex-window-id", state.promptCacheKey+":0")
+		if windowID := strings.TrimSpace(ojson.GetBytes(rawJSON, "client_metadata.x-codex-window-id").String()); windowID != "" {
+			rawJSON, _ = ojson.SetBytes(rawJSON, "client_metadata.x-codex-window-id", state.promptCacheKey+":0")
 		}
 	}
 
@@ -457,16 +462,16 @@ func applyCodexTurnMetadataIdentityConfuse(rawTurnMetadata string, state *codexI
 	if state == nil || !state.enabled {
 		return updatedTurnMetadata
 	}
-	if state.promptCacheKey != "" && gjson.Get(rawTurnMetadata, "prompt_cache_key").Exists() {
-		updatedTurnMetadata, _ = sjson.Set(updatedTurnMetadata, "prompt_cache_key", state.promptCacheKey)
+	if state.promptCacheKey != "" && ojson.Get(rawTurnMetadata, "prompt_cache_key").Exists() {
+		updatedTurnMetadata, _ = ojson.Set(updatedTurnMetadata, "prompt_cache_key", state.promptCacheKey)
 	} else if state.promptCacheKey != "" && state.originalPromptCacheKey != "" {
 		updatedTurnMetadata = strings.ReplaceAll(updatedTurnMetadata, state.originalPromptCacheKey, state.promptCacheKey)
 	}
-	if turnID := strings.TrimSpace(gjson.Get(rawTurnMetadata, "turn_id").String()); turnID != "" {
-		updatedTurnMetadata, _ = sjson.Set(updatedTurnMetadata, "turn_id", state.confuseTurnID(turnID))
+	if turnID := strings.TrimSpace(ojson.Get(rawTurnMetadata, "turn_id").String()); turnID != "" {
+		updatedTurnMetadata, _ = ojson.Set(updatedTurnMetadata, "turn_id", state.confuseTurnID(turnID))
 	}
-	if state.promptCacheKey != "" && gjson.Get(rawTurnMetadata, "window_id").Exists() {
-		updatedTurnMetadata, _ = sjson.Set(updatedTurnMetadata, "window_id", state.promptCacheKey+":0")
+	if state.promptCacheKey != "" && ojson.Get(rawTurnMetadata, "window_id").Exists() {
+		updatedTurnMetadata, _ = ojson.Set(updatedTurnMetadata, "window_id", state.promptCacheKey+":0")
 	}
 	return updatedTurnMetadata
 }
@@ -598,7 +603,7 @@ func applyCodexImageCompatibilityHeaders(r *http.Request, auth *cliproxyauth.Aut
 		}
 	}
 	const imageTurnHeader = "X-Codex-Image-Turn-Id"
-	turn := strings.TrimSpace(gjson.Get(r.Header.Get("X-Codex-Turn-Metadata"), "turn_id").String())
+	turn := strings.TrimSpace(ojson.Get(r.Header.Get("X-Codex-Turn-Metadata"), "turn_id").String())
 	if turn == "" {
 		turn = strings.TrimSpace(source.Get(imageTurnHeader))
 		if state != nil && turn != "" {
@@ -636,14 +641,14 @@ func applyCodexSIWCRequestBodyRules(body []byte, hasExplicitInstructions bool, o
 
 func applyCodexSIWCWebsocketBodyRules(body []byte, hasExplicitInstructions bool, opts ...cliproxyexecutor.Options) []byte {
 	body = helps.SetBoolIfDifferent(body, "store", false)
-	body, _ = sjson.DeleteBytes(body, "stream")
-	body, _ = sjson.DeleteBytes(body, "background")
+	body, _ = ojson.DeleteBytes(body, "stream")
+	body, _ = ojson.DeleteBytes(body, "background")
 	return stripCodexSIWCUnsupportedFields(body, hasExplicitInstructions, opts...)
 }
 
 func applyCodexSIWCCompactBodyRules(body []byte, hasExplicitInstructions bool, opts ...cliproxyexecutor.Options) []byte {
-	body, _ = sjson.DeleteBytes(body, "stream")
-	body, _ = sjson.DeleteBytes(body, "store")
+	body, _ = ojson.DeleteBytes(body, "stream")
+	body, _ = ojson.DeleteBytes(body, "store")
 	return stripCodexSIWCUnsupportedFields(body, hasExplicitInstructions, opts...)
 }
 
@@ -654,14 +659,14 @@ func stripCodexSIWCUnsupportedFields(body []byte, hasExplicitInstructions bool, 
 	// layer has already resolved it into the top-level effort, so only the
 	// unsupported items are removed in that case.
 	body = thinking.CollapseConfigurationUpdates(body, len(opts) > 0 && opts[0].KeepTopLevelEffort)
-	body, _ = sjson.DeleteBytes(body, "prompt_cache_retention")
-	body, _ = sjson.DeleteBytes(body, "prompt_cache_options")
-	body, _ = sjson.DeleteBytes(body, "max_output_tokens")
-	body, _ = sjson.DeleteBytes(body, "max_completion_tokens")
-	body, _ = sjson.DeleteBytes(body, "temperature")
+	body, _ = ojson.DeleteBytes(body, "prompt_cache_retention")
+	body, _ = ojson.DeleteBytes(body, "prompt_cache_options")
+	body, _ = ojson.DeleteBytes(body, "max_output_tokens")
+	body, _ = ojson.DeleteBytes(body, "max_completion_tokens")
+	body, _ = ojson.DeleteBytes(body, "temperature")
 	if !hasExplicitInstructions {
-		if inst := gjson.GetBytes(body, "instructions"); inst.Exists() && strings.TrimSpace(inst.String()) == "" {
-			body, _ = sjson.DeleteBytes(body, "instructions")
+		if inst := ojson.GetBytes(body, "instructions"); inst.Exists() && strings.TrimSpace(inst.String()) == "" {
+			body, _ = ojson.DeleteBytes(body, "instructions")
 		}
 	}
 	return body
@@ -797,7 +802,7 @@ func applyCodexRoutingHint(ctx context.Context, headers http.Header, auth *clipr
 		return
 	}
 	hint := "model=" + model
-	if tier := gjson.GetBytes(upstreamBody, "service_tier"); tier.Type == gjson.String {
+	if tier := ojson.GetBytes(upstreamBody, "service_tier"); tier.Type == ojson.String {
 		if value := strings.TrimSpace(tier.String()); value != "" {
 			hint += ";tier=" + value
 		}
@@ -853,9 +858,9 @@ func normalizeCodexInstructions(body []byte, nativeRequest ...bool) []byte {
 	if len(nativeRequest) > 0 && nativeRequest[0] {
 		return body
 	}
-	instructions := gjson.GetBytes(body, "instructions")
-	if !instructions.Exists() || instructions.Type == gjson.Null {
-		body, _ = sjson.SetBytes(body, "instructions", "")
+	instructions := ojson.GetBytes(body, "instructions")
+	if !instructions.Exists() || instructions.Type == ojson.Null {
+		body, _ = ojson.SetBytes(body, "instructions", "")
 	}
 	return body
 }
@@ -873,7 +878,7 @@ func isCodexFreePlanAuth(auth *cliproxyauth.Auth) bool {
 	return strings.EqualFold(strings.TrimSpace(auth.Attributes["plan_type"]), "free")
 }
 
-func isImageGenerationFunctionTool(tool gjson.Result) bool {
+func isImageGenerationFunctionTool(tool ojson.Result) bool {
 	switch tool.Get("type").String() {
 	case "function":
 		return tool.Get("name").String() == "image_gen.imagegen"
@@ -905,9 +910,9 @@ func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth
 		return body
 	}
 
-	tools := gjson.GetBytes(body, "tools")
+	tools := ojson.GetBytes(body, "tools")
 	if !tools.Exists() || !tools.IsArray() {
-		body, _ = sjson.SetRawBytes(body, "tools", imageGenToolArrayJSON)
+		body, _ = ojson.SetRawBytes(body, "tools", imageGenToolArrayJSON)
 		return body
 	}
 	for _, t := range tools.Array() {
@@ -915,7 +920,7 @@ func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth
 			return body
 		}
 	}
-	body, _ = sjson.SetRawBytes(body, "tools.-1", imageGenToolJSON)
+	body, _ = ojson.SetRawBytes(body, "tools.-1", imageGenToolJSON)
 	return body
 }
 
@@ -928,17 +933,17 @@ func normalizeCodexParallelToolCalls(body []byte, headers http.Header) []byte {
 }
 
 func normalizeCodexParallelToolCallsForTools(body []byte) []byte {
-	if !gjson.GetBytes(body, "parallel_tool_calls").Exists() {
+	if !ojson.GetBytes(body, "parallel_tool_calls").Exists() {
 		return body
 	}
 
-	tools := gjson.GetBytes(body, "tools")
+	tools := ojson.GetBytes(body, "tools")
 	hasTools := tools.Exists() && tools.IsArray() && len(tools.Array()) > 0
 	if hasTools {
 		return body
 	}
 
-	body, _ = sjson.DeleteBytes(body, "parallel_tool_calls")
+	body, _ = ojson.DeleteBytes(body, "parallel_tool_calls")
 	return body
 }
 
@@ -956,7 +961,7 @@ func publishCodexImageToolUsageWithOutputItems(ctx context.Context, reporter *he
 }
 
 func codexImageGenerationToolModel(body []byte) string {
-	tools := gjson.GetBytes(body, "tools")
+	tools := ojson.GetBytes(body, "tools")
 	if tools.IsArray() {
 		for _, tool := range tools.Array() {
 			if tool.Get("type").String() != "image_generation" {
@@ -1012,4 +1017,144 @@ func applyCodexAccountHeaders(ctx context.Context, headers http.Header, cfg *con
 			headers.Set(name, value)
 		}
 	}
+}
+
+func applyCodexSIWCRequestBodyRulesDoc(doc *ojson.Doc, hasExplicitInstructions bool, opts ...cliproxyexecutor.Options) bool {
+	if doc == nil {
+		return false
+	}
+	changed := helps.SetBoolIfDifferentDoc(doc, "store", false)
+	if helps.SetBoolIfDifferentDoc(doc, "stream", true) {
+		changed = true
+	}
+	if stripCodexSIWCUnsupportedFieldsDoc(doc, hasExplicitInstructions, opts...) {
+		changed = true
+	}
+	return changed
+}
+
+func applyCodexSIWCWebsocketBodyRulesDoc(doc *ojson.Doc, hasExplicitInstructions bool, opts ...cliproxyexecutor.Options) bool {
+	if doc == nil {
+		return false
+	}
+	changed := helps.SetBoolIfDifferentDoc(doc, "store", false)
+	if doc.Delete("stream") == nil {
+		changed = true
+	}
+	if doc.Delete("background") == nil {
+		changed = true
+	}
+	if stripCodexSIWCUnsupportedFieldsDoc(doc, hasExplicitInstructions, opts...) {
+		changed = true
+	}
+	return changed
+}
+
+func applyCodexSIWCCompactBodyRulesDoc(doc *ojson.Doc, hasExplicitInstructions bool, opts ...cliproxyexecutor.Options) bool {
+	if doc == nil {
+		return false
+	}
+	changed := false
+	if doc.Delete("stream") == nil {
+		changed = true
+	}
+	if doc.Delete("store") == nil {
+		changed = true
+	}
+	if stripCodexSIWCUnsupportedFieldsDoc(doc, hasExplicitInstructions, opts...) {
+		changed = true
+	}
+	return changed
+}
+
+func stripCodexSIWCUnsupportedFieldsDoc(doc *ojson.Doc, hasExplicitInstructions bool, opts ...cliproxyexecutor.Options) bool {
+	if doc == nil {
+		return false
+	}
+	// SIWC subscriptions reject configuration_update input items, so degrade
+	// them to the classic top-level reasoning.effort and accept the cache loss.
+	// An explicit model thinking suffix is an operator override: the thinking
+	// layer has already resolved it into the top-level effort, so only the
+	// unsupported items are removed in that case.
+	thinking.CollapseConfigurationUpdatesDoc(doc, len(opts) > 0 && opts[0].KeepTopLevelEffort)
+	_ = doc.Delete("prompt_cache_retention")
+	_ = doc.Delete("prompt_cache_options")
+	_ = doc.Delete("max_output_tokens")
+	_ = doc.Delete("max_completion_tokens")
+	_ = doc.Delete("temperature")
+	if !hasExplicitInstructions {
+		if inst := doc.Get("instructions"); inst.Exists() && strings.TrimSpace(inst.String()) == "" {
+			_ = doc.Delete("instructions")
+		}
+	}
+	return true
+}
+
+func normalizeCodexInstructionsDoc(doc *ojson.Doc, nativeRequest ...bool) bool {
+	if doc == nil || (len(nativeRequest) > 0 && nativeRequest[0]) {
+		return false
+	}
+	instructions := doc.Get("instructions")
+	if !instructions.Exists() || instructions.Type == ojson.Null {
+		return doc.Set("instructions", "") == nil
+	}
+	return false
+}
+
+func isCodexResponsesLiteRequestDoc(doc *ojson.Doc, headers http.Header) bool {
+	if strings.EqualFold(strings.TrimSpace(headers.Get(codexResponsesLiteHeader)), "true") {
+		return true
+	}
+	if doc == nil {
+		return false
+	}
+	value := doc.Get("client_metadata.ws_request_header_x_openai_internal_codex_responses_lite")
+	return value.Type == ojson.True || (value.Type == ojson.String && strings.EqualFold(strings.TrimSpace(value.String()), "true"))
+}
+
+func ensureImageGenerationToolDoc(doc *ojson.Doc, baseModel string, auth *cliproxyauth.Auth, headers http.Header) bool {
+	if doc == nil || isCodexResponsesLiteRequestDoc(doc, headers) {
+		return false
+	}
+	if strings.HasSuffix(baseModel, "spark") {
+		return false
+	}
+	if isCodexFreePlanAuth(auth) {
+		return false
+	}
+
+	tools := doc.Get("tools")
+	if !tools.Exists() || !tools.IsArray() {
+		return doc.SetRawBytes("tools", imageGenToolArrayJSON) == nil
+	}
+	for _, t := range tools.Array() {
+		if t.Get("type").String() == "image_generation" || isImageGenerationFunctionTool(t) {
+			return false
+		}
+	}
+	return doc.SetRawBytes("tools.-1", imageGenToolJSON) == nil
+}
+
+func normalizeCodexParallelToolCallsDoc(doc *ojson.Doc, headers http.Header) bool {
+	if doc == nil {
+		return false
+	}
+	if isCodexResponsesLiteRequestDoc(doc, headers) {
+		return helps.SetBoolIfDifferentDoc(doc, "parallel_tool_calls", false)
+	}
+	return normalizeCodexParallelToolCallsForToolsDoc(doc)
+}
+
+func normalizeCodexParallelToolCallsForToolsDoc(doc *ojson.Doc) bool {
+	if doc == nil || !doc.Get("parallel_tool_calls").Exists() {
+		return false
+	}
+
+	tools := doc.Get("tools")
+	hasTools := tools.Exists() && tools.IsArray() && len(tools.Array()) > 0
+	if hasTools {
+		return false
+	}
+
+	return doc.Delete("parallel_tool_calls") == nil
 }

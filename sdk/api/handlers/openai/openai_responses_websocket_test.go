@@ -19,6 +19,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
@@ -31,7 +32,6 @@ import (
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
-	"github.com/tidwall/gjson"
 )
 
 type homeResponsesWebsocketDispatcher struct {
@@ -147,7 +147,7 @@ func TestResponsesWebsocketHomeSelectedAuthCallbackPinsAndReusesFirstSelection(t
 		if errRead != nil {
 			t.Fatalf("read websocket response %d: %v", index+1, errRead)
 		}
-		if got := gjson.GetBytes(payload, "type").String(); got != wsEventTypeCompleted {
+		if got := ojson.GetBytesNoCopy(payload, "type").String(); got != wsEventTypeCompleted {
 			t.Fatalf("response %d type = %q, want %q: %s", index+1, got, wsEventTypeCompleted, payload)
 		}
 		if index == 0 {
@@ -639,7 +639,7 @@ type websocketProviderRouteHost struct{}
 func (*websocketProviderRouteHost) HasModelRouters() bool { return true }
 
 func (*websocketProviderRouteHost) RouteModel(_ context.Context, req pluginapi.ModelRouteRequest) (pluginapi.ModelRouteResponse, bool) {
-	if !gjson.GetBytes(req.Body, "route_to_claude").Bool() {
+	if !ojson.GetBytesNoCopy(req.Body, "route_to_claude").Bool() {
 		return pluginapi.ModelRouteResponse{}, false
 	}
 	return pluginapi.ModelRouteResponse{
@@ -1222,14 +1222,14 @@ func TestNormalizeResponsesWebsocketRequestCreate(t *testing.T) {
 	if errMsg != nil {
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
-	if gjson.GetBytes(normalized, "type").Exists() {
+	if ojson.GetBytesNoCopy(normalized, "type").Exists() {
 		t.Fatalf("normalized create request must not include type field")
 	}
-	if !gjson.GetBytes(normalized, "stream").Bool() {
+	if !ojson.GetBytesNoCopy(normalized, "stream").Bool() {
 		t.Fatalf("normalized create request must force stream=true")
 	}
-	if gjson.GetBytes(normalized, "model").String() != "test-model" {
-		t.Fatalf("unexpected model: %s", gjson.GetBytes(normalized, "model").String())
+	if ojson.GetBytesNoCopy(normalized, "model").String() != "test-model" {
+		t.Fatalf("unexpected model: %s", ojson.GetBytesNoCopy(normalized, "model").String())
 	}
 	if !bytes.Equal(last, normalized) {
 		t.Fatalf("last request snapshot should match normalized request")
@@ -1433,7 +1433,7 @@ func TestResponsesWebsocketToolCacheScanPreservesJSONRequestSemantics(t *testing
 	t.Run("uses last duplicate previous response id", func(t *testing.T) {
 		payload := []byte(`{"previous_response_id":"resp-first","previous_response_id":null,"input":[{"type":"function_call_output","id":"fco-1","call_id":"missing-call","output":"orphan"}]}`)
 		repaired, _ := prepareResponsesWebsocketFallbackTurn("duplicate-previous-response-session", payload)
-		if inputCount := gjson.GetBytes(repaired, "input.#").Int(); inputCount != 0 {
+		if inputCount := ojson.GetBytesNoCopy(repaired, "input.#").Int(); inputCount != 0 {
 			t.Fatalf("repaired input count = %d, want 0 when the last previous_response_id is null", inputCount)
 		}
 	})
@@ -1451,14 +1451,14 @@ func TestNormalizeResponsesWebsocketRequestCreateWithHistory(t *testing.T) {
 	if errMsg != nil {
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
-	if gjson.GetBytes(normalized, "type").Exists() {
+	if ojson.GetBytesNoCopy(normalized, "type").Exists() {
 		t.Fatalf("normalized subsequent create request must not include type field")
 	}
-	if gjson.GetBytes(normalized, "model").String() != "test-model" {
-		t.Fatalf("unexpected model: %s", gjson.GetBytes(normalized, "model").String())
+	if ojson.GetBytesNoCopy(normalized, "model").String() != "test-model" {
+		t.Fatalf("unexpected model: %s", ojson.GetBytesNoCopy(normalized, "model").String())
 	}
 
-	input := gjson.GetBytes(normalized, "input").Array()
+	input := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(input) != 4 {
 		t.Fatalf("merged input len = %d, want 4", len(input))
 	}
@@ -1485,24 +1485,24 @@ func TestNormalizeResponsesWebsocketRequestWithPreviousResponseIDIncremental(t *
 	if errMsg != nil {
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
-	if gjson.GetBytes(normalized, "type").Exists() {
+	if ojson.GetBytesNoCopy(normalized, "type").Exists() {
 		t.Fatalf("normalized request must not include type field")
 	}
-	if gjson.GetBytes(normalized, "previous_response_id").String() != "resp-1" {
+	if ojson.GetBytesNoCopy(normalized, "previous_response_id").String() != "resp-1" {
 		t.Fatalf("previous_response_id must be preserved in incremental mode")
 	}
-	input := gjson.GetBytes(normalized, "input").Array()
+	input := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(input) != 1 {
 		t.Fatalf("incremental input len = %d, want 1", len(input))
 	}
 	if input[0].Get("id").String() != "tool-out-1" {
 		t.Fatalf("unexpected incremental input item id: %s", input[0].Get("id").String())
 	}
-	if gjson.GetBytes(normalized, "model").String() != "test-model" {
-		t.Fatalf("unexpected model: %s", gjson.GetBytes(normalized, "model").String())
+	if ojson.GetBytesNoCopy(normalized, "model").String() != "test-model" {
+		t.Fatalf("unexpected model: %s", ojson.GetBytesNoCopy(normalized, "model").String())
 	}
-	if gjson.GetBytes(normalized, "instructions").String() != "be helpful" {
-		t.Fatalf("unexpected instructions: %s", gjson.GetBytes(normalized, "instructions").String())
+	if ojson.GetBytesNoCopy(normalized, "instructions").String() != "be helpful" {
+		t.Fatalf("unexpected instructions: %s", ojson.GetBytesNoCopy(normalized, "instructions").String())
 	}
 	if !bytes.Equal(next, normalized) {
 		t.Fatalf("next request snapshot should match normalized request")
@@ -1521,21 +1521,21 @@ func TestNormalizeResponsesWebsocketRequestInjectsPreviousResponseIDForIncrement
 	if errMsg != nil {
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
-	if got := gjson.GetBytes(normalized, "previous_response_id").String(); got != "resp-1" {
+	if got := ojson.GetBytesNoCopy(normalized, "previous_response_id").String(); got != "resp-1" {
 		t.Fatalf("previous_response_id = %q, want resp-1", got)
 	}
-	input := gjson.GetBytes(normalized, "input").Array()
+	input := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(input) != 1 {
 		t.Fatalf("incremental input len = %d, want 1: %s", len(input), normalized)
 	}
 	if input[0].Get("id").String() != "tool-out-1" {
 		t.Fatalf("unexpected incremental input item id: %s", input[0].Get("id").String())
 	}
-	if gjson.GetBytes(normalized, "model").String() != "test-model" {
-		t.Fatalf("unexpected model: %s", gjson.GetBytes(normalized, "model").String())
+	if ojson.GetBytesNoCopy(normalized, "model").String() != "test-model" {
+		t.Fatalf("unexpected model: %s", ojson.GetBytesNoCopy(normalized, "model").String())
 	}
-	if gjson.GetBytes(normalized, "instructions").String() != "be helpful" {
-		t.Fatalf("unexpected instructions: %s", gjson.GetBytes(normalized, "instructions").String())
+	if ojson.GetBytesNoCopy(normalized, "instructions").String() != "be helpful" {
+		t.Fatalf("unexpected instructions: %s", ojson.GetBytesNoCopy(normalized, "instructions").String())
 	}
 	if !bytes.Equal(next, normalized) {
 		t.Fatalf("next request snapshot should match normalized request")
@@ -1551,10 +1551,10 @@ func TestNormalizeResponsesWebsocketRequestInjectsPreviousResponseIDWhenPendingO
 	if errMsg != nil {
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
-	if got := gjson.GetBytes(normalized, "previous_response_id").String(); got != "resp-1" {
+	if got := ojson.GetBytesNoCopy(normalized, "previous_response_id").String(); got != "resp-1" {
 		t.Fatalf("previous_response_id = %q, want resp-1", got)
 	}
-	input := gjson.GetBytes(normalized, "input").Array()
+	input := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(input) != 1 || input[0].Get("id").String() != "tool-out-1" {
 		t.Fatalf("unexpected incremental input: %s", normalized)
 	}
@@ -1571,10 +1571,10 @@ func TestNormalizeResponsesWebsocketRequestSkipsPreviousResponseIDWhenPendingOut
 	if errMsg != nil {
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
-	if gjson.GetBytes(normalized, "previous_response_id").Exists() {
+	if ojson.GetBytesNoCopy(normalized, "previous_response_id").Exists() {
 		t.Fatalf("previous_response_id must not be injected when pending tool output is missing: %s", normalized)
 	}
-	input := gjson.GetBytes(normalized, "input").Array()
+	input := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(input) != 1 {
 		t.Fatalf("replacement input len = %d, want 1: %s", len(input), normalized)
 	}
@@ -1608,13 +1608,13 @@ func TestNormalizeResponsesWebsocketRequestReplacesCodexLocalCompactionTranscrip
 	if errMsg != nil {
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
-	if gjson.GetBytes(normalized, "previous_response_id").Exists() {
+	if ojson.GetBytesNoCopy(normalized, "previous_response_id").Exists() {
 		t.Fatalf("replacement request must not include previous_response_id: %s", normalized)
 	}
-	if got, want := gjson.GetBytes(normalized, "input").Raw, gjson.GetBytes(raw, "input").Raw; got != want {
+	if got, want := ojson.GetBytesNoCopy(normalized, "input").Raw, ojson.GetBytesNoCopy(raw, "input").Raw; got != want {
 		t.Fatalf("replacement input did not preserve the complete new transcript:\n got: %s\nwant: %s", got, want)
 	}
-	input := gjson.GetBytes(normalized, "input").Array()
+	input := ojson.GetBytesNoCopy(normalized, "input").Array()
 	wantIDs := []string{"", "initial-context", "compacted-user", "local-summary", "turn-context", "incoming-user"}
 	if len(input) != len(wantIDs) {
 		t.Fatalf("replacement input len = %d, want %d: %s", len(input), len(wantIDs), normalized)
@@ -1638,19 +1638,19 @@ func TestNormalizeResponsesWebsocketRequestReplacesCodexLocalCompactionTranscrip
 			t.Fatalf("replacement input contains stale item %q: %s", staleID, normalized)
 		}
 	}
-	if got := gjson.GetBytes(normalized, "model").String(); got != "gpt-5.6-sol" {
+	if got := ojson.GetBytesNoCopy(normalized, "model").String(); got != "gpt-5.6-sol" {
 		t.Fatalf("model = %q, want gpt-5.6-sol", got)
 	}
-	if got := gjson.GetBytes(normalized, "instructions").String(); got != "be helpful" {
+	if got := ojson.GetBytesNoCopy(normalized, "instructions").String(); got != "be helpful" {
 		t.Fatalf("instructions = %q, want be helpful", got)
 	}
-	if !gjson.GetBytes(normalized, "stream").Bool() {
+	if !ojson.GetBytesNoCopy(normalized, "stream").Bool() {
 		t.Fatalf("stream must be enabled: %s", normalized)
 	}
-	if !gjson.GetBytes(normalized, "parallel_tool_calls").Bool() {
+	if !ojson.GetBytesNoCopy(normalized, "parallel_tool_calls").Bool() {
 		t.Fatalf("parallel_tool_calls was not preserved: %s", normalized)
 	}
-	if got := gjson.GetBytes(normalized, "client_metadata.ws_request_header_x_openai_internal_codex_responses_lite").String(); got != "true" {
+	if got := ojson.GetBytesNoCopy(normalized, "client_metadata.ws_request_header_x_openai_internal_codex_responses_lite").String(); got != "true" {
 		t.Fatalf("Responses Lite client metadata = %q, want true: %s", got, normalized)
 	}
 	if !bytes.Equal(next, normalized) {
@@ -1659,7 +1659,7 @@ func TestNormalizeResponsesWebsocketRequestReplacesCodexLocalCompactionTranscrip
 }
 
 func TestShouldReplaceWebsocketTranscriptCodexLocalCompactionSemantics(t *testing.T) {
-	compactedInput := gjson.Parse(fmt.Sprintf(`[
+	compactedInput := ojson.Parse(fmt.Sprintf(`[
 		{"type":"message","role":"developer","content":[{"type":"input_text","text":"initial context"}]},
 		{"type":"message","role":"user","content":[{"type":"input_text","text":"retained context"}]},
 		{"type":"message","role":"user","content":[{"type":"input_text","text":%q}]}
@@ -1680,7 +1680,7 @@ func TestShouldReplaceWebsocketTranscriptCodexLocalCompactionSemantics(t *testin
 		t.Fatal("response.append must not be treated as a full local compaction reset")
 	}
 
-	ordinaryInput := gjson.Parse(`[
+	ordinaryInput := ojson.Parse(`[
 		{"type":"message","role":"developer","content":"Please summarize future messages."},
 		{"type":"message","role":"user","content":[{"type":"input_text","text":"Please create a compacted summary of this text."}]}
 	]`)
@@ -1709,7 +1709,7 @@ func TestCodexLocalCompactionSummaryContentShapes(t *testing.T) {
 			if test.name == "developer summary" {
 				role = "developer"
 			}
-			input := gjson.Parse(fmt.Sprintf(`[{"type":"message","role":%q,"content":%s}]`, role, test.content))
+			input := ojson.Parse(fmt.Sprintf(`[{"type":"message","role":%q,"content":%s}]`, role, test.content))
 			if got := inputHasCodexLocalCompactionSummary(input); got != test.want {
 				t.Fatalf("inputHasCodexLocalCompactionSummary() = %t, want %t", got, test.want)
 			}
@@ -1735,7 +1735,7 @@ func TestCodexLocalCompactionSummaryAdditionalToolsConstraints(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := inputHasCodexLocalCompactionSummary(gjson.Parse(test.input)); got != test.want {
+			if got := inputHasCodexLocalCompactionSummary(ojson.Parse(test.input)); got != test.want {
 				t.Fatalf("inputHasCodexLocalCompactionSummary() = %t, want %t", got, test.want)
 			}
 		})
@@ -1757,7 +1757,7 @@ func TestCodexLocalCompactionSummaryRejectsOrdinaryHistoryItems(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			input := gjson.Parse(fmt.Sprintf(`[%s,{"type":"message","role":"user","content":[{"type":"input_text","text":%q}]}]`, test.historyItem, codexLocalCompactionSummaryPrefix+"\nSummary body."))
+			input := ojson.Parse(fmt.Sprintf(`[%s,{"type":"message","role":"user","content":[{"type":"input_text","text":%q}]}]`, test.historyItem, codexLocalCompactionSummaryPrefix+"\nSummary body."))
 			if inputHasCodexLocalCompactionSummary(input) {
 				t.Fatal("ordinary transcript history must not match the local user-summary shape")
 			}
@@ -1780,10 +1780,10 @@ func TestNormalizeResponsesWebsocketRequestWithPreviousResponseIDMergedWhenIncre
 	if errMsg != nil {
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
-	if gjson.GetBytes(normalized, "previous_response_id").Exists() {
+	if ojson.GetBytesNoCopy(normalized, "previous_response_id").Exists() {
 		t.Fatalf("previous_response_id must be removed when incremental mode is disabled")
 	}
-	input := gjson.GetBytes(normalized, "input").Array()
+	input := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(input) != 4 {
 		t.Fatalf("merged input len = %d, want 4", len(input))
 	}
@@ -1810,7 +1810,7 @@ func TestNormalizeResponsesWebsocketRequestAppend(t *testing.T) {
 	if errMsg != nil {
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
-	input := gjson.GetBytes(normalized, "input").Array()
+	input := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(input) != 5 {
 		t.Fatalf("merged input len = %d, want 5", len(input))
 	}
@@ -1845,8 +1845,8 @@ func TestWebsocketJSONPayloadsFromChunk(t *testing.T) {
 	if len(payloads) != 1 {
 		t.Fatalf("payloads len = %d, want 1", len(payloads))
 	}
-	if gjson.GetBytes(payloads[0], "type").String() != "response.created" {
-		t.Fatalf("unexpected payload type: %s", gjson.GetBytes(payloads[0], "type").String())
+	if ojson.GetBytesNoCopy(payloads[0], "type").String() != "response.created" {
+		t.Fatalf("unexpected payload type: %s", ojson.GetBytesNoCopy(payloads[0], "type").String())
 	}
 }
 
@@ -1857,8 +1857,8 @@ func TestWebsocketJSONPayloadsFromPlainJSONChunk(t *testing.T) {
 	if len(payloads) != 1 {
 		t.Fatalf("payloads len = %d, want 1", len(payloads))
 	}
-	if gjson.GetBytes(payloads[0], "type").String() != "response.completed" {
-		t.Fatalf("unexpected payload type: %s", gjson.GetBytes(payloads[0], "type").String())
+	if ojson.GetBytesNoCopy(payloads[0], "type").String() != "response.completed" {
+		t.Fatalf("unexpected payload type: %s", ojson.GetBytesNoCopy(payloads[0], "type").String())
 	}
 }
 
@@ -1866,7 +1866,7 @@ func TestResponseCompletedOutputFromPayload(t *testing.T) {
 	payload := []byte(`{"type":"response.completed","response":{"id":"resp-1","output":[{"type":"message","id":"out-1"}]}}`)
 
 	output := responseCompletedOutputFromPayload(payload, nil, nil)
-	items := gjson.ParseBytes(output).Array()
+	items := ojson.GetBytesNoCopy(output, "@this").Array()
 	if len(items) != 1 {
 		t.Fatalf("output len = %d, want 1", len(items))
 	}
@@ -1884,7 +1884,7 @@ func TestResponseCompletedOutputFromPayloadDropsIncompleteCollectedToolCalls(t *
 	}
 
 	output := responseCompletedOutputFromPayload(payload, collector, nil)
-	items := gjson.ParseBytes(output).Array()
+	items := ojson.GetBytesNoCopy(output, "@this").Array()
 	if len(items) != 2 {
 		t.Fatalf("output len = %d, want 2: %s", len(items), output)
 	}
@@ -1911,7 +1911,7 @@ func TestRestoreResponsesWebsocketCompletionOutputReconcilesConflictingToolCall(
 	collector := map[int64][]byte{0: []byte(`{"type":"custom_tool_call","id":"ctc-1","call_id":"call-1","name":"exec","input":"pwd","status":"completed"}`)}
 
 	restored := restoreResponsesWebsocketCompletionOutput(payload, collector, nil)
-	output := gjson.GetBytes(restored, "response.output").Array()
+	output := ojson.GetBytesNoCopy(restored, "response.output").Array()
 	if len(output) != 2 {
 		t.Fatalf("restored output len = %d, want 2: %s", len(output), restored)
 	}
@@ -1921,13 +1921,13 @@ func TestRestoreResponsesWebsocketCompletionOutputReconcilesConflictingToolCall(
 	if output[1].Get("type").String() != "custom_tool_call" || output[1].Get("call_id").String() != "call-1" {
 		t.Fatalf("conflicting tool call was not reconciled: %s", output[1].Raw)
 	}
-	if input := output[1].Get("input"); input.Type != gjson.String || input.String() != "pwd" {
+	if input := output[1].Get("input"); input.Type != ojson.String || input.String() != "pwd" {
 		t.Fatalf("reconciled custom tool input = %s, want string pwd", input.Raw)
 	}
 
 	lastRequest := []byte(`{"model":"gpt-test","stream":true,"input":[{"type":"message","id":"user-1","role":"user","content":"run pwd"}]}`)
 	nextRequest := []byte(`{"type":"response.create","previous_response_id":"resp-1","input":[{"type":"custom_tool_call_output","call_id":"call-1","output":"ok"}]}`)
-	completedOutput := []byte(gjson.GetBytes(restored, "response.output").Raw)
+	completedOutput := []byte(ojson.GetBytesNoCopy(restored, "response.output").Raw)
 	normalized, _, errMsg := normalizeResponsesWebsocketRequestWithIncrementalState(
 		nextRequest,
 		lastRequest,
@@ -1940,10 +1940,10 @@ func TestRestoreResponsesWebsocketCompletionOutputReconcilesConflictingToolCall(
 	if errMsg != nil {
 		t.Fatalf("normalize next request: %v", errMsg.Error)
 	}
-	if gjson.GetBytes(normalized, "previous_response_id").Exists() {
+	if ojson.GetBytesNoCopy(normalized, "previous_response_id").Exists() {
 		t.Fatalf("previous_response_id must not be forwarded to HTTP/SSE upstream: %s", normalized)
 	}
-	input := gjson.GetBytes(normalized, "input").Array()
+	input := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(input) != 4 {
 		t.Fatalf("replayed input len = %d, want 4: %s", len(input), normalized)
 	}
@@ -1962,7 +1962,7 @@ func TestRestoreResponsesWebsocketCompletionOutputReconcilesConflictingToolCall(
 	if !ok {
 		t.Fatalf("reconciled custom tool call was not cached")
 	}
-	if gjson.GetBytes(cached, "type").String() != "custom_tool_call" || gjson.GetBytes(cached, "input").String() != "pwd" {
+	if ojson.GetBytesNoCopy(cached, "type").String() != "custom_tool_call" || ojson.GetBytesNoCopy(cached, "input").String() != "pwd" {
 		t.Fatalf("cached tool call is invalid: %s", cached)
 	}
 }
@@ -1993,7 +1993,7 @@ func TestIsCompleteResponsesWebsocketToolCallRequiresStringFields(t *testing.T) 
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isCompleteResponsesWebsocketToolCall(gjson.Parse(tt.item)); got != tt.want {
+			if got := isCompleteResponsesWebsocketToolCall(ojson.Parse(tt.item)); got != tt.want {
 				t.Fatalf("isCompleteResponsesWebsocketToolCall() = %t, want %t", got, tt.want)
 			}
 		})
@@ -2091,14 +2091,14 @@ func TestRepairResponsesWebsocketToolCallsInsertsCachedOutput(t *testing.T) {
 
 	cacheWarm := []byte(`{"previous_response_id":"resp-1","input":[{"type":"function_call_output","call_id":"call-1","output":"ok"}]}`)
 	warmed := repairResponsesWebsocketToolCallsWithCache(cache, sessionKey, cacheWarm)
-	if gjson.GetBytes(warmed, "input.0.call_id").String() != "call-1" {
+	if ojson.GetBytesNoCopy(warmed, "input.0.call_id").String() != "call-1" {
 		t.Fatalf("expected warmup output to remain")
 	}
 
 	raw := []byte(`{"input":[{"type":"function_call","call_id":"call-1","name":"tool"},{"type":"message","id":"msg-1"}]}`)
 	repaired := repairResponsesWebsocketToolCallsWithCache(cache, sessionKey, raw)
 
-	input := gjson.GetBytes(repaired, "input").Array()
+	input := ojson.GetBytesNoCopy(repaired, "input").Array()
 	if len(input) != 3 {
 		t.Fatalf("repaired input len = %d, want 3", len(input))
 	}
@@ -2121,7 +2121,7 @@ func TestRepairResponsesWebsocketToolCallsDeduplicatesInputItemsByID(t *testing.
 		t.Run(fmt.Sprintf("session_key_%q", sessionKey), func(t *testing.T) {
 			repaired := repairResponsesWebsocketToolCallsWithCache(cache, sessionKey, raw)
 
-			items := gjson.GetBytes(repaired, "input").Array()
+			items := ojson.GetBytesNoCopy(repaired, "input").Array()
 			if len(items) != 1 {
 				t.Fatalf("repaired input len = %d, want 1: %s", len(items), repaired)
 			}
@@ -2173,13 +2173,13 @@ func TestResponsesWebsocketToolCacheTurnCommitsOnlyOnSuccess(t *testing.T) {
 
 	_, turn := prepareResponsesWebsocketFallbackTurn(sessionKey, []byte(`{"input":[{"type":"function_call_output","id":"fco-1","call_id":"call-1","output":"cached result"}]}`))
 	beforeCommit := repairResponsesWebsocketToolCallsWithoutRecording(sessionKey, []byte(`{"input":[{"type":"function_call","id":"fc-next","call_id":"call-1","name":"lookup","arguments":"{}"}]}`))
-	if gjson.GetBytes(beforeCommit, "input.#").Int() != 0 {
+	if ojson.GetBytesNoCopy(beforeCommit, "input.#").Int() != 0 {
 		t.Fatalf("uncommitted turn populated global cache: %s", beforeCommit)
 	}
 
 	turn.commit()
 	afterCommit := repairResponsesWebsocketToolCallsWithoutRecording(sessionKey, []byte(`{"input":[{"type":"function_call","id":"fc-next","call_id":"call-1","name":"lookup","arguments":"{}"}]}`))
-	input := gjson.GetBytes(afterCommit, "input").Array()
+	input := ojson.GetBytesNoCopy(afterCommit, "input").Array()
 	if len(input) != 2 || input[1].Get("output").String() != "cached result" {
 		t.Fatalf("committed turn was not available to tool repair: %s", afterCommit)
 	}
@@ -2209,7 +2209,7 @@ func TestRepairResponsesWebsocketToolCallsDropsOrphanFunctionCall(t *testing.T) 
 	raw := []byte(`{"input":[{"type":"function_call","call_id":"call-1","name":"tool"},{"type":"message","id":"msg-1"}]}`)
 	repaired := repairResponsesWebsocketToolCallsWithCache(cache, sessionKey, raw)
 
-	input := gjson.GetBytes(repaired, "input").Array()
+	input := ojson.GetBytesNoCopy(repaired, "input").Array()
 	if len(input) != 1 {
 		t.Fatalf("repaired input len = %d, want 1", len(input))
 	}
@@ -2228,7 +2228,7 @@ func TestRepairResponsesWebsocketToolCallsInsertsCachedCallForOrphanOutput(t *te
 	raw := []byte(`{"input":[{"type":"function_call_output","call_id":"call-1","output":"ok"},{"type":"message","id":"msg-1"}]}`)
 	repaired := repairResponsesWebsocketToolCallsWithCaches(outputCache, callCache, sessionKey, raw)
 
-	input := gjson.GetBytes(repaired, "input").Array()
+	input := ojson.GetBytesNoCopy(repaired, "input").Array()
 	if len(input) != 3 {
 		t.Fatalf("repaired input len = %d, want 3", len(input))
 	}
@@ -2253,10 +2253,10 @@ func TestRepairResponsesWebsocketToolCallsKeepsPreviousResponseOutputIncremental
 	raw := []byte(`{"previous_response_id":"resp-latest","input":[{"type":"function_call_output","call_id":"call-1","id":"tool-out-1","output":"ok"},{"type":"message","id":"msg-1"}]}`)
 	repaired := repairResponsesWebsocketToolCallsWithCaches(outputCache, callCache, sessionKey, raw)
 
-	if got := gjson.GetBytes(repaired, "previous_response_id").String(); got != "resp-latest" {
+	if got := ojson.GetBytesNoCopy(repaired, "previous_response_id").String(); got != "resp-latest" {
 		t.Fatalf("previous_response_id = %q, want resp-latest", got)
 	}
-	input := gjson.GetBytes(repaired, "input").Array()
+	input := ojson.GetBytesNoCopy(repaired, "input").Array()
 	if len(input) != 2 {
 		t.Fatalf("repaired input len = %d, want 2: %s", len(input), repaired)
 	}
@@ -2278,10 +2278,10 @@ func TestRepairResponsesWebsocketToolCallsKeepsPreviousResponseCallIncremental(t
 	raw := []byte(`{"previous_response_id":"resp-latest","input":[{"type":"function_call","id":"fc-1","call_id":"call-1","name":"tool"},{"type":"message","id":"msg-1"}]}`)
 	repaired := repairResponsesWebsocketToolCallsWithCaches(outputCache, callCache, sessionKey, raw)
 
-	if got := gjson.GetBytes(repaired, "previous_response_id").String(); got != "resp-latest" {
+	if got := ojson.GetBytesNoCopy(repaired, "previous_response_id").String(); got != "resp-latest" {
 		t.Fatalf("previous_response_id = %q, want resp-latest", got)
 	}
-	input := gjson.GetBytes(repaired, "input").Array()
+	input := ojson.GetBytesNoCopy(repaired, "input").Array()
 	if len(input) != 2 {
 		t.Fatalf("repaired input len = %d, want 2: %s", len(input), repaired)
 	}
@@ -2301,7 +2301,7 @@ func TestRepairResponsesWebsocketToolCallsDropsOrphanOutputWhenCallMissing(t *te
 	raw := []byte(`{"input":[{"type":"function_call_output","call_id":"call-1","output":"ok"},{"type":"message","id":"msg-1"}]}`)
 	repaired := repairResponsesWebsocketToolCallsWithCaches(outputCache, callCache, sessionKey, raw)
 
-	input := gjson.GetBytes(repaired, "input").Array()
+	input := ojson.GetBytesNoCopy(repaired, "input").Array()
 	if len(input) != 1 {
 		t.Fatalf("repaired input len = %d, want 1", len(input))
 	}
@@ -2316,14 +2316,14 @@ func TestRepairResponsesWebsocketToolCallsInsertsCachedCustomToolOutput(t *testi
 
 	cacheWarm := []byte(`{"previous_response_id":"resp-1","input":[{"type":"custom_tool_call_output","call_id":"call-1","output":"ok"}]}`)
 	warmed := repairResponsesWebsocketToolCallsWithCache(cache, sessionKey, cacheWarm)
-	if gjson.GetBytes(warmed, "input.0.call_id").String() != "call-1" {
+	if ojson.GetBytesNoCopy(warmed, "input.0.call_id").String() != "call-1" {
 		t.Fatalf("expected warmup output to remain")
 	}
 
 	raw := []byte(`{"input":[{"type":"custom_tool_call","call_id":"call-1","name":"apply_patch"},{"type":"message","id":"msg-1"}]}`)
 	repaired := repairResponsesWebsocketToolCallsWithCache(cache, sessionKey, raw)
 
-	input := gjson.GetBytes(repaired, "input").Array()
+	input := ojson.GetBytesNoCopy(repaired, "input").Array()
 	if len(input) != 3 {
 		t.Fatalf("repaired input len = %d, want 3", len(input))
 	}
@@ -2345,7 +2345,7 @@ func TestRepairResponsesWebsocketToolCallsDropsOrphanCustomToolCall(t *testing.T
 	raw := []byte(`{"input":[{"type":"custom_tool_call","call_id":"call-1","name":"apply_patch"},{"type":"message","id":"msg-1"}]}`)
 	repaired := repairResponsesWebsocketToolCallsWithCache(cache, sessionKey, raw)
 
-	input := gjson.GetBytes(repaired, "input").Array()
+	input := ojson.GetBytesNoCopy(repaired, "input").Array()
 	if len(input) != 1 {
 		t.Fatalf("repaired input len = %d, want 1", len(input))
 	}
@@ -2364,7 +2364,7 @@ func TestRepairResponsesWebsocketToolCallsInsertsCachedCustomToolCallForOrphanOu
 	raw := []byte(`{"input":[{"type":"custom_tool_call_output","call_id":"call-1","output":"ok"},{"type":"message","id":"msg-1"}]}`)
 	repaired := repairResponsesWebsocketToolCallsWithCaches(outputCache, callCache, sessionKey, raw)
 
-	input := gjson.GetBytes(repaired, "input").Array()
+	input := ojson.GetBytesNoCopy(repaired, "input").Array()
 	if len(input) != 3 {
 		t.Fatalf("repaired input len = %d, want 3", len(input))
 	}
@@ -2389,10 +2389,10 @@ func TestRepairResponsesWebsocketToolCallsKeepsPreviousResponseCustomToolOutputI
 	raw := []byte(`{"previous_response_id":"resp-latest","input":[{"type":"custom_tool_call_output","call_id":"call-1","output":"ok"},{"type":"message","id":"msg-1"}]}`)
 	repaired := repairResponsesWebsocketToolCallsWithCaches(outputCache, callCache, sessionKey, raw)
 
-	if got := gjson.GetBytes(repaired, "previous_response_id").String(); got != "resp-latest" {
+	if got := ojson.GetBytesNoCopy(repaired, "previous_response_id").String(); got != "resp-latest" {
 		t.Fatalf("previous_response_id = %q, want resp-latest", got)
 	}
-	input := gjson.GetBytes(repaired, "input").Array()
+	input := ojson.GetBytesNoCopy(repaired, "input").Array()
 	if len(input) != 2 {
 		t.Fatalf("repaired input len = %d, want 2: %s", len(input), repaired)
 	}
@@ -2412,7 +2412,7 @@ func TestRepairResponsesWebsocketToolCallsDropsOrphanCustomToolOutputWhenCallMis
 	raw := []byte(`{"input":[{"type":"custom_tool_call_output","call_id":"call-1","output":"ok"},{"type":"message","id":"msg-1"}]}`)
 	repaired := repairResponsesWebsocketToolCallsWithCaches(outputCache, callCache, sessionKey, raw)
 
-	input := gjson.GetBytes(repaired, "input").Array()
+	input := ojson.GetBytesNoCopy(repaired, "input").Array()
 	if len(input) != 1 {
 		t.Fatalf("repaired input len = %d, want 1", len(input))
 	}
@@ -2448,7 +2448,7 @@ func TestRecordResponsesWebsocketToolCallsFromPayloadWithCache(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected cached tool call")
 	}
-	if gjson.GetBytes(cached, "type").String() != "function_call" || gjson.GetBytes(cached, "call_id").String() != "call-1" {
+	if ojson.GetBytesNoCopy(cached, "type").String() != "function_call" || ojson.GetBytesNoCopy(cached, "call_id").String() != "call-1" {
 		t.Fatalf("unexpected cached tool call: %s", cached)
 	}
 }
@@ -2464,7 +2464,7 @@ func TestRecordResponsesWebsocketCustomToolCallsFromCompletedPayloadWithCache(t 
 	if !ok {
 		t.Fatalf("expected cached custom tool call")
 	}
-	if gjson.GetBytes(cached, "type").String() != "custom_tool_call" || gjson.GetBytes(cached, "call_id").String() != "call-1" {
+	if ojson.GetBytesNoCopy(cached, "type").String() != "custom_tool_call" || ojson.GetBytesNoCopy(cached, "call_id").String() != "call-1" {
 		t.Fatalf("unexpected cached custom tool call: %s", cached)
 	}
 }
@@ -2480,7 +2480,7 @@ func TestRecordResponsesWebsocketCustomToolCallsFromOutputItemDoneWithCache(t *t
 	if !ok {
 		t.Fatalf("expected cached custom tool call")
 	}
-	if gjson.GetBytes(cached, "type").String() != "custom_tool_call" || gjson.GetBytes(cached, "call_id").String() != "call-1" {
+	if ojson.GetBytesNoCopy(cached, "type").String() != "custom_tool_call" || ojson.GetBytesNoCopy(cached, "call_id").String() != "call-1" {
 		t.Fatalf("unexpected cached custom tool call: %s", cached)
 	}
 }
@@ -2540,7 +2540,7 @@ func testForwardResponsesWebsocketCompletedOutput(t *testing.T, preserve bool) {
 			serverErrCh <- fmt.Errorf("unexpected websocket error message: %v", errMsg.Error)
 			return
 		}
-		if gjson.GetBytes(completedOutput, "0.id").String() != "call-1" {
+		if ojson.GetBytesNoCopy(completedOutput, "0.id").String() != "call-1" {
 			serverErrCh <- errors.New("completed output not restored")
 			return
 		}
@@ -2576,7 +2576,7 @@ func testForwardResponsesWebsocketCompletedOutput(t *testing.T, preserve bool) {
 	if errReadMessage != nil {
 		t.Fatalf("read output item websocket message: %v", errReadMessage)
 	}
-	if got := gjson.GetBytes(outputItemPayload, "type").String(); got != "response.output_item.done" {
+	if got := ojson.GetBytesNoCopy(outputItemPayload, "type").String(); got != "response.output_item.done" {
 		t.Fatalf("output item payload type = %s, want response.output_item.done", got)
 	}
 
@@ -2584,8 +2584,8 @@ func testForwardResponsesWebsocketCompletedOutput(t *testing.T, preserve bool) {
 	if errReadMessage != nil {
 		t.Fatalf("read completion websocket message: %v", errReadMessage)
 	}
-	if gjson.GetBytes(payload, "type").String() != wsEventTypeCompleted {
-		t.Fatalf("payload type = %s, want %s", gjson.GetBytes(payload, "type").String(), wsEventTypeCompleted)
+	if ojson.GetBytesNoCopy(payload, "type").String() != wsEventTypeCompleted {
+		t.Fatalf("payload type = %s, want %s", ojson.GetBytesNoCopy(payload, "type").String(), wsEventTypeCompleted)
 	}
 	if strings.Contains(string(payload), "response.done") {
 		t.Fatalf("payload unexpectedly rewrote completed event: %s", payload)
@@ -2594,7 +2594,7 @@ func testForwardResponsesWebsocketCompletedOutput(t *testing.T, preserve bool) {
 		if string(payload) != `{"type":"response.completed","response":{"id":"resp-1","output":[]}}` {
 			t.Fatalf("native completion changed: %s", payload)
 		}
-	} else if got := gjson.GetBytes(payload, "response.output.0.id").String(); got != "call-1" {
+	} else if got := ojson.GetBytesNoCopy(payload, "response.output.0.id").String(); got != "call-1" {
 		t.Fatalf("downstream completion output id = %q, want call-1; payload=%s", got, payload)
 	}
 
@@ -2647,7 +2647,7 @@ func TestForwardResponsesWebsocketTreatsResponseDoneAsTerminalWithoutRewriting(t
 			serverErrCh <- fmt.Errorf("unexpected websocket error message: %v", errMsg.Error)
 			return
 		}
-		if gjson.GetBytes(completedOutput, "0.id").String() != "out-1" {
+		if ojson.GetBytesNoCopy(completedOutput, "0.id").String() != "out-1" {
 			serverErrCh <- errors.New("done output not captured")
 			return
 		}
@@ -2679,7 +2679,7 @@ func TestForwardResponsesWebsocketTreatsResponseDoneAsTerminalWithoutRewriting(t
 	if errReadMessage != nil {
 		t.Fatalf("read websocket message: %v", errReadMessage)
 	}
-	if got := gjson.GetBytes(payload, "type").String(); got != "response.done" {
+	if got := ojson.GetBytesNoCopy(payload, "type").String(); got != "response.done" {
 		t.Fatalf("payload type = %s, want response.done; payload=%s", got, payload)
 	}
 
@@ -2839,7 +2839,7 @@ func TestForwardResponsesWebsocketTreatsErrorPayloadAsTerminal(t *testing.T) {
 	if errReadMessage != nil {
 		t.Fatalf("read websocket message: %v", errReadMessage)
 	}
-	if got := gjson.GetBytes(payload, "type").String(); got != wsEventTypeError {
+	if got := ojson.GetBytesNoCopy(payload, "type").String(); got != wsEventTypeError {
 		t.Fatalf("payload type = %s, want %s; payload=%s", got, wsEventTypeError, payload)
 	}
 
@@ -3081,17 +3081,17 @@ func TestResponsesWebsocketSendsJSONErrorOnUpstreamCyberPolicyDisconnect(t *test
 		t.Fatalf("msgType = %d, want TextMessage (%d)", msgType, websocket.TextMessage)
 	}
 
-	if gjson.GetBytes(payload, "type").String() != "error" {
-		t.Fatalf("payload type = %q, want %q", gjson.GetBytes(payload, "type").String(), "error")
+	if ojson.GetBytesNoCopy(payload, "type").String() != "error" {
+		t.Fatalf("payload type = %q, want %q", ojson.GetBytesNoCopy(payload, "type").String(), "error")
 	}
-	if status := int(gjson.GetBytes(payload, "status").Int()); status != http.StatusBadRequest {
+	if status := int(ojson.GetBytesNoCopy(payload, "status").Int()); status != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", status, http.StatusBadRequest)
 	}
-	if gjson.GetBytes(payload, "error.code").String() != "cyber_policy" {
-		t.Fatalf("error.code = %q, want %q", gjson.GetBytes(payload, "error.code").String(), "cyber_policy")
+	if ojson.GetBytesNoCopy(payload, "error.code").String() != "cyber_policy" {
+		t.Fatalf("error.code = %q, want %q", ojson.GetBytesNoCopy(payload, "error.code").String(), "cyber_policy")
 	}
-	if !strings.Contains(gjson.GetBytes(payload, "error.message").String(), "cybersecurity risk") {
-		t.Fatalf("error.message = %q, want cybersecurity risk text", gjson.GetBytes(payload, "error.message").String())
+	if !strings.Contains(ojson.GetBytesNoCopy(payload, "error.message").String(), "cybersecurity risk") {
+		t.Fatalf("error.message = %q, want cybersecurity risk text", ojson.GetBytesNoCopy(payload, "error.message").String())
 	}
 	if _, duplicate, errRead := conn.ReadMessage(); errRead == nil {
 		t.Fatalf("received duplicate error frame: %s", duplicate)
@@ -3219,7 +3219,7 @@ func TestResponsesWebsocketExposesCyberPolicyRegardlessOfStatus(t *testing.T) {
 			if errRead != nil {
 				t.Fatalf("cyber_policy rejection was hidden at status %d: %v", status, errRead)
 			}
-			if got := gjson.GetBytes(payload, "error.code").String(); got != "cyber_policy" {
+			if got := ojson.GetBytesNoCopy(payload, "error.code").String(); got != "cyber_policy" {
 				t.Fatalf("error.code = %q, want cyber_policy: %s", got, payload)
 			}
 		})
@@ -3267,23 +3267,23 @@ func TestResponsesWebsocketExposesTerminalOAuthError(t *testing.T) {
 	if errRead != nil {
 		t.Fatalf("terminal OAuth rejection was hidden: %v", errRead)
 	}
-	if got := gjson.GetBytes(payload, "type").String(); got != "error" {
+	if got := ojson.GetBytesNoCopy(payload, "type").String(); got != "error" {
 		t.Fatalf("type = %q, want error: %s", got, payload)
 	}
-	if got := gjson.GetBytes(payload, "status").Int(); got != http.StatusServiceUnavailable {
+	if got := ojson.GetBytesNoCopy(payload, "status").Int(); got != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503: %s", got, payload)
 	}
-	if got := gjson.GetBytes(payload, "error.type").String(); got != "authentication_error" {
+	if got := ojson.GetBytesNoCopy(payload, "error.type").String(); got != "authentication_error" {
 		t.Fatalf("error.type = %q, want authentication_error: %s", got, payload)
 	}
-	if got := gjson.GetBytes(payload, "error.code").String(); got != "upstream_authentication_required" {
+	if got := ojson.GetBytesNoCopy(payload, "error.code").String(); got != "upstream_authentication_required" {
 		t.Fatalf("error.code = %q, want upstream_authentication_required: %s", got, payload)
 	}
-	retryable := gjson.GetBytes(payload, "error.retryable")
+	retryable := ojson.GetBytesNoCopy(payload, "error.retryable")
 	if !retryable.Exists() || retryable.Bool() {
 		t.Fatalf("error.retryable = %v, want explicit false: %s", retryable, payload)
 	}
-	if !strings.Contains(gjson.GetBytes(payload, "error.message").String(), "refresh_token_reused") {
+	if !strings.Contains(ojson.GetBytesNoCopy(payload, "error.message").String(), "refresh_token_reused") {
 		t.Fatalf("error.message missing refresh_token_reused: %s", payload)
 	}
 }
@@ -3314,7 +3314,7 @@ func TestResponsesWebsocketTerminalErrorWrittenOnceAcrossForwardAndDisconnect(t 
 			defer wg.Done()
 			<-start
 			payload, _, errWrite := writeResponsesWebsocketTerminalError(writer, nil, errMsg, nil)
-			if !errors.Is(errWrite, websocket.ErrCloseSent) || gjson.GetBytes(payload, "error.code").String() != "cyber_policy" {
+			if !errors.Is(errWrite, websocket.ErrCloseSent) || ojson.GetBytesNoCopy(payload, "error.code").String() != "cyber_policy" {
 				resultCh <- fmt.Errorf("err-channel terminal write failed: err=%v payload=%s", errWrite, payload)
 			}
 		}()
@@ -3323,7 +3323,7 @@ func TestResponsesWebsocketTerminalErrorWrittenOnceAcrossForwardAndDisconnect(t 
 			<-start
 			payload := []byte(`{"type":"error","status":400,"error":{"type":"invalid_request","code":"cyber_policy","message":"blocked"}}`)
 			writtenPayload, _, errWrite := writeResponsesWebsocketTerminalError(writer, nil, errMsg, payload)
-			if !errors.Is(errWrite, websocket.ErrCloseSent) || gjson.GetBytes(writtenPayload, "error.code").String() != "cyber_policy" {
+			if !errors.Is(errWrite, websocket.ErrCloseSent) || ojson.GetBytesNoCopy(writtenPayload, "error.code").String() != "cyber_policy" {
 				resultCh <- fmt.Errorf("payload terminal write failed: err=%v payload=%s", errWrite, writtenPayload)
 			}
 		}()
@@ -3357,7 +3357,7 @@ func TestResponsesWebsocketTerminalErrorWrittenOnceAcrossForwardAndDisconnect(t 
 			break
 		}
 		textFrames++
-		if got := gjson.GetBytes(payload, "error.code").String(); got != "cyber_policy" {
+		if got := ojson.GetBytesNoCopy(payload, "error.code").String(); got != "cyber_policy" {
 			t.Fatalf("terminal error code = %q, want cyber_policy: %s", got, payload)
 		}
 	}
@@ -3430,13 +3430,13 @@ func TestResponsesWebsocketCodexWebsocketPassthroughPassesCompactedRequestWithou
 	if len(payloads) != 2 {
 		t.Fatalf("passthrough payload count = %d, want 2", len(payloads))
 	}
-	if got := gjson.GetBytes(payloads[0], "input").Raw; got != gjson.GetBytes(firstRequest, "input").Raw {
-		t.Fatalf("first passthrough input = %s, want %s", got, gjson.GetBytes(firstRequest, "input").Raw)
+	if got := ojson.GetBytesNoCopy(payloads[0], "input").Raw; got != ojson.GetBytesNoCopy(firstRequest, "input").Raw {
+		t.Fatalf("first passthrough input = %s, want %s", got, ojson.GetBytesNoCopy(firstRequest, "input").Raw)
 	}
-	if got := gjson.GetBytes(payloads[1], "input").Raw; got != gjson.GetBytes(compactedRequest, "input").Raw {
-		t.Fatalf("compacted passthrough input = %s, want %s", got, gjson.GetBytes(compactedRequest, "input").Raw)
+	if got := ojson.GetBytesNoCopy(payloads[1], "input").Raw; got != ojson.GetBytesNoCopy(compactedRequest, "input").Raw {
+		t.Fatalf("compacted passthrough input = %s, want %s", got, ojson.GetBytesNoCopy(compactedRequest, "input").Raw)
 	}
-	if got := gjson.GetBytes(payloads[1], "model").String(); got != "test-model" {
+	if got := ojson.GetBytesNoCopy(payloads[1], "model").String(); got != "test-model" {
 		t.Fatalf("compacted passthrough model = %s, want test-model", got)
 	}
 	if bytes.Contains(payloads[1], []byte(`"content":"first"`)) || bytes.Contains(payloads[1], []byte(`"id":"out-1"`)) {
@@ -3511,16 +3511,16 @@ func TestResponsesWebsocketXAIWebsocketPassthroughKeepsNativeIncrementalRequest(
 		t.Fatalf("xai websocket payload count = %d, want 2", len(payloads))
 	}
 	secondPayload := payloads[1]
-	if got := gjson.GetBytes(secondPayload, "type").String(); got != wsRequestTypeCreate {
+	if got := ojson.GetBytesNoCopy(secondPayload, "type").String(); got != wsRequestTypeCreate {
 		t.Fatalf("incremental xai payload type = %q, want %q: %s", got, wsRequestTypeCreate, secondPayload)
 	}
-	if got := gjson.GetBytes(secondPayload, "model").String(); got != modelName {
+	if got := ojson.GetBytesNoCopy(secondPayload, "model").String(); got != modelName {
 		t.Fatalf("second xai payload model = %s, want %s", got, modelName)
 	}
-	if got := gjson.GetBytes(secondPayload, "previous_response_id").String(); got != "resp-1" {
+	if got := ojson.GetBytesNoCopy(secondPayload, "previous_response_id").String(); got != "resp-1" {
 		t.Fatalf("second xai previous_response_id = %q, want resp-1: %s", got, secondPayload)
 	}
-	input := gjson.GetBytes(secondPayload, "input").Array()
+	input := ojson.GetBytesNoCopy(secondPayload, "input").Array()
 	if len(input) != 1 || input[0].Get("id").String() != "msg-2" {
 		t.Fatalf("second xai incremental input is not the client delta: %s", secondPayload)
 	}
@@ -3589,7 +3589,7 @@ func TestResponsesWebsocketFullRequestCanRouteFromNativeWebsocketToBuiltInProvid
 		t.Fatalf("read first websocket response: %v", errRead)
 	}
 	_, nativeResponse, errRead := conn.ReadMessage()
-	if errRead != nil || gjson.GetBytes(nativeResponse, "response.output").Raw != "[]" {
+	if errRead != nil || ojson.GetBytesNoCopy(nativeResponse, "response.output").Raw != "[]" {
 		t.Fatalf("native completion = %s, error = %v", nativeResponse, errRead)
 	}
 
@@ -3604,11 +3604,11 @@ func TestResponsesWebsocketFullRequestCanRouteFromNativeWebsocketToBuiltInProvid
 	if errRead != nil {
 		t.Fatalf("read routed websocket response: %v", errRead)
 	}
-	if got := gjson.GetBytes(response, "type").String(); got != wsEventTypeCompleted {
+	if got := ojson.GetBytesNoCopy(response, "type").String(); got != wsEventTypeCompleted {
 		t.Fatalf("routed response type = %q, want %q: %s", got, wsEventTypeCompleted, response)
 	}
 	t.Logf("native completion: %s; routed completion: %s", nativeResponse, response)
-	if got := gjson.GetBytes(response, "response.output.0.id").String(); got != "out-1" {
+	if got := ojson.GetBytesNoCopy(response, "response.output.0.id").String(); got != "out-1" {
 		t.Fatalf("cross-provider output repair lost: %s", response)
 	}
 	if got := len(codexExecutor.Payloads()); got != 1 {
@@ -3670,7 +3670,7 @@ func TestResponsesWebsocketHidesProviderRouteAuthFailure(t *testing.T) {
 	if errRead != nil {
 		t.Fatalf("read first response: %v", errRead)
 	}
-	if got := gjson.GetBytes(firstResponse, "type").String(); got != wsEventTypeCompleted {
+	if got := ojson.GetBytesNoCopy(firstResponse, "type").String(); got != wsEventTypeCompleted {
 		t.Fatalf("first response type = %q, want %q: %s", got, wsEventTypeCompleted, firstResponse)
 	}
 
@@ -3836,10 +3836,10 @@ func TestResponsesWebsocketClosesForHTTPReplayWhenWebsocketEligibilityChanges(t 
 		t.Fatalf("executor payload count = %d, want 2; transport switch must not call HTTP upstream", len(payloads))
 	}
 	second := payloads[1]
-	if got := gjson.GetBytes(second, "previous_response_id").String(); got != "resp-1" {
+	if got := ojson.GetBytesNoCopy(second, "previous_response_id").String(); got != "resp-1" {
 		t.Fatalf("stable websocket previous_response_id = %q, want resp-1: %s", got, second)
 	}
-	if input := gjson.GetBytes(second, "input").Array(); len(input) != 1 || input[0].Get("id").String() != "msg-2" {
+	if input := ojson.GetBytesNoCopy(second, "input").Array(); len(input) != 1 || input[0].Get("id").String() != "msg-2" {
 		t.Fatalf("stable websocket payload is not incremental: %s", second)
 	}
 
@@ -3868,10 +3868,10 @@ func TestResponsesWebsocketClosesForHTTPReplayWhenWebsocketEligibilityChanges(t 
 		t.Fatalf("executor payload count after replay = %d, want 4", len(payloads))
 	}
 	httpDelta := payloads[3]
-	if gjson.GetBytes(httpDelta, "previous_response_id").Exists() {
+	if ojson.GetBytesNoCopy(httpDelta, "previous_response_id").Exists() {
 		t.Fatalf("HTTP-mode delta retained previous_response_id: %s", httpDelta)
 	}
-	input := gjson.GetBytes(httpDelta, "input").Array()
+	input := ojson.GetBytesNoCopy(httpDelta, "input").Array()
 	wantIDs := []string{"msg-1", "out-1", "msg-2", "out-2", "msg-3", "out-3", "msg-4"}
 	if len(input) != len(wantIDs) {
 		t.Fatalf("HTTP-mode canonical input len = %d, want %d: %s", len(input), len(wantIDs), httpDelta)
@@ -3927,13 +3927,13 @@ func TestResponsesWebsocketRejectsUnknownPreviousResponseOnNewSocket(t *testing.
 	if errRead != nil {
 		t.Fatalf("read websocket response: %v", errRead)
 	}
-	if got := gjson.GetBytes(payload, "type").String(); got != wsEventTypeError {
+	if got := ojson.GetBytesNoCopy(payload, "type").String(); got != wsEventTypeError {
 		t.Fatalf("response type = %q, want %q: %s", got, wsEventTypeError, payload)
 	}
-	if got := int(gjson.GetBytes(payload, "status").Int()); got != http.StatusConflict {
+	if got := int(ojson.GetBytesNoCopy(payload, "status").Int()); got != http.StatusConflict {
 		t.Fatalf("response status = %d, want %d: %s", got, http.StatusConflict, payload)
 	}
-	if got := gjson.GetBytes(payload, "error.code").String(); got != "previous_response_not_found" {
+	if got := ojson.GetBytesNoCopy(payload, "error.code").String(); got != "previous_response_not_found" {
 		t.Fatalf("response error code = %q, want previous_response_not_found: %s", got, payload)
 	}
 	if got := len(executor.Payloads()); got != 0 {
@@ -3948,14 +3948,14 @@ func TestResponsesWebsocketRejectsUnknownPreviousResponseOnNewSocket(t *testing.
 	if errRead != nil {
 		t.Fatalf("read full recovery response: %v", errRead)
 	}
-	if got := gjson.GetBytes(recoveryPayload, "type").String(); got != wsEventTypeCompleted {
+	if got := ojson.GetBytesNoCopy(recoveryPayload, "type").String(); got != wsEventTypeCompleted {
 		t.Fatalf("recovery response type = %q, want %q: %s", got, wsEventTypeCompleted, recoveryPayload)
 	}
 	payloads := executor.Payloads()
 	if len(payloads) != 1 {
 		t.Fatalf("executor payload count after recovery = %d, want 1", len(payloads))
 	}
-	if got := len(gjson.GetBytes(payloads[0], "input").Array()); got != 3 {
+	if got := len(ojson.GetBytesNoCopy(payloads[0], "input").Array()); got != 3 {
 		t.Fatalf("full recovery input len = %d, want 3: %s", got, payloads[0])
 	}
 }
@@ -4000,7 +4000,7 @@ func TestResponsesWebsocketClosesAfterNonRetryableClientError(t *testing.T) {
 		t.Fatalf("write first websocket message: %v", errWrite)
 	}
 	_, firstResponse, errRead := conn.ReadMessage()
-	if errRead != nil || gjson.GetBytes(firstResponse, "type").String() != wsEventTypeCompleted {
+	if errRead != nil || ojson.GetBytesNoCopy(firstResponse, "type").String() != wsEventTypeCompleted {
 		t.Fatalf("first websocket response = %s, err=%v", firstResponse, errRead)
 	}
 
@@ -4012,10 +4012,10 @@ func TestResponsesWebsocketClosesAfterNonRetryableClientError(t *testing.T) {
 	if errRead != nil {
 		t.Fatalf("read client error response: %v", errRead)
 	}
-	if got := gjson.GetBytes(errorResponse, "type").String(); got != wsEventTypeError {
+	if got := ojson.GetBytesNoCopy(errorResponse, "type").String(); got != wsEventTypeError {
 		t.Fatalf("client error response type = %q, want %q: %s", got, wsEventTypeError, errorResponse)
 	}
-	if got := int(gjson.GetBytes(errorResponse, "status").Int()); got != http.StatusBadRequest {
+	if got := int(ojson.GetBytesNoCopy(errorResponse, "status").Int()); got != http.StatusBadRequest {
 		t.Fatalf("client error response status = %d, want %d: %s", got, http.StatusBadRequest, errorResponse)
 	}
 	if _, duplicate, errRead := conn.ReadMessage(); errRead == nil {
@@ -4077,7 +4077,7 @@ func TestResponsesWebsocketExposesItemNotPersistedAndRecoversOnReconnect(t *test
 		t.Fatalf("write first request: %v", errWrite)
 	}
 	if _, firstResponse, errRead := conn.ReadMessage(); errRead != nil ||
-		gjson.GetBytes(firstResponse, "type").String() != wsEventTypeCompleted {
+		ojson.GetBytesNoCopy(firstResponse, "type").String() != wsEventTypeCompleted {
 		t.Fatalf("first response = %s, err=%v", firstResponse, errRead)
 	}
 
@@ -4090,13 +4090,13 @@ func TestResponsesWebsocketExposesItemNotPersistedAndRecoversOnReconnect(t *test
 	if errRead != nil {
 		t.Fatalf("item miss was hidden from the client: %v", errRead)
 	}
-	if got := gjson.GetBytes(errorResponse, "type").String(); got != wsEventTypeError {
+	if got := ojson.GetBytesNoCopy(errorResponse, "type").String(); got != wsEventTypeError {
 		t.Fatalf("response type = %q, want %q: %s", got, wsEventTypeError, errorResponse)
 	}
-	if got := int(gjson.GetBytes(errorResponse, "status").Int()); got != http.StatusNotFound {
+	if got := int(ojson.GetBytesNoCopy(errorResponse, "status").Int()); got != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d: %s", got, http.StatusNotFound, errorResponse)
 	}
-	if msg := gjson.GetBytes(errorResponse, "error.message").String(); !strings.Contains(msg, "Items are not persisted") {
+	if msg := ojson.GetBytesNoCopy(errorResponse, "error.message").String(); !strings.Contains(msg, "Items are not persisted") {
 		t.Fatalf("error.message lost the upstream reason: %q", msg)
 	}
 	if _, extra, errRead := conn.ReadMessage(); errRead == nil {
@@ -4118,7 +4118,7 @@ func TestResponsesWebsocketExposesItemNotPersistedAndRecoversOnReconnect(t *test
 	if errRead != nil {
 		t.Fatalf("read rebuilt response: %v", errRead)
 	}
-	if got := gjson.GetBytes(recovered, "type").String(); got != wsEventTypeCompleted {
+	if got := ojson.GetBytesNoCopy(recovered, "type").String(); got != wsEventTypeCompleted {
 		t.Fatalf("rebuilt response type = %q, want %q: %s", got, wsEventTypeCompleted, recovered)
 	}
 
@@ -4128,10 +4128,10 @@ func TestResponsesWebsocketExposesItemNotPersistedAndRecoversOnReconnect(t *test
 	}
 	// The rebuilt turn must carry the full input and none of the failed turn's state.
 	rebuilt := payloads[2]
-	if got := gjson.GetBytes(rebuilt, "previous_response_id").String(); got != "" {
+	if got := ojson.GetBytesNoCopy(rebuilt, "previous_response_id").String(); got != "" {
 		t.Fatalf("rebuilt upstream request still pinned previous_response_id=%q: %s", got, rebuilt)
 	}
-	inputIDs := gjson.GetBytes(rebuilt, "input.#.id").Array()
+	inputIDs := ojson.GetBytesNoCopy(rebuilt, "input.#.id").Array()
 	if len(inputIDs) != 2 || inputIDs[0].String() != "msg-1" || inputIDs[1].String() != "msg-2" {
 		t.Fatalf("rebuilt upstream input lost context: %s", rebuilt)
 	}
@@ -4248,7 +4248,7 @@ func TestResponsesWebsocketSwitchesPinnedAuthAcrossProviders(t *testing.T) {
 				if errRead != nil {
 					t.Fatalf("read websocket response %d: %v", turn, errRead)
 				}
-				if got := gjson.GetBytes(payload, "type").String(); got != wsEventTypeCompleted {
+				if got := ojson.GetBytesNoCopy(payload, "type").String(); got != wsEventTypeCompleted {
 					t.Fatalf("response %d type = %s, want %s: %s", turn, got, wsEventTypeCompleted, payload)
 				}
 			}
@@ -4489,11 +4489,11 @@ func TestResponsesWebsocketPrewarmPreservesCompactedFollowup(t *testing.T) {
 			warmup := `{"type":"response.create","model":"prewarm-prefix-model","instructions":"legacy base","generate":false,"input":[{"type":"additional_tools","id":"warm-tools","role":"developer","tools":[{"type":"namespace","name":"functions","tools":[{"type":"custom","name":"exec"}]}]},{"type":"message","id":"warm-base","role":"developer","content":"base instructions"}]}`
 			send(warmup)
 			created := read()
-			parent := gjson.GetBytes(created, "response.id").String()
+			parent := ojson.GetBytesNoCopy(created, "response.id").String()
 			if !strings.HasPrefix(parent, "resp_prewarm_") {
 				t.Fatalf("expected synthetic warmup: %s", created)
 			}
-			if got := gjson.GetBytes(read(), "type").String(); got != wsEventTypeCompleted {
+			if got := ojson.GetBytesNoCopy(read(), "type").String(); got != wsEventTypeCompleted {
 				t.Fatalf("warmup event=%s", got)
 			}
 			if executor.streamCalls != 0 {
@@ -4512,7 +4512,7 @@ func TestResponsesWebsocketPrewarmPreservesCompactedFollowup(t *testing.T) {
 			}
 			if tc.invalidType {
 				send(fmt.Sprintf(`{"type":"unsupported","previous_response_id":%q,"input":[]}`, parent))
-				if gjson.GetBytes(read(), "type").String() != "error" || executor.streamCalls != 0 {
+				if ojson.GetBytesNoCopy(read(), "type").String() != "error" || executor.streamCalls != 0 {
 					t.Fatal("invalid request type reached upstream")
 				}
 			}
@@ -4522,20 +4522,20 @@ func TestResponsesWebsocketPrewarmPreservesCompactedFollowup(t *testing.T) {
 				} else {
 					send(`{"type":"response.create","input":{}}`)
 				}
-				if gjson.GetBytes(read(), "type").String() != "error" || executor.streamCalls != 0 {
+				if ojson.GetBytesNoCopy(read(), "type").String() != "error" || executor.streamCalls != 0 {
 					t.Fatal("invalid delta did not fail before upstream")
 				}
 			}
 			send(followup)
 			result := read()
 			if tc.wrongParent {
-				if gjson.GetBytes(result, "type").String() != "error" || executor.streamCalls != 0 {
+				if ojson.GetBytesNoCopy(result, "type").String() != "error" || executor.streamCalls != 0 {
 					t.Fatalf("unrelated parent inherited warmup: %s", result)
 				}
 				return
 			}
 			if tc.failFirst {
-				if gjson.GetBytes(result, "type").String() != "error" {
+				if ojson.GetBytesNoCopy(result, "type").String() != "error" {
 					t.Fatalf("expected first failure: %s", result)
 				}
 				// Terminal upstream errors close the connection. Codex reconnects
@@ -4547,22 +4547,22 @@ func TestResponsesWebsocketPrewarmPreservesCompactedFollowup(t *testing.T) {
 					t.Fatal(errReconnect)
 				}
 				send(warmup)
-				newParent := gjson.GetBytes(read(), "response.id").String()
-				if gjson.GetBytes(read(), "type").String() != wsEventTypeCompleted {
+				newParent := ojson.GetBytesNoCopy(read(), "response.id").String()
+				if ojson.GetBytesNoCopy(read(), "type").String() != wsEventTypeCompleted {
 					t.Fatal("retry warmup failed")
 				}
 				send(strings.ReplaceAll(followup, parent, newParent))
 				result = read()
 			}
-			if gjson.GetBytes(result, "type").String() != wsEventTypeCompleted {
+			if ojson.GetBytesNoCopy(result, "type").String() != wsEventTypeCompleted {
 				t.Fatalf("followup failed: %s", result)
 			}
 			for _, forwarded := range executor.payloads {
-				if gjson.GetBytes(forwarded, "model").String() != "prewarm-prefix-model" || gjson.GetBytes(forwarded, "instructions").String() != "legacy base" {
+				if ojson.GetBytesNoCopy(forwarded, "model").String() != "prewarm-prefix-model" || ojson.GetBytesNoCopy(forwarded, "instructions").String() != "legacy base" {
 					t.Fatalf("request defaults lost: %s", forwarded)
 				}
-				input := gjson.GetBytes(forwarded, "input").Array()
-				want := gjson.Parse(tc.input).Array()
+				input := ojson.GetBytesNoCopy(forwarded, "input").Array()
+				want := ojson.Parse(tc.input).Array()
 				if tc.wantPrefix {
 					if len(input) != len(want)+2 || input[0].Get("id").String() != "warm-tools" || input[1].Get("id").String() != "warm-base" {
 						t.Fatalf("acknowledged tools/base prefix lost or duplicated: %s", forwarded)
@@ -4576,20 +4576,20 @@ func TestResponsesWebsocketPrewarmPreservesCompactedFollowup(t *testing.T) {
 						t.Fatalf("delta changed: got %s want %s", input[i].Raw, want[i].Raw)
 					}
 				}
-				if gjson.GetBytes(forwarded, "previous_response_id").Exists() || gjson.GetBytes(forwarded, "generate").Exists() {
+				if ojson.GetBytesNoCopy(forwarded, "previous_response_id").Exists() || ojson.GetBytesNoCopy(forwarded, "generate").Exists() {
 					t.Fatalf("synthetic state leaked upstream: %s", forwarded)
 				}
-				if gjson.GetBytes(forwarded, "client_metadata.keep").String() != "unchanged" {
+				if ojson.GetBytesNoCopy(forwarded, "client_metadata.keep").String() != "unchanged" {
 					t.Fatal("metadata changed")
 				}
 			}
 			if tc.name == "compacted_delta" {
 				send(`{"type":"response.create","model":"prewarm-prefix-model","previous_response_id":"resp-upstream","input":[{"type":"function_call_output","name":"automation_update","output":"next heartbeat"}]}`)
-				if gjson.GetBytes(read(), "type").String() != wsEventTypeCompleted {
+				if ojson.GetBytesNoCopy(read(), "type").String() != wsEventTypeCompleted {
 					t.Fatal("real-response continuation failed")
 				}
 				last := executor.payloads[len(executor.payloads)-1]
-				if len(gjson.GetBytes(last, `input.#(type=="additional_tools")#`).Array()) != 1 || gjson.GetBytes(last, "input").Array()[len(gjson.GetBytes(last, "input").Array())-1].Get("output").String() != "next heartbeat" {
+				if len(ojson.GetBytesNoCopy(last, `input.#(type=="additional_tools")#`).Array()) != 1 || ojson.GetBytesNoCopy(last, "input").Array()[len(ojson.GetBytesNoCopy(last, "input").Array())-1].Get("output").String() != "next heartbeat" {
 					t.Fatalf("continuation lost or duplicated state: %s", last)
 				}
 			}
@@ -4641,14 +4641,14 @@ func TestResponsesWebsocketPrewarmHandledLocallyForSSEUpstream(t *testing.T) {
 	if errReadMessage != nil {
 		t.Fatalf("read prewarm created message: %v", errReadMessage)
 	}
-	if gjson.GetBytes(createdPayload, "type").String() != "response.created" {
-		t.Fatalf("created payload type = %s, want response.created", gjson.GetBytes(createdPayload, "type").String())
+	if ojson.GetBytesNoCopy(createdPayload, "type").String() != "response.created" {
+		t.Fatalf("created payload type = %s, want response.created", ojson.GetBytesNoCopy(createdPayload, "type").String())
 	}
-	prewarmResponseID := gjson.GetBytes(createdPayload, "response.id").String()
+	prewarmResponseID := ojson.GetBytesNoCopy(createdPayload, "response.id").String()
 	if prewarmResponseID == "" {
 		t.Fatalf("prewarm response id is empty")
 	}
-	if got := gjson.GetBytes(createdPayload, "response.model").String(); got != "test-model" {
+	if got := ojson.GetBytesNoCopy(createdPayload, "response.model").String(); got != "test-model" {
 		t.Fatalf("prewarm response.model = %q, want test-model", got)
 	}
 	if executor.streamCalls != 0 {
@@ -4659,14 +4659,14 @@ func TestResponsesWebsocketPrewarmHandledLocallyForSSEUpstream(t *testing.T) {
 	if errReadMessage != nil {
 		t.Fatalf("read prewarm completed message: %v", errReadMessage)
 	}
-	if gjson.GetBytes(completedPayload, "type").String() != wsEventTypeCompleted {
-		t.Fatalf("completed payload type = %s, want %s", gjson.GetBytes(completedPayload, "type").String(), wsEventTypeCompleted)
+	if ojson.GetBytesNoCopy(completedPayload, "type").String() != wsEventTypeCompleted {
+		t.Fatalf("completed payload type = %s, want %s", ojson.GetBytesNoCopy(completedPayload, "type").String(), wsEventTypeCompleted)
 	}
-	if gjson.GetBytes(completedPayload, "response.id").String() != prewarmResponseID {
-		t.Fatalf("completed response id = %s, want %s", gjson.GetBytes(completedPayload, "response.id").String(), prewarmResponseID)
+	if ojson.GetBytesNoCopy(completedPayload, "response.id").String() != prewarmResponseID {
+		t.Fatalf("completed response id = %s, want %s", ojson.GetBytesNoCopy(completedPayload, "response.id").String(), prewarmResponseID)
 	}
-	if gjson.GetBytes(completedPayload, "response.usage.total_tokens").Int() != 0 {
-		t.Fatalf("prewarm total tokens = %d, want 0", gjson.GetBytes(completedPayload, "response.usage.total_tokens").Int())
+	if ojson.GetBytesNoCopy(completedPayload, "response.usage.total_tokens").Int() != 0 {
+		t.Fatalf("prewarm total tokens = %d, want 0", ojson.GetBytesNoCopy(completedPayload, "response.usage.total_tokens").Int())
 	}
 
 	secondRequest := fmt.Sprintf(`{"type":"response.create","previous_response_id":%q,"input":[{"type":"message","id":"msg-1"}]}`, prewarmResponseID)
@@ -4679,8 +4679,8 @@ func TestResponsesWebsocketPrewarmHandledLocallyForSSEUpstream(t *testing.T) {
 	if errReadMessage != nil {
 		t.Fatalf("read upstream completed message: %v", errReadMessage)
 	}
-	if gjson.GetBytes(upstreamPayload, "type").String() != wsEventTypeCompleted {
-		t.Fatalf("upstream payload type = %s, want %s", gjson.GetBytes(upstreamPayload, "type").String(), wsEventTypeCompleted)
+	if ojson.GetBytesNoCopy(upstreamPayload, "type").String() != wsEventTypeCompleted {
+		t.Fatalf("upstream payload type = %s, want %s", ojson.GetBytesNoCopy(upstreamPayload, "type").String(), wsEventTypeCompleted)
 	}
 	if executor.streamCalls != 1 {
 		t.Fatalf("stream calls after follow-up = %d, want 1", executor.streamCalls)
@@ -4689,16 +4689,16 @@ func TestResponsesWebsocketPrewarmHandledLocallyForSSEUpstream(t *testing.T) {
 		t.Fatalf("captured upstream payloads = %d, want 1", len(executor.payloads))
 	}
 	forwarded := executor.payloads[0]
-	if gjson.GetBytes(forwarded, "previous_response_id").Exists() {
+	if ojson.GetBytesNoCopy(forwarded, "previous_response_id").Exists() {
 		t.Fatalf("previous_response_id leaked upstream: %s", forwarded)
 	}
-	if gjson.GetBytes(forwarded, "generate").Exists() {
+	if ojson.GetBytesNoCopy(forwarded, "generate").Exists() {
 		t.Fatalf("generate leaked upstream: %s", forwarded)
 	}
-	if gjson.GetBytes(forwarded, "model").String() != "test-model" {
-		t.Fatalf("forwarded model = %s, want test-model", gjson.GetBytes(forwarded, "model").String())
+	if ojson.GetBytesNoCopy(forwarded, "model").String() != "test-model" {
+		t.Fatalf("forwarded model = %s, want test-model", ojson.GetBytesNoCopy(forwarded, "model").String())
 	}
-	input := gjson.GetBytes(forwarded, "input").Array()
+	input := ojson.GetBytesNoCopy(forwarded, "input").Array()
 	if len(input) != 1 || input[0].Get("id").String() != "msg-1" {
 		t.Fatalf("unexpected forwarded input: %s", forwarded)
 	}
@@ -4749,8 +4749,8 @@ func TestResponsesWebsocketMidConnectionPrewarmHandledLocallyForSSEUpstream(t *t
 	if errReadMessage != nil {
 		t.Fatalf("read frame 1 response: %v", errReadMessage)
 	}
-	if gjson.GetBytes(frame1Payload, "type").String() != wsEventTypeCompleted {
-		t.Fatalf("frame 1 payload type = %s, want %s", gjson.GetBytes(frame1Payload, "type").String(), wsEventTypeCompleted)
+	if ojson.GetBytesNoCopy(frame1Payload, "type").String() != wsEventTypeCompleted {
+		t.Fatalf("frame 1 payload type = %s, want %s", ojson.GetBytesNoCopy(frame1Payload, "type").String(), wsEventTypeCompleted)
 	}
 	if executor.streamCalls != 1 {
 		t.Fatalf("stream calls after frame 1 = %d, want 1", executor.streamCalls)
@@ -4766,10 +4766,10 @@ func TestResponsesWebsocketMidConnectionPrewarmHandledLocallyForSSEUpstream(t *t
 	if errReadMessage != nil {
 		t.Fatalf("read frame 2 created message: %v", errReadMessage)
 	}
-	if gjson.GetBytes(createdPayload, "type").String() != "response.created" {
-		t.Fatalf("frame 2 created payload type = %s, want response.created (got: %s)", gjson.GetBytes(createdPayload, "type").String(), createdPayload)
+	if ojson.GetBytesNoCopy(createdPayload, "type").String() != "response.created" {
+		t.Fatalf("frame 2 created payload type = %s, want response.created (got: %s)", ojson.GetBytesNoCopy(createdPayload, "type").String(), createdPayload)
 	}
-	prewarmResponseID := gjson.GetBytes(createdPayload, "response.id").String()
+	prewarmResponseID := ojson.GetBytesNoCopy(createdPayload, "response.id").String()
 	if prewarmResponseID == "" || !strings.HasPrefix(prewarmResponseID, "resp_prewarm_") {
 		t.Fatalf("frame 2 prewarm response id unexpected: %q", prewarmResponseID)
 	}
@@ -4781,17 +4781,17 @@ func TestResponsesWebsocketMidConnectionPrewarmHandledLocallyForSSEUpstream(t *t
 	if errReadMessage != nil {
 		t.Fatalf("read frame 2 completed message: %v", errReadMessage)
 	}
-	if gjson.GetBytes(completedPayload, "type").String() != wsEventTypeCompleted {
-		t.Fatalf("frame 2 completed payload type = %s, want %s", gjson.GetBytes(completedPayload, "type").String(), wsEventTypeCompleted)
+	if ojson.GetBytesNoCopy(completedPayload, "type").String() != wsEventTypeCompleted {
+		t.Fatalf("frame 2 completed payload type = %s, want %s", ojson.GetBytesNoCopy(completedPayload, "type").String(), wsEventTypeCompleted)
 	}
-	if gjson.GetBytes(completedPayload, "response.id").String() != prewarmResponseID {
-		t.Fatalf("frame 2 completed response id = %s, want %s", gjson.GetBytes(completedPayload, "response.id").String(), prewarmResponseID)
+	if ojson.GetBytesNoCopy(completedPayload, "response.id").String() != prewarmResponseID {
+		t.Fatalf("frame 2 completed response id = %s, want %s", ojson.GetBytesNoCopy(completedPayload, "response.id").String(), prewarmResponseID)
 	}
-	if len(gjson.GetBytes(completedPayload, "response.output").Array()) != 0 {
-		t.Fatalf("frame 2 prewarm output should be empty, got: %s", gjson.GetBytes(completedPayload, "response.output").Raw)
+	if len(ojson.GetBytesNoCopy(completedPayload, "response.output").Array()) != 0 {
+		t.Fatalf("frame 2 prewarm output should be empty, got: %s", ojson.GetBytesNoCopy(completedPayload, "response.output").Raw)
 	}
-	if gjson.GetBytes(completedPayload, "response.usage.total_tokens").Int() != 0 {
-		t.Fatalf("frame 2 prewarm total tokens = %d, want 0", gjson.GetBytes(completedPayload, "response.usage.total_tokens").Int())
+	if ojson.GetBytesNoCopy(completedPayload, "response.usage.total_tokens").Int() != 0 {
+		t.Fatalf("frame 2 prewarm total tokens = %d, want 0", ojson.GetBytesNoCopy(completedPayload, "response.usage.total_tokens").Int())
 	}
 
 	// Frame 3: follow-up referencing the mid-connection prewarm response id
@@ -4805,8 +4805,8 @@ func TestResponsesWebsocketMidConnectionPrewarmHandledLocallyForSSEUpstream(t *t
 	if errReadMessage != nil {
 		t.Fatalf("read frame 3 response: %v", errReadMessage)
 	}
-	if gjson.GetBytes(frame3Payload, "type").String() != wsEventTypeCompleted {
-		t.Fatalf("frame 3 payload type = %s, want %s", gjson.GetBytes(frame3Payload, "type").String(), wsEventTypeCompleted)
+	if ojson.GetBytesNoCopy(frame3Payload, "type").String() != wsEventTypeCompleted {
+		t.Fatalf("frame 3 payload type = %s, want %s", ojson.GetBytesNoCopy(frame3Payload, "type").String(), wsEventTypeCompleted)
 	}
 	if executor.streamCalls != 2 {
 		t.Fatalf("stream calls after frame 3 = %d, want 2", executor.streamCalls)
@@ -4815,13 +4815,13 @@ func TestResponsesWebsocketMidConnectionPrewarmHandledLocallyForSSEUpstream(t *t
 		t.Fatalf("captured upstream payloads = %d, want 2", len(executor.payloads))
 	}
 	forwarded := executor.payloads[1]
-	if gjson.GetBytes(forwarded, "previous_response_id").Exists() {
+	if ojson.GetBytesNoCopy(forwarded, "previous_response_id").Exists() {
 		t.Fatalf("previous_response_id leaked upstream: %s", forwarded)
 	}
-	if gjson.GetBytes(forwarded, "generate").Exists() {
+	if ojson.GetBytesNoCopy(forwarded, "generate").Exists() {
 		t.Fatalf("generate leaked upstream: %s", forwarded)
 	}
-	inputItems := gjson.GetBytes(forwarded, "input").Array()
+	inputItems := ojson.GetBytesNoCopy(forwarded, "input").Array()
 	hasPrewarm := false
 	hasFollowup := false
 	hasInitial := false
@@ -4900,12 +4900,12 @@ func TestResponsesWebsocketMidConnectionPrewarmEmptyInputFollowupForSSEUpstream(
 	if errReadMessage != nil {
 		t.Fatalf("read frame 2 created message: %v", errReadMessage)
 	}
-	prewarmID := gjson.GetBytes(createdPayload, "response.id").String()
+	prewarmID := ojson.GetBytesNoCopy(createdPayload, "response.id").String()
 	_, completedPayload, errReadMessage := conn.ReadMessage()
 	if errReadMessage != nil {
 		t.Fatalf("read frame 2 completed message: %v", errReadMessage)
 	}
-	if len(gjson.GetBytes(completedPayload, "response.output").Array()) != 0 {
+	if len(ojson.GetBytesNoCopy(completedPayload, "response.output").Array()) != 0 {
 		t.Fatalf("frame 2 prewarm output not empty: %s", completedPayload)
 	}
 
@@ -4923,7 +4923,7 @@ func TestResponsesWebsocketMidConnectionPrewarmEmptyInputFollowupForSSEUpstream(
 		t.Fatalf("stream calls after frame 3 = %d, want 2", executor.streamCalls)
 	}
 	forwarded := executor.payloads[1]
-	inputItems := gjson.GetBytes(forwarded, "input").Array()
+	inputItems := ojson.GetBytesNoCopy(forwarded, "input").Array()
 	if len(inputItems) != 1 || inputItems[0].Get("id").String() != "msg-prewarm" {
 		t.Fatalf("unexpected forwarded input with empty continuation: %s", forwarded)
 	}
@@ -4974,10 +4974,10 @@ func TestResponsesWebsocketMidConnectionIncrementalPrewarmHandledLocallyForSSEUp
 	if errReadMessage != nil {
 		t.Fatalf("read frame 1 response: %v", errReadMessage)
 	}
-	if gjson.GetBytes(frame1Payload, "type").String() != wsEventTypeCompleted {
-		t.Fatalf("frame 1 payload type = %s, want %s", gjson.GetBytes(frame1Payload, "type").String(), wsEventTypeCompleted)
+	if ojson.GetBytesNoCopy(frame1Payload, "type").String() != wsEventTypeCompleted {
+		t.Fatalf("frame 1 payload type = %s, want %s", ojson.GetBytesNoCopy(frame1Payload, "type").String(), wsEventTypeCompleted)
 	}
-	frame1ResponseID := gjson.GetBytes(frame1Payload, "response.id").String()
+	frame1ResponseID := ojson.GetBytesNoCopy(frame1Payload, "response.id").String()
 	if executor.streamCalls != 1 {
 		t.Fatalf("stream calls after frame 1 = %d, want 1", executor.streamCalls)
 	}
@@ -4993,10 +4993,10 @@ func TestResponsesWebsocketMidConnectionIncrementalPrewarmHandledLocallyForSSEUp
 	if errReadMessage != nil {
 		t.Fatalf("read frame 2 created message: %v", errReadMessage)
 	}
-	if gjson.GetBytes(createdPayload, "type").String() != "response.created" {
-		t.Fatalf("frame 2 created payload type = %s, want response.created (got: %s)", gjson.GetBytes(createdPayload, "type").String(), createdPayload)
+	if ojson.GetBytesNoCopy(createdPayload, "type").String() != "response.created" {
+		t.Fatalf("frame 2 created payload type = %s, want response.created (got: %s)", ojson.GetBytesNoCopy(createdPayload, "type").String(), createdPayload)
 	}
-	prewarmResponseID := gjson.GetBytes(createdPayload, "response.id").String()
+	prewarmResponseID := ojson.GetBytesNoCopy(createdPayload, "response.id").String()
 	if prewarmResponseID == "" || !strings.HasPrefix(prewarmResponseID, "resp_prewarm_") {
 		t.Fatalf("frame 2 prewarm response id unexpected: %q", prewarmResponseID)
 	}
@@ -5008,17 +5008,17 @@ func TestResponsesWebsocketMidConnectionIncrementalPrewarmHandledLocallyForSSEUp
 	if errReadMessage != nil {
 		t.Fatalf("read frame 2 completed message: %v", errReadMessage)
 	}
-	if gjson.GetBytes(completedPayload, "type").String() != wsEventTypeCompleted {
-		t.Fatalf("frame 2 completed payload type = %s, want %s", gjson.GetBytes(completedPayload, "type").String(), wsEventTypeCompleted)
+	if ojson.GetBytesNoCopy(completedPayload, "type").String() != wsEventTypeCompleted {
+		t.Fatalf("frame 2 completed payload type = %s, want %s", ojson.GetBytesNoCopy(completedPayload, "type").String(), wsEventTypeCompleted)
 	}
-	if gjson.GetBytes(completedPayload, "response.id").String() != prewarmResponseID {
-		t.Fatalf("frame 2 completed response id = %s, want %s", gjson.GetBytes(completedPayload, "response.id").String(), prewarmResponseID)
+	if ojson.GetBytesNoCopy(completedPayload, "response.id").String() != prewarmResponseID {
+		t.Fatalf("frame 2 completed response id = %s, want %s", ojson.GetBytesNoCopy(completedPayload, "response.id").String(), prewarmResponseID)
 	}
-	if len(gjson.GetBytes(completedPayload, "response.output").Array()) != 0 {
-		t.Fatalf("frame 2 prewarm output should be empty, got: %s", gjson.GetBytes(completedPayload, "response.output").Raw)
+	if len(ojson.GetBytesNoCopy(completedPayload, "response.output").Array()) != 0 {
+		t.Fatalf("frame 2 prewarm output should be empty, got: %s", ojson.GetBytesNoCopy(completedPayload, "response.output").Raw)
 	}
-	if gjson.GetBytes(completedPayload, "response.usage.total_tokens").Int() != 0 {
-		t.Fatalf("frame 2 prewarm total tokens = %d, want 0", gjson.GetBytes(completedPayload, "response.usage.total_tokens").Int())
+	if ojson.GetBytesNoCopy(completedPayload, "response.usage.total_tokens").Int() != 0 {
+		t.Fatalf("frame 2 prewarm total tokens = %d, want 0", ojson.GetBytesNoCopy(completedPayload, "response.usage.total_tokens").Int())
 	}
 
 	// Frame 3: follow-up referencing the prewarm response id
@@ -5032,8 +5032,8 @@ func TestResponsesWebsocketMidConnectionIncrementalPrewarmHandledLocallyForSSEUp
 	if errReadMessage != nil {
 		t.Fatalf("read frame 3 response: %v", errReadMessage)
 	}
-	if gjson.GetBytes(frame3Payload, "type").String() != wsEventTypeCompleted {
-		t.Fatalf("frame 3 payload type = %s, want %s", gjson.GetBytes(frame3Payload, "type").String(), wsEventTypeCompleted)
+	if ojson.GetBytesNoCopy(frame3Payload, "type").String() != wsEventTypeCompleted {
+		t.Fatalf("frame 3 payload type = %s, want %s", ojson.GetBytesNoCopy(frame3Payload, "type").String(), wsEventTypeCompleted)
 	}
 	if executor.streamCalls != 2 {
 		t.Fatalf("stream calls after frame 3 = %d, want 2", executor.streamCalls)
@@ -5042,7 +5042,7 @@ func TestResponsesWebsocketMidConnectionIncrementalPrewarmHandledLocallyForSSEUp
 		t.Fatalf("captured upstream payloads = %d, want 2", len(executor.payloads))
 	}
 	forwarded := executor.payloads[1]
-	inputItems := gjson.GetBytes(forwarded, "input").Array()
+	inputItems := ojson.GetBytesNoCopy(forwarded, "input").Array()
 	hasInitial := false
 	hasIncremental := false
 	hasFollowup := false
@@ -5112,7 +5112,7 @@ func TestResponsesWebsocketMergesTranscriptForNonPassthroughUpstream(t *testing.
 		if errReadMessage != nil {
 			t.Fatalf("read websocket message %d: %v", i+1, errReadMessage)
 		}
-		if got := gjson.GetBytes(payload, "type").String(); got != wsEventTypeCompleted {
+		if got := ojson.GetBytesNoCopy(payload, "type").String(); got != wsEventTypeCompleted {
 			t.Fatalf("message %d payload type = %s, want %s", i+1, got, wsEventTypeCompleted)
 		}
 	}
@@ -5121,10 +5121,10 @@ func TestResponsesWebsocketMergesTranscriptForNonPassthroughUpstream(t *testing.
 		t.Fatalf("upstream payload count = %d, want 2", len(executor.payloads))
 	}
 	secondPayload := executor.payloads[1]
-	if gjson.GetBytes(secondPayload, "previous_response_id").Exists() {
+	if ojson.GetBytesNoCopy(secondPayload, "previous_response_id").Exists() {
 		t.Fatalf("previous_response_id must not be sent on non-passthrough upstream: %s", secondPayload)
 	}
-	input := gjson.GetBytes(secondPayload, "input").Array()
+	input := ojson.GetBytesNoCopy(secondPayload, "input").Array()
 	if len(input) != 3 {
 		t.Fatalf("second upstream input len = %d, want 3: %s", len(input), secondPayload)
 	}
@@ -5185,7 +5185,7 @@ func TestResponsesWebsocketUsesObservedCompactionResponseForReplay(t *testing.T)
 				}
 			}
 
-			input := gjson.GetBytes(executor.payloads[2], "input").Array()
+			input := ojson.GetBytesNoCopy(executor.payloads[2], "input").Array()
 			if len(input) != len(tc.wantIDs) {
 				t.Fatalf("unexpected post-compaction input: %s", executor.payloads[2])
 			}
@@ -5263,7 +5263,7 @@ func TestResponsesWebsocketRetainsObservedCompactionAcrossSubsequentTurns(t *tes
 
 	// Turn 4 must still bypass stale merge and keep exactly cmp-1 and turn-4-user,
 	// without old-user or old-assistant reappearing even after turn 3's normal assistant output.
-	inputTurn4 := gjson.GetBytes(executor.payloads[3], "input").Array()
+	inputTurn4 := ojson.GetBytesNoCopy(executor.payloads[3], "input").Array()
 	wantIDsTurn4 := []string{"cmp-1", "turn-4-user"}
 	if len(inputTurn4) != len(wantIDsTurn4) {
 		t.Fatalf("turn 4 post-compaction input len = %d, want %d: %s", len(inputTurn4), len(wantIDsTurn4), executor.payloads[3])
@@ -5297,14 +5297,14 @@ type websocketPluginRouteExecutorHost struct {
 func (h *websocketPluginRouteExecutorHost) HasModelRouters() bool { return true }
 
 func (h *websocketPluginRouteExecutorHost) RouteModel(_ context.Context, req pluginapi.ModelRouteRequest) (pluginapi.ModelRouteResponse, bool) {
-	if pluginID := strings.TrimSpace(gjson.GetBytes(req.Body, "route_plugin_id").String()); pluginID != "" {
+	if pluginID := strings.TrimSpace(ojson.GetBytesNoCopy(req.Body, "route_plugin_id").String()); pluginID != "" {
 		return pluginapi.ModelRouteResponse{
 			Handled:    true,
 			TargetKind: pluginapi.ModelRouteTargetExecutor,
 			Target:     pluginID,
 		}, true
 	}
-	if !gjson.GetBytes(req.Body, "route_to_plugin").Bool() {
+	if !ojson.GetBytesNoCopy(req.Body, "route_to_plugin").Bool() {
 		return pluginapi.ModelRouteResponse{}, false
 	}
 	return pluginapi.ModelRouteResponse{
@@ -5383,7 +5383,7 @@ func TestResponsesWebsocketUsesObservedCompactionResponseForPluginRouteOverride(
 		t.Fatalf("expected at least 3 payloads on plugin host, got %d", len(pluginHost.payloads))
 	}
 	thirdPayload := pluginHost.payloads[2]
-	input := gjson.GetBytes(thirdPayload, "input").Array()
+	input := ojson.GetBytesNoCopy(thirdPayload, "input").Array()
 	wantIDs := []string{"cmp-plugin-1", "new-user"}
 	if len(input) != len(wantIDs) {
 		t.Fatalf("plugin-routed post-compaction input len = %d, want %d: %s", len(input), len(wantIDs), thirdPayload)
@@ -5453,7 +5453,7 @@ func TestResponsesWebsocketPluginSwitchDoesNotInheritObservedCompaction(t *testi
 		t.Fatalf("expected 2 payloads, got %d", len(pluginHost.payloads))
 	}
 	secondPayload := pluginHost.payloads[1]
-	input := gjson.GetBytes(secondPayload, "input").Array()
+	input := ojson.GetBytesNoCopy(secondPayload, "input").Array()
 	// Target changed, so bypass is disabled and history is merged: old-user, cmp-a (from lastResponseOutput), new-user
 	wantIDs := []string{"old-user", "cmp-a", "new-user"}
 	if len(input) != len(wantIDs) {
@@ -5474,7 +5474,7 @@ type websocketCustomProviderRouteHost struct {
 func (h *websocketCustomProviderRouteHost) HasModelRouters() bool { return true }
 
 func (h *websocketCustomProviderRouteHost) RouteModel(_ context.Context, req pluginapi.ModelRouteRequest) (pluginapi.ModelRouteResponse, bool) {
-	if !gjson.GetBytes(req.Body, "route_to_custom").Bool() {
+	if !ojson.GetBytesNoCopy(req.Body, "route_to_custom").Bool() {
 		return pluginapi.ModelRouteResponse{}, false
 	}
 	return pluginapi.ModelRouteResponse{
@@ -5552,7 +5552,7 @@ func TestResponsesWebsocketProviderRoutePinsCompactionAuth(t *testing.T) {
 		t.Fatalf("expected 2 payloads, got %d", len(executor.payloads))
 	}
 	secondPayload := executor.payloads[1]
-	input := gjson.GetBytes(secondPayload, "input").Array()
+	input := ojson.GetBytesNoCopy(secondPayload, "input").Array()
 	wantIDs := []string{"cmp-prov-1", "new-user"}
 	if len(input) != len(wantIDs) {
 		t.Fatalf("provider routed replay input len = %d, want %d: %s", len(input), len(wantIDs), secondPayload)
@@ -5632,7 +5632,7 @@ func TestResponsesWebsocketSuccessiveCompactionsInSameSession(t *testing.T) {
 		t.Fatalf("expected 5 payloads, got %d", len(executor.payloads))
 	}
 	fifthPayload := executor.payloads[4]
-	inputFifth := gjson.GetBytes(fifthPayload, "input").Array()
+	inputFifth := ojson.GetBytesNoCopy(fifthPayload, "input").Array()
 	wantIDsFifth := []string{"cmp-2", "turn-5-user"}
 	if len(inputFifth) != len(wantIDsFifth) {
 		t.Fatalf("second replay input len = %d, want %d: %s", len(inputFifth), len(wantIDsFifth), fifthPayload)
@@ -5723,7 +5723,7 @@ func TestResponsesWebsocketUsesObservedCompactionResponseForHomeRuntimeAuth(t *t
 		t.Fatalf("expected at least 3 payloads on home executor, got %d", len(executor.payloads))
 	}
 	thirdPayload := executor.payloads[2]
-	input := gjson.GetBytes(thirdPayload, "input").Array()
+	input := ojson.GetBytesNoCopy(thirdPayload, "input").Array()
 	wantIDs := []string{"cmp-home-1", "new-home-user"}
 	if len(input) != len(wantIDs) {
 		t.Fatalf("home runtime post-compaction input len = %d, want %d: %s", len(input), len(wantIDs), thirdPayload)
@@ -5818,7 +5818,7 @@ func TestResponsesWebsocketProviderRouteSwitchDoesNotInheritCompaction(t *testin
 		t.Fatalf("expected at least 1 payload on executor B, got %d", len(executorB.payloads))
 	}
 	payloadB := executorB.payloads[0]
-	inputB := gjson.GetBytes(payloadB, "input").Array()
+	inputB := ojson.GetBytesNoCopy(payloadB, "input").Array()
 	// Target changed, so bypass is disabled and history is merged: old-user, cmp-a-1 (from lastResponseOutput), new-user
 	wantIDs := []string{"old-user", "cmp-a-1", "new-user"}
 	if len(inputB) != len(wantIDs) {
@@ -5905,7 +5905,7 @@ func TestResponsesWebsocketProviderRouteSwitchBackDoesNotInheritStaleCompaction(
 		t.Fatalf("expected at least 2 payloads on executor A, got %d", len(executorA.payloads))
 	}
 	payloadA2 := executorA.payloads[1]
-	inputA2 := gjson.GetBytes(payloadA2, "input").Array()
+	inputA2 := ojson.GetBytesNoCopy(payloadA2, "input").Array()
 	// Stale compaction was cleared during turn 2, so history was merged back in!
 	if len(inputA2) <= 2 {
 		t.Fatalf("expected merged fallback input on turn 3 switchback, got %d items: %s", len(inputA2), payloadA2)
@@ -5988,7 +5988,7 @@ func TestResponsesWebsocketProviderRouteIgnoresResidualPinnedAuth(t *testing.T) 
 		t.Fatalf("expected at least 2 payloads on routed executor, got %d", len(routedExecutor.payloads))
 	}
 	thirdPayload := routedExecutor.payloads[1]
-	input := gjson.GetBytes(thirdPayload, "input").Array()
+	input := ojson.GetBytesNoCopy(thirdPayload, "input").Array()
 	wantIDs := []string{"cmp-override-1", "replay-user"}
 	if len(input) != len(wantIDs) {
 		t.Fatalf("replay input len = %d, want %d: %s", len(input), len(wantIDs), thirdPayload)
@@ -6062,7 +6062,7 @@ func TestResponsesWebsocketPluginToProviderOverrideSwitch(t *testing.T) {
 		t.Fatalf("expected at least 1 payload on provider executor, got %d", len(provExecutor.payloads))
 	}
 	secondPayload := provExecutor.payloads[0]
-	input := gjson.GetBytes(secondPayload, "input").Array()
+	input := ojson.GetBytesNoCopy(secondPayload, "input").Array()
 	// Target kind changed from plugin to provider, so bypass is disabled and history is merged: old-user, cmp-plugin-1, new-user
 	wantIDs := []string{"old-user", "cmp-plugin-1", "new-user"}
 	if len(input) != len(wantIDs) {
@@ -6082,10 +6082,10 @@ type websocketMultiKindRouteHost struct {
 func (h *websocketMultiKindRouteHost) HasModelRouters() bool { return true }
 
 func (h *websocketMultiKindRouteHost) RouteModel(ctx context.Context, req pluginapi.ModelRouteRequest) (pluginapi.ModelRouteResponse, bool) {
-	if gjson.GetBytes(req.Body, "route_to_plugin").Bool() {
+	if ojson.GetBytesNoCopy(req.Body, "route_to_plugin").Bool() {
 		return h.pluginHost.RouteModel(ctx, req)
 	}
-	if gjson.GetBytes(req.Body, "route_to_provider").Bool() {
+	if ojson.GetBytesNoCopy(req.Body, "route_to_provider").Bool() {
 		return pluginapi.ModelRouteResponse{
 			Handled:     true,
 			TargetKind:  pluginapi.ModelRouteTargetProvider,
@@ -6113,8 +6113,8 @@ type websocketDynamicProviderRouteHost struct{}
 func (h *websocketDynamicProviderRouteHost) HasModelRouters() bool { return true }
 
 func (h *websocketDynamicProviderRouteHost) RouteModel(_ context.Context, req pluginapi.ModelRouteRequest) (pluginapi.ModelRouteResponse, bool) {
-	provider := strings.TrimSpace(gjson.GetBytes(req.Body, "route_provider").String())
-	targetModel := strings.TrimSpace(gjson.GetBytes(req.Body, "route_target_model").String())
+	provider := strings.TrimSpace(ojson.GetBytesNoCopy(req.Body, "route_provider").String())
+	targetModel := strings.TrimSpace(ojson.GetBytesNoCopy(req.Body, "route_target_model").String())
 	if provider == "" {
 		return pluginapi.ModelRouteResponse{}, false
 	}
@@ -6177,7 +6177,7 @@ func TestResponsesWebsocketDoesNotInjectPreviousResponseIDWhenPendingToolOutputM
 		if errReadMessage != nil {
 			t.Fatalf("read websocket message %d: %v", i+1, errReadMessage)
 		}
-		if got := gjson.GetBytes(payload, "type").String(); got != wsEventTypeCompleted {
+		if got := ojson.GetBytesNoCopy(payload, "type").String(); got != wsEventTypeCompleted {
 			t.Fatalf("message %d payload type = %s, want %s", i+1, got, wsEventTypeCompleted)
 		}
 	}
@@ -6190,10 +6190,10 @@ func TestResponsesWebsocketDoesNotInjectPreviousResponseIDWhenPendingToolOutputM
 		t.Fatalf("upstream payload count = %d, want 2", len(payloads))
 	}
 	secondPayload := payloads[1]
-	if gjson.GetBytes(secondPayload, "previous_response_id").Exists() {
+	if ojson.GetBytesNoCopy(secondPayload, "previous_response_id").Exists() {
 		t.Fatalf("previous_response_id must not be injected when pending tool output is missing: %s", secondPayload)
 	}
-	input := gjson.GetBytes(secondPayload, "input").Array()
+	input := ojson.GetBytesNoCopy(secondPayload, "input").Array()
 	if len(input) != 3 {
 		t.Fatalf("second upstream input len = %d, want 3: %s", len(input), secondPayload)
 	}
@@ -6258,7 +6258,7 @@ func TestResponsesWebsocketStripsGenerateWhenWebsocketAttemptFallsBackToHTTP(t *
 	if errReadMessage != nil {
 		t.Fatalf("read websocket message: %v", errReadMessage)
 	}
-	if got := gjson.GetBytes(payload, "type").String(); got != wsEventTypeCompleted {
+	if got := ojson.GetBytesNoCopy(payload, "type").String(); got != wsEventTypeCompleted {
 		t.Fatalf("payload type = %s, want %s: %s", got, wsEventTypeCompleted, payload)
 	}
 
@@ -6270,7 +6270,7 @@ func TestResponsesWebsocketStripsGenerateWhenWebsocketAttemptFallsBackToHTTP(t *
 	if len(wsPayloads) != 1 {
 		t.Fatalf("auth-ws payload count = %d, want 1", len(wsPayloads))
 	}
-	if !gjson.GetBytes(wsPayloads[0], "generate").Exists() {
+	if !ojson.GetBytesNoCopy(wsPayloads[0], "generate").Exists() {
 		t.Fatalf("websocket attempt payload unexpectedly stripped generate: %s", wsPayloads[0])
 	}
 
@@ -6278,7 +6278,7 @@ func TestResponsesWebsocketStripsGenerateWhenWebsocketAttemptFallsBackToHTTP(t *
 	if len(httpPayloads) != 1 {
 		t.Fatalf("auth-http payload count = %d, want 1", len(httpPayloads))
 	}
-	if gjson.GetBytes(httpPayloads[0], "generate").Exists() {
+	if ojson.GetBytesNoCopy(httpPayloads[0], "generate").Exists() {
 		t.Fatalf("generate leaked after HTTP fallback: %s", httpPayloads[0])
 	}
 
@@ -6290,7 +6290,7 @@ func TestResponsesWebsocketStripsGenerateWhenWebsocketAttemptFallsBackToHTTP(t *
 	if errReadSecond != nil {
 		t.Fatalf("read second websocket message: %v", errReadSecond)
 	}
-	if got := gjson.GetBytes(secondPayload, "type").String(); got != wsEventTypeCompleted {
+	if got := ojson.GetBytesNoCopy(secondPayload, "type").String(); got != wsEventTypeCompleted {
 		t.Fatalf("second payload type = %s, want %s: %s", got, wsEventTypeCompleted, secondPayload)
 	}
 	if got := executor.AuthIDs(); len(got) != 3 || got[2] != "auth-http" {
@@ -6383,7 +6383,7 @@ func TestResponsesWebsocketPinsOnlyWebsocketCapableAuth(t *testing.T) {
 		if errReadMessage != nil {
 			t.Fatalf("read websocket message %d: %v", i+1, errReadMessage)
 		}
-		if got := gjson.GetBytes(payload, "type").String(); got != wsEventTypeCompleted {
+		if got := ojson.GetBytesNoCopy(payload, "type").String(); got != wsEventTypeCompleted {
 			t.Fatalf("message %d payload type = %s, want %s", i+1, got, wsEventTypeCompleted)
 		}
 	}
@@ -6456,13 +6456,13 @@ func TestResponsesWebsocketUsesNativeIncrementalAfterPinningWebsocketAuthFromMix
 	if len(payloads) != 3 {
 		t.Fatalf("payload count = %d, want 3", len(payloads))
 	}
-	if gjson.GetBytes(payloads[1], "previous_response_id").Exists() || len(gjson.GetBytes(payloads[1], "input").Array()) != 3 {
+	if ojson.GetBytesNoCopy(payloads[1], "previous_response_id").Exists() || len(ojson.GetBytesNoCopy(payloads[1], "input").Array()) != 3 {
 		t.Fatalf("first request on newly selected websocket auth must be canonical: %s", payloads[1])
 	}
-	if got := gjson.GetBytes(payloads[2], "previous_response_id").String(); got != "resp-2" {
+	if got := ojson.GetBytesNoCopy(payloads[2], "previous_response_id").String(); got != "resp-2" {
 		t.Fatalf("stable pinned websocket previous_response_id = %q, want resp-2: %s", got, payloads[2])
 	}
-	input := gjson.GetBytes(payloads[2], "input").Array()
+	input := ojson.GetBytesNoCopy(payloads[2], "input").Array()
 	if len(input) != 1 || input[0].Get("id").String() != "msg-3" {
 		t.Fatalf("stable pinned websocket request is not incremental: %s", payloads[2])
 	}
@@ -6534,7 +6534,7 @@ func TestResponsesWebsocketReplaysImmediatelyAfterPinnedAuthFailure(t *testing.T
 			if errWrite := conn.WriteMessage(websocket.TextMessage, []byte(firstRequest)); errWrite != nil {
 				t.Fatalf("write first websocket message: %v", errWrite)
 			}
-			if _, payload, errRead := conn.ReadMessage(); errRead != nil || gjson.GetBytes(payload, "type").String() != wsEventTypeCompleted {
+			if _, payload, errRead := conn.ReadMessage(); errRead != nil || ojson.GetBytesNoCopy(payload, "type").String() != wsEventTypeCompleted {
 				t.Fatalf("first websocket response = %s, err=%v", payload, errRead)
 			}
 
@@ -6560,7 +6560,7 @@ func TestResponsesWebsocketReplaysImmediatelyAfterPinnedAuthFailure(t *testing.T
 			if errWrite := replayConn.WriteMessage(websocket.TextMessage, []byte(fullReplay)); errWrite != nil {
 				t.Fatalf("write full replay: %v", errWrite)
 			}
-			if _, replayPayload, errReadReplay := replayConn.ReadMessage(); errReadReplay != nil || gjson.GetBytes(replayPayload, "type").String() != wsEventTypeCompleted {
+			if _, replayPayload, errReadReplay := replayConn.ReadMessage(); errReadReplay != nil || ojson.GetBytesNoCopy(replayPayload, "type").String() != wsEventTypeCompleted {
 				t.Fatalf("full replay response = %s, err=%v", replayPayload, errReadReplay)
 			}
 			if got := executor.AuthIDs(); len(got) != 3 || got[2] != "auth-b" {
@@ -6571,7 +6571,7 @@ func TestResponsesWebsocketReplaysImmediatelyAfterPinnedAuthFailure(t *testing.T
 				t.Fatalf("auth-b payloads = %d, want 1", len(authBPayloads))
 			}
 			authBPayload := authBPayloads[0]
-			if gjson.GetBytes(authBPayload, "previous_response_id").Exists() || len(gjson.GetBytes(authBPayload, "input").Array()) != 3 {
+			if ojson.GetBytesNoCopy(authBPayload, "previous_response_id").Exists() || len(ojson.GetBytesNoCopy(authBPayload, "input").Array()) != 3 {
 				t.Fatalf("auth-b did not receive full replay: %s", authBPayload)
 			}
 		})
@@ -6752,7 +6752,7 @@ func TestResponsesWebsocketReleasesPinnedAuthAfterStreamClosed408(t *testing.T) 
 	if errWrite := conn.WriteMessage(websocket.TextMessage, []byte(firstRequest)); errWrite != nil {
 		t.Fatalf("write first websocket message: %v", errWrite)
 	}
-	if _, payload, errRead := conn.ReadMessage(); errRead != nil || gjson.GetBytes(payload, "type").String() != wsEventTypeCompleted {
+	if _, payload, errRead := conn.ReadMessage(); errRead != nil || ojson.GetBytesNoCopy(payload, "type").String() != wsEventTypeCompleted {
 		t.Fatalf("first websocket response = %s, err=%v", payload, errRead)
 	}
 
@@ -6765,7 +6765,7 @@ func TestResponsesWebsocketReleasesPinnedAuthAfterStreamClosed408(t *testing.T) 
 		if errRead != nil {
 			break
 		}
-		if gjson.GetBytes(payload, "type").String() == wsEventTypeError {
+		if ojson.GetBytesNoCopy(payload, "type").String() == wsEventTypeError {
 			t.Fatalf("stream transport failure was exposed to the client: %s", payload)
 		}
 	}
@@ -6782,7 +6782,7 @@ func TestResponsesWebsocketReleasesPinnedAuthAfterStreamClosed408(t *testing.T) 
 	if errWrite := replayConn.WriteMessage(websocket.TextMessage, []byte(fullReplay)); errWrite != nil {
 		t.Fatalf("write full replay: %v", errWrite)
 	}
-	if _, replayResponse, errReadReplay := replayConn.ReadMessage(); errReadReplay != nil || gjson.GetBytes(replayResponse, "type").String() != wsEventTypeCompleted {
+	if _, replayResponse, errReadReplay := replayConn.ReadMessage(); errReadReplay != nil || ojson.GetBytesNoCopy(replayResponse, "type").String() != wsEventTypeCompleted {
 		t.Fatalf("full replay response = %s, err=%v", replayResponse, errReadReplay)
 	}
 	authIDs := executor.AuthIDs()
@@ -6792,7 +6792,7 @@ func TestResponsesWebsocketReleasesPinnedAuthAfterStreamClosed408(t *testing.T) 
 	replayAuthID := authIDs[2]
 	replayPayloads := executor.Payloads(replayAuthID)
 	replayPayload := replayPayloads[len(replayPayloads)-1]
-	if gjson.GetBytes(replayPayload, "previous_response_id").Exists() || len(gjson.GetBytes(replayPayload, "input").Array()) != 3 {
+	if ojson.GetBytesNoCopy(replayPayload, "previous_response_id").Exists() || len(ojson.GetBytesNoCopy(replayPayload, "input").Array()) != 3 {
 		t.Fatalf("replay auth %s did not receive full replay: %s", replayAuthID, replayPayload)
 	}
 }
@@ -6808,10 +6808,10 @@ func TestNormalizeResponsesWebsocketRequestTreatsTranscriptReplacementAsReset(t 
 	if errMsg != nil {
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
-	if gjson.GetBytes(normalized, "previous_response_id").Exists() {
+	if ojson.GetBytesNoCopy(normalized, "previous_response_id").Exists() {
 		t.Fatalf("previous_response_id must not exist in transcript replacement mode")
 	}
-	items := gjson.GetBytes(normalized, "input").Array()
+	items := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(items) != 2 {
 		t.Fatalf("replacement input len = %d, want 2: %s", len(items), normalized)
 	}
@@ -6834,7 +6834,7 @@ func TestNormalizeResponsesWebsocketRequestDoesNotTreatDeveloperMessageAsReplace
 	if errMsg != nil {
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
-	items := gjson.GetBytes(normalized, "input").Array()
+	items := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(items) != 4 {
 		t.Fatalf("merged input len = %d, want 4: %s", len(items), normalized)
 	}
@@ -6861,7 +6861,7 @@ func TestNormalizeResponsesWebsocketRequestDropsDuplicateFunctionCallsByCallID(t
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
 
-	items := gjson.GetBytes(normalized, "input").Array()
+	items := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(items) != 3 {
 		t.Fatalf("merged input len = %d, want 3: %s", len(items), normalized)
 	}
@@ -6884,7 +6884,7 @@ func TestNormalizeResponsesWebsocketRequestDropsDuplicateInputItemsByID(t *testi
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
 
-	items := gjson.GetBytes(normalized, "input").Array()
+	items := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(items) != 3 {
 		t.Fatalf("merged input len = %d, want 3: %s", len(items), normalized)
 	}
@@ -6907,10 +6907,10 @@ func TestNormalizeResponsesWebsocketRequestTreatsCustomToolTranscriptReplacement
 	if errMsg != nil {
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
-	if gjson.GetBytes(normalized, "previous_response_id").Exists() {
+	if ojson.GetBytesNoCopy(normalized, "previous_response_id").Exists() {
 		t.Fatalf("previous_response_id must not exist in transcript replacement mode")
 	}
-	items := gjson.GetBytes(normalized, "input").Array()
+	items := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(items) != 3 {
 		t.Fatalf("replacement input len = %d, want 3: %s", len(items), normalized)
 	}
@@ -6936,7 +6936,7 @@ func TestNormalizeResponsesWebsocketRequestDropsDuplicateCustomToolCallsByCallID
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
 
-	items := gjson.GetBytes(normalized, "input").Array()
+	items := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(items) != 3 {
 		t.Fatalf("merged input len = %d, want 3: %s", len(items), normalized)
 	}
@@ -6952,7 +6952,7 @@ func TestDedupeResponsesWebsocketInputItemsByIDAfterRepair(t *testing.T) {
 
 	deduped := dedupeResponsesWebsocketInputItemsByID(payload)
 
-	items := gjson.GetBytes(deduped, "input").Array()
+	items := ojson.GetBytesNoCopy(deduped, "input").Array()
 	if len(items) != 2 {
 		t.Fatalf("deduped input len = %d, want 2: %s", len(items), deduped)
 	}
@@ -6974,7 +6974,7 @@ func TestDedupeResponsesWebsocketInputItemsByIDKeepsReferencedToolCall(t *testin
 
 	deduped := dedupeResponsesWebsocketInputItemsByID(payload)
 
-	items := gjson.GetBytes(deduped, "input").Array()
+	items := ojson.GetBytesNoCopy(deduped, "input").Array()
 	if len(items) != 2 {
 		t.Fatalf("deduped input len = %d, want 2: %s", len(items), deduped)
 	}
@@ -7033,7 +7033,7 @@ func TestResponsesWebsocketCompactionResetsTurnStateOnCustomToolTranscriptReplac
 		if errReadMessage != nil {
 			t.Fatalf("read websocket message %d: %v", i+1, errReadMessage)
 		}
-		if got := gjson.GetBytes(payload, "type").String(); got != wsEventTypeCompleted {
+		if got := ojson.GetBytesNoCopy(payload, "type").String(); got != wsEventTypeCompleted {
 			t.Fatalf("message %d payload type = %s, want %s", i+1, got, wsEventTypeCompleted)
 		}
 	}
@@ -7061,7 +7061,7 @@ func TestResponsesWebsocketCompactionResetsTurnStateOnCustomToolTranscriptReplac
 	if errReadMessage != nil {
 		t.Fatalf("read post-compact websocket message: %v", errReadMessage)
 	}
-	if got := gjson.GetBytes(payload, "type").String(); got != wsEventTypeCompleted {
+	if got := ojson.GetBytesNoCopy(payload, "type").String(); got != wsEventTypeCompleted {
 		t.Fatalf("post-compact payload type = %s, want %s", got, wsEventTypeCompleted)
 	}
 
@@ -7076,7 +7076,7 @@ func TestResponsesWebsocketCompactionResetsTurnStateOnCustomToolTranscriptReplac
 	}
 
 	merged := executor.streamPayloads[2]
-	items := gjson.GetBytes(merged, "input").Array()
+	items := ojson.GetBytesNoCopy(merged, "input").Array()
 	if len(items) != 3 {
 		t.Fatalf("merged input len = %d, want 3: %s", len(items), merged)
 	}
@@ -7137,7 +7137,7 @@ func TestResponsesWebsocketCompactionResetsTurnStateOnTranscriptReplacement(t *t
 		if errReadMessage != nil {
 			t.Fatalf("read websocket message %d: %v", i+1, errReadMessage)
 		}
-		if got := gjson.GetBytes(payload, "type").String(); got != wsEventTypeCompleted {
+		if got := ojson.GetBytesNoCopy(payload, "type").String(); got != wsEventTypeCompleted {
 			t.Fatalf("message %d payload type = %s, want %s", i+1, got, wsEventTypeCompleted)
 		}
 	}
@@ -7167,7 +7167,7 @@ func TestResponsesWebsocketCompactionResetsTurnStateOnTranscriptReplacement(t *t
 	if errReadMessage != nil {
 		t.Fatalf("read post-compact websocket message: %v", errReadMessage)
 	}
-	if got := gjson.GetBytes(payload, "type").String(); got != wsEventTypeCompleted {
+	if got := ojson.GetBytesNoCopy(payload, "type").String(); got != wsEventTypeCompleted {
 		t.Fatalf("post-compact payload type = %s, want %s", got, wsEventTypeCompleted)
 	}
 
@@ -7182,7 +7182,7 @@ func TestResponsesWebsocketCompactionResetsTurnStateOnTranscriptReplacement(t *t
 	}
 
 	merged := executor.streamPayloads[2]
-	items := gjson.GetBytes(merged, "input").Array()
+	items := ojson.GetBytesNoCopy(merged, "input").Array()
 	if len(items) != 2 {
 		t.Fatalf("merged input len = %d, want 2: %s", len(items), merged)
 	}
@@ -7196,7 +7196,7 @@ func TestResponsesWebsocketCompactionResetsTurnStateOnTranscriptReplacement(t *t
 }
 
 func TestInputContainsFullTranscriptFalseForAssistantMessageOnly(t *testing.T) {
-	input := gjson.Parse(`[
+	input := ojson.Parse(`[
 		{"type":"message","role":"user","content":"hello"},
 		{"type":"message","role":"assistant","content":"hi there"}
 	]`)
@@ -7207,7 +7207,7 @@ func TestInputContainsFullTranscriptFalseForAssistantMessageOnly(t *testing.T) {
 
 func TestInputContainsFullTranscriptDetectsCompactionItem(t *testing.T) {
 	for _, typ := range []string{"compaction", "compaction_summary"} {
-		input := gjson.Parse(`[{"type":"message","role":"user","content":"hello"},{"type":"` + typ + `","encrypted_content":"summary"}]`)
+		input := ojson.Parse(`[{"type":"message","role":"user","content":"hello"},{"type":"` + typ + `","encrypted_content":"summary"}]`)
 		if !inputContainsFullTranscript(input) {
 			t.Fatalf("expected full transcript for type=%s", typ)
 		}
@@ -7221,7 +7221,7 @@ func TestInputContainsFullTranscriptFalseForIncremental(t *testing.T) {
 		`[{"type":"message","role":"user","content":"next question"}]`,
 		`[]`,
 	} {
-		if inputContainsFullTranscript(gjson.Parse(raw)) {
+		if inputContainsFullTranscript(ojson.Parse(raw)) {
 			t.Fatalf("incremental input must not be detected as full transcript: %s", raw)
 		}
 	}
@@ -7251,7 +7251,7 @@ func TestNormalizeSubsequentRequestCompactSkipsMerge(t *testing.T) {
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
 
-	input := gjson.GetBytes(normalized, "input").Array()
+	input := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(input) != 2 {
 		t.Fatalf("input len = %d, want 2 (compacted only); stale state was not skipped", len(input))
 	}
@@ -7278,10 +7278,10 @@ func TestNormalizeSubsequentRequestReasoningContinuationWithPreviousResponseID(t
 			if errMsg != nil {
 				t.Fatalf("unexpected error: %v", errMsg.Error)
 			}
-			if got := gjson.GetBytes(normalized, "previous_response_id").String(); got != "resp-1" {
+			if got := ojson.GetBytesNoCopy(normalized, "previous_response_id").String(); got != "resp-1" {
 				t.Fatalf("previous_response_id = %q, want resp-1; payload=%s", got, normalized)
 			}
-			input := gjson.GetBytes(normalized, "input").Array()
+			input := ojson.GetBytesNoCopy(normalized, "input").Array()
 			if len(input) != 2 || input[0].Get("id").String() != "reasoning-1" || input[1].Get("id").String() != "output-1" {
 				t.Fatalf("incremental continuation was replaced or merged: %s", normalized)
 			}
@@ -7305,7 +7305,7 @@ func TestResponsesWebsocketOutputCollectorRestoresCompletedOutput(t *testing.T) 
 		outputItemsByIndex,
 		outputItemsFallback,
 	)
-	items := gjson.ParseBytes(output).Array()
+	items := ojson.GetBytesNoCopy(output, "@this").Array()
 	if len(items) != 3 {
 		t.Fatalf("collected output len = %d, want 3: %s", len(items), output)
 	}
@@ -7338,7 +7338,7 @@ func TestNormalizeSubsequentRequestCompactMergesWhenCompactionReplayUnsupported(
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
 
-	input := gjson.GetBytes(normalized, "input").Array()
+	input := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(input) != 7 {
 		t.Fatalf("input len = %d, want 7 (merged fallback without compaction items)", len(input))
 	}
@@ -7383,7 +7383,7 @@ func TestNormalizeSubsequentRequestDropsConsumedCompactionTrigger(t *testing.T) 
 	if errMsg != nil {
 		t.Fatalf("normalize compact replay: %v", errMsg.Error)
 	}
-	for _, item := range gjson.GetBytes(normalized, "input").Array() {
+	for _, item := range ojson.GetBytesNoCopy(normalized, "input").Array() {
 		if item.Get("type").String() == "compaction_trigger" {
 			t.Fatalf("consumed compaction_trigger was replayed: %s", normalized)
 		}
@@ -7408,7 +7408,7 @@ func TestNormalizeSubsequentRequestIncrementalInputStillMerges(t *testing.T) {
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
 
-	input := gjson.GetBytes(normalized, "input").Array()
+	input := ojson.GetBytesNoCopy(normalized, "input").Array()
 
 	// Should be merged: msg-1 + msg-2 + fc-1 + fco-1 = 4 items
 	if len(input) != 4 {
@@ -7442,7 +7442,7 @@ func TestNormalizeSubsequentRequestAssistantInputTriggersTranscriptReplacement(t
 		t.Fatalf("unexpected error: %v", errMsg.Error)
 	}
 
-	input := gjson.GetBytes(normalized, "input").Array()
+	input := ojson.GetBytesNoCopy(normalized, "input").Array()
 	if len(input) != 1 {
 		t.Fatalf("input len = %d, want 1 (transcript replacement, not merge)", len(input))
 	}

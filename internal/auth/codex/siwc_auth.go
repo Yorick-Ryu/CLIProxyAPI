@@ -3,7 +3,6 @@ package codex
 import (
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MoeForge/moego/base64"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/singleflight"
 )

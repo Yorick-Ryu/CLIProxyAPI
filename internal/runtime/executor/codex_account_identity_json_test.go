@@ -6,39 +6,38 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 // The unbatched implementation checks byte-for-byte JSON editing compatibility.
 func legacyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth, rawJSON []byte) ([]byte, codexAccountIdentityState) {
 	state := resolveCodexAccountIdentityState(auth)
-	if !state.enabled || len(rawJSON) == 0 || !gjson.ParseBytes(rawJSON).IsObject() {
+	if !state.enabled || len(rawJSON) == 0 || !ojson.ParseBytes(rawJSON).IsObject() {
 		return rawJSON, state
 	}
 
 	for _, field := range codexAccountIdentityBodyFields {
-		value := gjson.GetBytes(rawJSON, field.path)
-		if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
+		value := ojson.GetBytes(rawJSON, field.path)
+		if value.Type != ojson.String || strings.TrimSpace(value.String()) == "" {
 			continue
 		}
-		updated, err := sjson.SetBytes(rawJSON, field.path, codexAccountIdentityUUID(state, field.kind, value.String()))
+		updated, err := ojson.SetBytes(rawJSON, field.path, codexAccountIdentityUUID(state, field.kind, value.String()))
 		if err == nil {
 			rawJSON = updated
 		}
 	}
 
-	if turnMetadata := strings.TrimSpace(gjson.GetBytes(rawJSON, "client_metadata.x-codex-turn-metadata").String()); turnMetadata != "" {
-		rawJSON, _ = sjson.SetBytes(rawJSON, "client_metadata.x-codex-turn-metadata", remapCodexAccountIdentityJSON(turnMetadata, state))
+	if turnMetadata := strings.TrimSpace(ojson.GetBytes(rawJSON, "client_metadata.x-codex-turn-metadata").String()); turnMetadata != "" {
+		rawJSON, _ = ojson.SetBytes(rawJSON, "client_metadata.x-codex-turn-metadata", remapCodexAccountIdentityJSON(turnMetadata, state))
 	}
 
-	promptCacheKey := strings.TrimSpace(gjson.GetBytes(rawJSON, "prompt_cache_key").String())
+	promptCacheKey := strings.TrimSpace(ojson.GetBytes(rawJSON, "prompt_cache_key").String())
 	if promptCacheKey != "" {
 		state.originalPromptCacheKey = promptCacheKey
 		state.promptCacheKey = codexAccountIdentityUUID(state, "session", promptCacheKey)
 		if state.promptCacheKey != promptCacheKey {
-			rawJSON, _ = sjson.SetBytes(rawJSON, "prompt_cache_key", state.promptCacheKey)
+			rawJSON, _ = ojson.SetBytes(rawJSON, "prompt_cache_key", state.promptCacheKey)
 			state.promptCacheKeyWasRemapped = true
 		}
 	}

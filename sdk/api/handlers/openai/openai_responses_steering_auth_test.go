@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
@@ -18,7 +19,6 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
-	"github.com/tidwall/gjson"
 )
 
 func TestResponsesSteeringDisabledAccountCannotSendAnotherFrame(t *testing.T) {
@@ -170,7 +170,7 @@ func TestResponsesSteeringSubsequentWebsocketMessagesRunRequestInterceptors(t *t
 				return
 			}
 			upstreamFrames <- bytes.Clone(msg)
-			switch gjson.GetBytes(msg, "type").String() {
+			switch ojson.GetBytesNoCopy(msg, "type").String() {
 			case "response.create", "response.append":
 				if err := conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.created","response":{"id":"resp_1"}}`)); err != nil {
 					return

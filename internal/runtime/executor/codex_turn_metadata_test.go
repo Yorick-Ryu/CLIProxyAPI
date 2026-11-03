@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gorilla/websocket"
 	"github.com/klauspost/compress/zstd"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 func TestCodexTurnMetadataSerializationOnWire(t *testing.T) {
@@ -112,7 +112,7 @@ func TestCodexTurnMetadataSerializationOnWire(t *testing.T) {
 					}
 					got := <-captured
 					assertCodexTraceCopies(t, got.body, mode == "api-key")
-					embedded := gjson.GetBytes(got.body, "client_metadata.x-codex-turn-metadata")
+					embedded := ojson.GetBytes(got.body, "client_metadata.x-codex-turn-metadata")
 					if mode == "api-key" {
 						if embedded.String() != metadata || got.headers.Get("X-Codex-Turn-Metadata") != metadata {
 							t.Fatal("API-key metadata was reformatted")
@@ -120,7 +120,7 @@ func TestCodexTurnMetadataSerializationOnWire(t *testing.T) {
 						return
 					}
 					actual := got.headers.Get("X-Codex-Turn-Metadata")
-					parsed := gjson.Parse(actual)
+					parsed := ojson.Parse(actual)
 					want := fmt.Sprintf(`{"installation_id":%q,"session_id":%q,"thread_id":%q,"turn_id":%q,"request_kind":"turn","history_initialization":"new","turn_started_at_unix_ms":9007199254740993,"analytics_enabled":true,"z_extension":"<>&\u6771\u4eac\ud83d\ude80\b\f"}`, parsed.Get("installation_id").String(), parsed.Get("session_id").String(), parsed.Get("thread_id").String(), parsed.Get("turn_id").String())
 					if actual != want || !strings.Contains(actual, `"turn_id":"019a0992-1470-7`) {
 						t.Fatalf("header lost native formatting or the UUIDv7 timestamp\ngot: %q\nwant: %q", actual, want)
@@ -213,14 +213,14 @@ func TestCodexDuplexTurnMetadataSerialization(t *testing.T) {
 				if chunk.Err != nil {
 					t.Fatal(chunk.Err)
 				}
-				if gjson.GetBytes(chunk.Payload, "type").String() == "response.completed" {
+				if ojson.GetBytes(chunk.Payload, "type").String() == "response.completed" {
 					break
 				}
 			}
 			select {
 			case got := <-captured:
 				assertCodexTraceCopies(t, got, mode == "api-key")
-				metadata := gjson.GetBytes(got, "client_metadata.x-codex-turn-metadata")
+				metadata := ojson.GetBytes(got, "client_metadata.x-codex-turn-metadata")
 				want := canonical
 				if mode == "api-key" {
 					want = original
@@ -234,7 +234,7 @@ func TestCodexDuplexTurnMetadataSerialization(t *testing.T) {
 				} else if metadata.String() != want {
 					t.Fatalf("steering metadata = %q, want %q", metadata.String(), want)
 				}
-				if gjson.GetBytes(got, "type").String() != "response.steer" || gjson.GetBytes(got, "input").String() != "steer" {
+				if ojson.GetBytes(got, "type").String() != "response.steer" || ojson.GetBytes(got, "input").String() != "steer" {
 					t.Fatal("serialization changed steering control or input")
 				}
 			case <-ctx.Done():
@@ -274,7 +274,7 @@ func TestCodexTurnMetadataFormattingAuthScope(t *testing.T) {
 func assertCodexTraceCopies(t *testing.T, body []byte, preserved bool) {
 	t.Helper()
 	for _, field := range []string{"ws_request_header_traceparent", "ws_request_header_tracestate"} {
-		if gjson.GetBytes(body, "client_metadata."+field).Exists() != preserved {
+		if ojson.GetBytes(body, "client_metadata."+field).Exists() != preserved {
 			t.Fatalf("unexpected trace preservation for %s", field)
 		}
 	}
@@ -298,10 +298,10 @@ func TestCodexTraceHeaderOverridePrecedence(t *testing.T) {
 					applyCodexHeaders(req, auth, "synthetic-token", true, &config.Config{})
 				}
 				if override {
-					if headers.Get("Traceparent") != "operator-trace" || gjson.Get(headers.Get("X-Codex-Turn-Metadata"), "traceparent").String() != "operator-trace" {
+					if headers.Get("Traceparent") != "operator-trace" || ojson.Get(headers.Get("X-Codex-Turn-Metadata"), "traceparent").String() != "operator-trace" {
 						t.Fatal("explicit header override was removed")
 					}
-				} else if headers.Get("Traceparent") != "" || gjson.Get(headers.Get("X-Codex-Turn-Metadata"), "traceparent").Exists() || !gjson.Get(headers.Get("X-Codex-Turn-Metadata"), "keep").Bool() {
+				} else if headers.Get("Traceparent") != "" || ojson.Get(headers.Get("X-Codex-Turn-Metadata"), "traceparent").Exists() || !ojson.Get(headers.Get("X-Codex-Turn-Metadata"), "keep").Bool() {
 					t.Fatal("downstream trace was retained or unrelated metadata was removed")
 				}
 			})

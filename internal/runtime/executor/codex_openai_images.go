@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MoeForge/moego/base64"
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
@@ -23,8 +24,6 @@ import (
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 	log "github.com/sirupsen/logrus"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 const (
@@ -161,7 +160,7 @@ func (e *CodexExecutor) executeOpenAIImage(ctx context.Context, auth *cliproxyau
 		}
 		eventData := bytes.TrimSpace(line[len(dataTag):])
 		reporter.ObserveResponseModel(eventData)
-		switch gjson.GetBytes(eventData, "type").String() {
+		switch ojson.GetBytes(eventData, "type").String() {
 		case "response.output_item.done":
 			collectCodexOutputItemDone(eventData, outputItemsByIndex, &outputItemsFallback)
 		case "response.completed":
@@ -292,7 +291,7 @@ func (e *CodexExecutor) executeOpenAIImageStream(ctx context.Context, auth *clip
 			}
 			eventData := bytes.TrimSpace(line[len(dataTag):])
 			reporter.ObserveResponseModel(eventData)
-			switch gjson.GetBytes(eventData, "type").String() {
+			switch ojson.GetBytes(eventData, "type").String() {
 			case "response.output_item.done":
 				collectCodexOutputItemDone(eventData, outputItemsByIndex, &outputItemsFallback)
 			case "response.image_generation_call.partial_image":
@@ -573,9 +572,9 @@ func codexRewriteOpenAIImageEditMultipartToJSON(payload []byte, model string, bo
 	}()
 
 	out := []byte(`{}`)
-	out, _ = sjson.SetBytes(out, "model", model)
+	out, _ = ojson.SetBytes(out, "model", model)
 	if stream {
-		out, _ = sjson.SetBytes(out, "stream", true)
+		out, _ = ojson.SetBytes(out, "stream", true)
 	}
 
 	for key, values := range form.Value {
@@ -591,11 +590,11 @@ func codexRewriteOpenAIImageEditMultipartToJSON(payload []byte, model string, bo
 		if errData != nil {
 			return nil, "", errData
 		}
-		out, _ = sjson.SetBytes(out, "mask.image_url", dataURL)
+		out, _ = ojson.SetBytes(out, "mask.image_url", dataURL)
 	}
 
 	imageFiles := codexMultipartImageFiles(form)
-	if existingImages := gjson.GetBytes(out, "images"); !existingImages.Exists() || existingImages.IsArray() {
+	if existingImages := ojson.GetBytes(out, "images"); !existingImages.Exists() || existingImages.IsArray() {
 		existingItems := existingImages.Array()
 		imageItems := make([][]byte, 0, len(existingItems)+len(imageFiles))
 		for _, image := range existingItems {
@@ -607,11 +606,11 @@ func codexRewriteOpenAIImageEditMultipartToJSON(payload []byte, model string, bo
 				return nil, "", errData
 			}
 			item := []byte(`{"image_url":""}`)
-			item, _ = sjson.SetBytes(item, "image_url", dataURL)
+			item, _ = ojson.SetBytes(item, "image_url", dataURL)
 			imageItems = append(imageItems, item)
 		}
 		if len(imageFiles) > 0 {
-			out, _ = sjson.SetRawBytes(out, "images", helps.JoinRawJSONArray(imageItems))
+			out, _ = ojson.SetRawBytes(out, "images", helps.JoinRawJSONArray(imageItems))
 		}
 	} else {
 		for _, fileHeader := range imageFiles {
@@ -619,7 +618,7 @@ func codexRewriteOpenAIImageEditMultipartToJSON(payload []byte, model string, bo
 			if errData != nil {
 				return nil, "", errData
 			}
-			out, _ = sjson.SetBytes(out, "images.-1.image_url", dataURL)
+			out, _ = ojson.SetBytes(out, "images.-1.image_url", dataURL)
 		}
 	}
 
@@ -641,13 +640,13 @@ func codexSetOpenAIImageEditFormValues(out []byte, key string, values []string) 
 	for _, value := range values {
 		items = append(items, codexOpenAIImageEditFormJSONValue(key, value))
 	}
-	out, _ = sjson.SetRawBytes(out, path, helps.JoinRawJSONArray(items))
+	out, _ = ojson.SetRawBytes(out, path, helps.JoinRawJSONArray(items))
 	return out
 }
 
 func codexSetOpenAIImageEditFormValue(out []byte, path string, value string) []byte {
 	item := codexOpenAIImageEditFormJSONValue(path, value)
-	out, _ = sjson.SetRawBytes(out, path, item)
+	out, _ = ojson.SetRawBytes(out, path, item)
 	return out
 }
 
@@ -681,7 +680,7 @@ func codexDirectOpenAIImageRouteModel(req cliproxyexecutor.Request, opts cliprox
 	requestedModel := helps.PayloadRequestedModel(opts, "")
 	payloadModel := ""
 	if json.Valid(req.Payload) {
-		payloadModel = gjson.GetBytes(req.Payload, "model").String()
+		payloadModel = ojson.GetBytes(req.Payload, "model").String()
 	}
 	for _, model := range []string{requestedModel, payloadModel, req.Model} {
 		baseModel := codexOpenAIImageBaseModel(model)
@@ -752,10 +751,10 @@ func (e *CodexExecutor) prepareCodexOpenAIImageBody(ctx context.Context, auth *c
 
 	out = helps.SetStringIfDifferent(out, "model", mainModel)
 	out = helps.SetBoolIfDifferent(out, "stream", true)
-	out, _ = sjson.DeleteBytes(out, "previous_response_id")
-	out, _ = sjson.DeleteBytes(out, "prompt_cache_retention")
-	out, _ = sjson.DeleteBytes(out, "safety_identifier")
-	out, _ = sjson.DeleteBytes(out, "stream_options")
+	out, _ = ojson.DeleteBytes(out, "previous_response_id")
+	out, _ = ojson.DeleteBytes(out, "prompt_cache_retention")
+	out, _ = ojson.DeleteBytes(out, "safety_identifier")
+	out, _ = ojson.DeleteBytes(out, "stream_options")
 	if codexUseSIWCForRequest(ctx, auth, opts.Headers) {
 		return applyCodexSIWCRequestBodyRules(out, false), nil
 	}
@@ -803,7 +802,7 @@ func codexPrepareOpenAIImageGenerationJSON(rawJSON []byte, routeModel string) (c
 	if !json.Valid(rawJSON) {
 		return codexOpenAIImagePreparedRequest{}, fmt.Errorf("invalid OpenAI image generation request JSON")
 	}
-	prompt := strings.TrimSpace(gjson.GetBytes(rawJSON, "prompt").String())
+	prompt := strings.TrimSpace(ojson.GetBytes(rawJSON, "prompt").String())
 	tool := codexBuildOpenAIImageTool(rawJSON, routeModel, "generate", []string{"size", "quality", "background", "output_format", "moderation"}, []string{"output_compression", "partial_images"})
 	body := codexBuildImagesResponsesRequest(prompt, nil, tool)
 	return codexOpenAIImagePreparedRequest{
@@ -817,9 +816,9 @@ func codexPrepareOpenAIImageEditJSON(rawJSON []byte, routeModel string) (codexOp
 	if !json.Valid(rawJSON) {
 		return codexOpenAIImagePreparedRequest{}, fmt.Errorf("invalid OpenAI image edit request JSON")
 	}
-	prompt := strings.TrimSpace(gjson.GetBytes(rawJSON, "prompt").String())
+	prompt := strings.TrimSpace(ojson.GetBytes(rawJSON, "prompt").String())
 	images := make([]string, 0)
-	if imagesResult := gjson.GetBytes(rawJSON, "images"); imagesResult.IsArray() {
+	if imagesResult := ojson.GetBytes(rawJSON, "images"); imagesResult.IsArray() {
 		for _, img := range imagesResult.Array() {
 			url := strings.TrimSpace(img.Get("image_url").String())
 			if url != "" {
@@ -828,8 +827,8 @@ func codexPrepareOpenAIImageEditJSON(rawJSON []byte, routeModel string) (codexOp
 		}
 	}
 	tool := codexBuildOpenAIImageTool(rawJSON, routeModel, "edit", []string{"size", "quality", "background", "output_format", "input_fidelity", "moderation"}, []string{"output_compression", "partial_images"})
-	if mask := strings.TrimSpace(gjson.GetBytes(rawJSON, "mask.image_url").String()); mask != "" {
-		tool, _ = sjson.SetBytes(tool, "input_image_mask.image_url", mask)
+	if mask := strings.TrimSpace(ojson.GetBytes(rawJSON, "mask.image_url").String()); mask != "" {
+		tool, _ = ojson.SetBytes(tool, "input_image_mask.image_url", mask)
 	}
 	body := codexBuildImagesResponsesRequest(prompt, images, tool)
 	return codexOpenAIImagePreparedRequest{
@@ -862,16 +861,16 @@ func codexPrepareOpenAIImageEditMultipart(rawBody []byte, routeModel string, con
 	prompt := strings.TrimSpace(codexFormValue(form, "prompt"))
 	responseFormat := codexNormalizeImageResponseFormat(codexFormValue(form, "response_format"))
 	tool := []byte(`{"type":"image_generation","action":"edit"}`)
-	tool, _ = sjson.SetBytes(tool, "model", codexOpenAIImageToolModel(codexFormValue(form, "model"), routeModel))
+	tool, _ = ojson.SetBytes(tool, "model", codexOpenAIImageToolModel(codexFormValue(form, "model"), routeModel))
 	for _, field := range []string{"size", "quality", "background", "output_format", "input_fidelity", "moderation"} {
 		if value := strings.TrimSpace(codexFormValue(form, field)); value != "" {
-			tool, _ = sjson.SetBytes(tool, field, value)
+			tool, _ = ojson.SetBytes(tool, field, value)
 		}
 	}
 	for _, field := range []string{"output_compression", "partial_images"} {
 		if value := strings.TrimSpace(codexFormValue(form, field)); value != "" {
 			if parsed, errParse := strconv.ParseInt(value, 10, 64); errParse == nil {
-				tool, _ = sjson.SetBytes(tool, field, parsed)
+				tool, _ = ojson.SetBytes(tool, field, parsed)
 			}
 		}
 	}
@@ -889,7 +888,7 @@ func codexPrepareOpenAIImageEditMultipart(rawBody []byte, routeModel string, con
 		if errData != nil {
 			return codexOpenAIImagePreparedRequest{}, errData
 		}
-		tool, _ = sjson.SetBytes(tool, "input_image_mask.image_url", dataURL)
+		tool, _ = ojson.SetBytes(tool, "input_image_mask.image_url", dataURL)
 	}
 
 	body := codexBuildImagesResponsesRequest(prompt, images, tool)
@@ -908,7 +907,7 @@ func codexImageContentType(headers http.Header) string {
 }
 
 func codexOpenAIImageResponseFormatFromJSON(rawJSON []byte) string {
-	return codexNormalizeImageResponseFormat(gjson.GetBytes(rawJSON, "response_format").String())
+	return codexNormalizeImageResponseFormat(ojson.GetBytes(rawJSON, "response_format").String())
 }
 
 func codexNormalizeImageResponseFormat(responseFormat string) string {
@@ -931,16 +930,16 @@ func codexOpenAIImageToolModel(requestModel string, routeModel string) string {
 
 func codexBuildOpenAIImageTool(rawJSON []byte, routeModel string, action string, stringFields []string, numberFields []string) []byte {
 	tool := []byte(`{"type":"image_generation","action":""}`)
-	tool, _ = sjson.SetBytes(tool, "action", action)
-	tool, _ = sjson.SetBytes(tool, "model", codexOpenAIImageToolModel(gjson.GetBytes(rawJSON, "model").String(), routeModel))
+	tool, _ = ojson.SetBytes(tool, "action", action)
+	tool, _ = ojson.SetBytes(tool, "model", codexOpenAIImageToolModel(ojson.GetBytes(rawJSON, "model").String(), routeModel))
 	for _, field := range stringFields {
-		if value := strings.TrimSpace(gjson.GetBytes(rawJSON, field).String()); value != "" {
-			tool, _ = sjson.SetBytes(tool, field, value)
+		if value := strings.TrimSpace(ojson.GetBytes(rawJSON, field).String()); value != "" {
+			tool, _ = ojson.SetBytes(tool, field, value)
 		}
 	}
 	for _, field := range numberFields {
-		if value := gjson.GetBytes(rawJSON, field); value.Exists() && value.Type == gjson.Number {
-			tool, _ = sjson.SetBytes(tool, field, value.Int())
+		if value := ojson.GetBytes(rawJSON, field); value.Exists() && value.Type == ojson.Number {
+			tool, _ = ojson.SetBytes(tool, field, value.Int())
 		}
 	}
 	return tool
@@ -948,13 +947,13 @@ func codexBuildOpenAIImageTool(rawJSON []byte, routeModel string, action string,
 
 func codexBuildImagesResponsesRequest(prompt string, images []string, toolJSON []byte) []byte {
 	req := []byte(`{"instructions":"","stream":true,"reasoning":{"effort":"medium","summary":"auto"},"parallel_tool_calls":true,"include":["reasoning.encrypted_content"],"model":"","store":false,"tool_choice":{"type":"image_generation"},"tools":[]}`)
-	req, _ = sjson.SetBytes(req, "model", codexOpenAIImagesMainModel)
+	req, _ = ojson.SetBytes(req, "model", codexOpenAIImagesMainModel)
 	if len(toolJSON) > 0 && json.Valid(toolJSON) {
-		req, _ = sjson.SetRawBytes(req, "tools", helps.JoinRawJSONArray([][]byte{toolJSON}))
+		req, _ = ojson.SetRawBytes(req, "tools", helps.JoinRawJSONArray([][]byte{toolJSON}))
 	}
 
 	textPart := []byte(`{"type":"input_text","text":""}`)
-	textPart, _ = sjson.SetBytes(textPart, "text", prompt)
+	textPart, _ = ojson.SetBytes(textPart, "text", prompt)
 	contentItems := make([][]byte, 0, len(images)+1)
 	contentItems = append(contentItems, textPart)
 	for _, img := range images {
@@ -962,7 +961,7 @@ func codexBuildImagesResponsesRequest(prompt string, images []string, toolJSON [
 			continue
 		}
 		part := []byte(`{"type":"input_image","image_url":""}`)
-		part, _ = sjson.SetBytes(part, "image_url", img)
+		part, _ = ojson.SetBytes(part, "image_url", img)
 		contentItems = append(contentItems, part)
 	}
 	inputSize := len(`[{"type":"message","role":"user","content":[]}]`) + len(contentItems)
@@ -978,7 +977,7 @@ func codexBuildImagesResponsesRequest(prompt string, images []string, toolJSON [
 		input = append(input, item...)
 	}
 	input = append(input, ']', '}', ']')
-	req, _ = sjson.SetRawBytes(req, "input", input)
+	req, _ = ojson.SetRawBytes(req, "input", input)
 	return req
 }
 
@@ -1034,15 +1033,15 @@ func codexMultipartFileToDataURL(fileHeader *multipart.FileHeader) (string, erro
 // extractor. Skipping the concatenate-and-reparse step avoids two large copies of
 // the base64 payload, which matters for multi-megabyte generated images.
 func codexExtractImageResults(completed []byte, itemsByIndex map[int64][]byte, fallback [][]byte) (results []codexImageCallResult, createdAt int64, usageRaw []byte, firstMeta codexImageCallResult, err error) {
-	if gjson.GetBytes(completed, "type").String() != "response.completed" {
+	if ojson.GetBytes(completed, "type").String() != "response.completed" {
 		return nil, 0, nil, codexImageCallResult{}, fmt.Errorf("unexpected event type")
 	}
-	createdAt = gjson.GetBytes(completed, "response.created_at").Int()
+	createdAt = ojson.GetBytes(completed, "response.created_at").Int()
 	if createdAt <= 0 {
 		createdAt = time.Now().Unix()
 	}
 
-	appendItem := func(item gjson.Result) {
+	appendItem := func(item ojson.Result) {
 		if item.Get("type").String() != "image_generation_call" {
 			return
 		}
@@ -1064,8 +1063,8 @@ func codexExtractImageResults(completed []byte, itemsByIndex map[int64][]byte, f
 		results = append(results, entry)
 	}
 
-	var outputItems []gjson.Result
-	if output := gjson.GetBytes(completed, "response.output"); output.Exists() && output.IsArray() {
+	var outputItems []ojson.Result
+	if output := ojson.GetBytes(completed, "response.output"); output.Exists() && output.IsArray() {
 		outputItems = output.Array()
 	}
 	if len(outputItems) > 0 {
@@ -1085,15 +1084,15 @@ func codexExtractImageResults(completed []byte, itemsByIndex map[int64][]byte, f
 			}
 			sort.Slice(indexes, func(i, j int) bool { return indexes[i] < indexes[j] })
 			for _, idx := range indexes {
-				appendItem(gjson.ParseBytes(itemsByIndex[idx]))
+				appendItem(ojson.ParseBytes(itemsByIndex[idx]))
 			}
 		}
 		for _, raw := range fallback {
-			appendItem(gjson.ParseBytes(raw))
+			appendItem(ojson.ParseBytes(raw))
 		}
 	}
 
-	if usage := gjson.GetBytes(completed, "response.tool_usage.image_gen"); usage.Exists() && usage.IsObject() {
+	if usage := ojson.GetBytes(completed, "response.tool_usage.image_gen"); usage.Exists() && usage.IsObject() {
 		usageRaw = []byte(usage.Raw)
 	}
 	return results, createdAt, usageRaw, firstMeta, nil
@@ -1101,21 +1100,21 @@ func codexExtractImageResults(completed []byte, itemsByIndex map[int64][]byte, f
 
 func codexBuildImagesAPIResponse(results []codexImageCallResult, createdAt int64, usageRaw []byte, firstMeta codexImageCallResult, responseFormat string) ([]byte, error) {
 	out := []byte(`{"created":0,"data":[]}`)
-	out, _ = sjson.SetBytes(out, "created", createdAt)
+	out, _ = ojson.SetBytes(out, "created", createdAt)
 	if firstMeta.Background != "" {
-		out, _ = sjson.SetBytes(out, "background", firstMeta.Background)
+		out, _ = ojson.SetBytes(out, "background", firstMeta.Background)
 	}
 	if firstMeta.OutputFormat != "" {
-		out, _ = sjson.SetBytes(out, "output_format", firstMeta.OutputFormat)
+		out, _ = ojson.SetBytes(out, "output_format", firstMeta.OutputFormat)
 	}
 	if firstMeta.Quality != "" {
-		out, _ = sjson.SetBytes(out, "quality", firstMeta.Quality)
+		out, _ = ojson.SetBytes(out, "quality", firstMeta.Quality)
 	}
 	if firstMeta.Size != "" {
-		out, _ = sjson.SetBytes(out, "size", firstMeta.Size)
+		out, _ = ojson.SetBytes(out, "size", firstMeta.Size)
 	}
 	if len(usageRaw) > 0 && json.Valid(usageRaw) {
-		out, _ = sjson.SetRawBytes(out, "usage", usageRaw)
+		out, _ = ojson.SetRawBytes(out, "usage", usageRaw)
 	}
 
 	responseFormat = codexNormalizeImageResponseFormat(responseFormat)
@@ -1123,33 +1122,33 @@ func codexBuildImagesAPIResponse(results []codexImageCallResult, createdAt int64
 	for _, img := range results {
 		item := []byte(`{}`)
 		if img.RevisedPrompt != "" {
-			item, _ = sjson.SetBytes(item, "revised_prompt", img.RevisedPrompt)
+			item, _ = ojson.SetBytes(item, "revised_prompt", img.RevisedPrompt)
 		}
 		if responseFormat == "url" {
-			item, _ = sjson.SetBytes(item, "url", "data:"+codexMimeTypeFromOutputFormat(img.OutputFormat)+";base64,"+img.Result)
+			item, _ = ojson.SetBytes(item, "url", "data:"+codexMimeTypeFromOutputFormat(img.OutputFormat)+";base64,"+img.Result)
 		} else {
-			item, _ = sjson.SetBytes(item, "b64_json", img.Result)
+			item, _ = ojson.SetBytes(item, "b64_json", img.Result)
 		}
 		items = append(items, item)
 	}
-	out, _ = sjson.SetRawBytes(out, "data", helps.JoinRawJSONArray(items))
+	out, _ = ojson.SetRawBytes(out, "data", helps.JoinRawJSONArray(items))
 	return out, nil
 }
 
 func codexBuildImagePartialFrame(payload []byte, responseFormat string, streamPrefix string) []byte {
-	b64 := strings.TrimSpace(gjson.GetBytes(payload, "partial_image_b64").String())
+	b64 := strings.TrimSpace(ojson.GetBytes(payload, "partial_image_b64").String())
 	if b64 == "" {
 		return nil
 	}
-	outputFormat := strings.TrimSpace(gjson.GetBytes(payload, "output_format").String())
+	outputFormat := strings.TrimSpace(ojson.GetBytes(payload, "output_format").String())
 	eventName := strings.TrimSpace(streamPrefix) + ".partial_image"
 	data := []byte(`{"type":"","partial_image_index":0}`)
-	data, _ = sjson.SetBytes(data, "type", eventName)
-	data, _ = sjson.SetBytes(data, "partial_image_index", gjson.GetBytes(payload, "partial_image_index").Int())
+	data, _ = ojson.SetBytes(data, "type", eventName)
+	data, _ = ojson.SetBytes(data, "partial_image_index", ojson.GetBytes(payload, "partial_image_index").Int())
 	if codexNormalizeImageResponseFormat(responseFormat) == "url" {
-		data, _ = sjson.SetBytes(data, "url", "data:"+codexMimeTypeFromOutputFormat(outputFormat)+";base64,"+b64)
+		data, _ = ojson.SetBytes(data, "url", "data:"+codexMimeTypeFromOutputFormat(outputFormat)+";base64,"+b64)
 	} else {
-		data, _ = sjson.SetBytes(data, "b64_json", b64)
+		data, _ = ojson.SetBytes(data, "b64_json", b64)
 	}
 	return codexBuildSSEFrame(eventName, data)
 }
@@ -1157,14 +1156,14 @@ func codexBuildImagePartialFrame(payload []byte, responseFormat string, streamPr
 func codexBuildImageCompletedFrame(img codexImageCallResult, usageRaw []byte, responseFormat string, streamPrefix string) []byte {
 	eventName := strings.TrimSpace(streamPrefix) + ".completed"
 	data := []byte(`{"type":""}`)
-	data, _ = sjson.SetBytes(data, "type", eventName)
+	data, _ = ojson.SetBytes(data, "type", eventName)
 	if len(usageRaw) > 0 && json.Valid(usageRaw) {
-		data, _ = sjson.SetRawBytes(data, "usage", usageRaw)
+		data, _ = ojson.SetRawBytes(data, "usage", usageRaw)
 	}
 	if codexNormalizeImageResponseFormat(responseFormat) == "url" {
-		data, _ = sjson.SetBytes(data, "url", "data:"+codexMimeTypeFromOutputFormat(img.OutputFormat)+";base64,"+img.Result)
+		data, _ = ojson.SetBytes(data, "url", "data:"+codexMimeTypeFromOutputFormat(img.OutputFormat)+";base64,"+img.Result)
 	} else {
-		data, _ = sjson.SetBytes(data, "b64_json", img.Result)
+		data, _ = ojson.SetBytes(data, "b64_json", img.Result)
 	}
 	return codexBuildSSEFrame(eventName, data)
 }

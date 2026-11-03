@@ -7,12 +7,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 func TestCodexSearchHistoryOutgoingPayload(t *testing.T) {
@@ -93,13 +93,13 @@ func TestCodexSearchHistoryOutgoingPayload(t *testing.T) {
 					}
 					body := <-captured
 					if mode == "payload override" {
-						if len(gjson.GetBytes(body, "tools").Array()) != 0 || gjson.GetBytes(body, "tool_choice").String() != "required" {
+						if len(ojson.GetBytes(body, "tools").Array()) != 0 || ojson.GetBytes(body, "tool_choice").String() != "required" {
 							t.Fatal("built-in repair overrode final user payload rules")
 						}
 						return
 					}
 					if mode == "API key" {
-						if gjson.GetBytes(body, `tools.#(type=="web_search")`).Exists() {
+						if ojson.GetBytes(body, `tools.#(type=="web_search")`).Exists() {
 							t.Fatal("API key changed")
 						}
 						return
@@ -107,14 +107,14 @@ func TestCodexSearchHistoryOutgoingPayload(t *testing.T) {
 					path := `tools.#(type=="web_search")`
 					if mode == "lite" {
 						path = `input.#(type=="additional_tools").tools.#(type=="web_search")`
-						if gjson.GetBytes(body, `tools.#(type=="web_search")`).Exists() {
+						if ojson.GetBytes(body, `tools.#(type=="web_search")`).Exists() {
 							t.Fatal("wrong Lite placement")
 						}
 					}
-					if !gjson.GetBytes(body, path).Exists() || gjson.GetBytes(body, "tool_choice").String() != "none" {
+					if !ojson.GetBytes(body, path).Exists() || ojson.GetBytes(body, "tool_choice").String() != "none" {
 						t.Fatal("missing repair on outgoing wire")
 					}
-					items := gjson.GetBytes(body, "input").Array()
+					items := ojson.GetBytes(body, "input").Array()
 					if items[len(items)-1].Get("type").String() != "compaction_trigger" {
 						t.Fatal("trigger no longer last")
 					}
@@ -143,7 +143,7 @@ func TestCodexSearchHistoryDoesNotChangeCompactEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(gjson.GetBytes(captured, "tools").Array()) != 0 || gjson.GetBytes(captured, "tool_choice").String() != "auto" {
+	if len(ojson.GetBytes(captured, "tools").Array()) != 0 || ojson.GetBytes(captured, "tool_choice").String() != "auto" {
 		t.Fatal("changed separate compact endpoint")
 	}
 }

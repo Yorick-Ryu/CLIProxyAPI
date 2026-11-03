@@ -9,12 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 // These snapshots preserve the DMIT implementation before this optimization.
@@ -28,18 +27,18 @@ func preBatchCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Au
 	metadataJSON := metadata.Raw
 	for _, field := range codexAccountIdentityBodyFields {
 		path := strings.TrimPrefix(field.path, "client_metadata.")
-		value := gjson.Get(metadataJSON, path)
-		if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
+		value := ojson.Get(metadataJSON, path)
+		if value.Type != ojson.String || strings.TrimSpace(value.String()) == "" {
 			continue
 		}
-		updated, err := sjson.Set(metadataJSON, path, codexAccountIdentityUUID(state, field.kind, value.String()))
+		updated, err := ojson.Set(metadataJSON, path, codexAccountIdentityUUID(state, field.kind, value.String()))
 		if err == nil {
 			metadataJSON = updated
 		}
 	}
 
-	if turnMetadata := strings.TrimSpace(gjson.Get(metadataJSON, "x-codex-turn-metadata").String()); turnMetadata != "" {
-		metadataJSON, _ = sjson.Set(metadataJSON, "x-codex-turn-metadata", preBatchRemapCodexAccountIdentityJSON(turnMetadata, state))
+	if turnMetadata := strings.TrimSpace(ojson.Get(metadataJSON, "x-codex-turn-metadata").String()); turnMetadata != "" {
+		metadataJSON, _ = ojson.Set(metadataJSON, "x-codex-turn-metadata", preBatchRemapCodexAccountIdentityJSON(turnMetadata, state))
 	}
 
 	var edits []helps.JSONValueReplacement
@@ -61,14 +60,14 @@ func preBatchCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Au
 	rawJSON, _ = helps.ReplaceJSONValues(rawJSON, edits)
 	// History retains the turn that created each message, rather than adopting
 	// the current request's turn. Use the same namespace as turn metadata.
-	if input := gjson.GetBytes(rawJSON, "input"); input.IsArray() {
+	if input := ojson.GetBytes(rawJSON, "input"); input.IsArray() {
 		for i, item := range input.Array() {
 			value := item.Get("internal_chat_message_metadata_passthrough.turn_id")
-			if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
+			if value.Type != ojson.String || strings.TrimSpace(value.String()) == "" {
 				continue
 			}
 			path := fmt.Sprintf("input.%d.internal_chat_message_metadata_passthrough.turn_id", i)
-			updated, err := sjson.SetBytes(rawJSON, path, codexAccountIdentityUUID(state, "turn", value.String()))
+			updated, err := ojson.SetBytes(rawJSON, path, codexAccountIdentityUUID(state, "turn", value.String()))
 			if err == nil {
 				rawJSON = updated
 			}
@@ -89,22 +88,22 @@ func preBatchCodexIdentityConvergenceBody(cfg *config.Config, auth *cliproxyauth
 		rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.thread_id", state.threadID)
 		rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.turn_id", state.turnID)
 		rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.x-codex-window-id", state.windowID)
-		if gjson.GetBytes(rawJSON, "client_metadata.window_id").Exists() {
+		if ojson.GetBytes(rawJSON, "client_metadata.window_id").Exists() {
 			rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.window_id", state.windowID)
 		}
-		if gjson.GetBytes(rawJSON, "client_metadata.window_number").Type == gjson.String {
+		if ojson.GetBytes(rawJSON, "client_metadata.window_number").Type == ojson.String {
 			rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.window_number", state.windowOrdinal)
-		} else if gjson.GetBytes(rawJSON, "client_metadata.window_number").Type == gjson.Number {
-			rawJSON, _ = sjson.SetRawBytes(rawJSON, "client_metadata.window_number", []byte(state.windowOrdinal))
+		} else if ojson.GetBytes(rawJSON, "client_metadata.window_number").Type == ojson.Number {
+			rawJSON, _ = ojson.SetRawBytes(rawJSON, "client_metadata.window_number", []byte(state.windowOrdinal))
 		}
 	}
 
-	if turnMetadata := strings.TrimSpace(gjson.GetBytes(rawJSON, "client_metadata.x-codex-turn-metadata").String()); turnMetadata != "" {
+	if turnMetadata := strings.TrimSpace(ojson.GetBytes(rawJSON, "client_metadata.x-codex-turn-metadata").String()); turnMetadata != "" {
 		rewrittenMetadata := rewriteCodexIdentityConvergenceTurnMetadata(turnMetadata, state)
 		rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.x-codex-turn-metadata", rewrittenMetadata)
 	}
 
-	promptCacheKey := strings.TrimSpace(gjson.GetBytes(rawJSON, "prompt_cache_key").String())
+	promptCacheKey := strings.TrimSpace(ojson.GetBytes(rawJSON, "prompt_cache_key").String())
 	if state.mode != codexIdentityConvergenceDevice && state.originalBodySessionID != "" && promptCacheKey == state.originalBodySessionID {
 		rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "prompt_cache_key", state.sessionID)
 		state.promptCacheKeyWasConverged = true
@@ -222,15 +221,15 @@ func BenchmarkCodexBodyBatchPipeline(b *testing.B) {
 }
 
 func preBatchRemapCodexAccountIdentityJSON(raw string, state codexAccountIdentityState) string {
-	if !state.enabled || !gjson.Parse(raw).IsObject() {
+	if !state.enabled || !ojson.Parse(raw).IsObject() {
 		return raw
 	}
 	for _, field := range codexAccountIdentityTurnMetadataFields {
-		value := gjson.Get(raw, field.path)
-		if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
+		value := ojson.Get(raw, field.path)
+		if value.Type != ojson.String || strings.TrimSpace(value.String()) == "" {
 			continue
 		}
-		updated, err := sjson.Set(raw, field.path, codexAccountIdentityUUID(state, field.kind, value.String()))
+		updated, err := ojson.Set(raw, field.path, codexAccountIdentityUUID(state, field.kind, value.String()))
 		if err == nil {
 			raw = updated
 		}

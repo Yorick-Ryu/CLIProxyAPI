@@ -5,11 +5,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	log "github.com/sirupsen/logrus"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 // Registry manages translation functions across schemas.
@@ -140,8 +138,8 @@ func (r *Registry) TranslateRequestEnvelope(ctx context.Context, from, to Format
 		return req
 	}
 
-	if req.Model != "" && gjson.GetBytes(req.Body, "model").String() != req.Model {
-		if updated, err := sjson.SetBytes(req.Body, "model", req.Model); err != nil {
+	if req.Model != "" && ojson.GetBytesNoCopy(req.Body, "model").String() != req.Model {
+		if updated, err := ojson.SetBytes(req.Body, "model", req.Model); err != nil {
 			log.Warnf("translator: failed to normalize model in request fallback: %v", err)
 		} else {
 			req.Body = updated
@@ -171,12 +169,12 @@ func (r *Registry) TranslateRequestEnvelope(ctx context.Context, from, to Format
 // configurationUpdates captures only Responses update items before and after a plugin
 // normalizer. A native cross-protocol translation removing updates is not a plugin edit.
 func configurationUpdates(body []byte) []string {
-	input := util.GetGJSONBytesNoCopy(body, "input")
+	input := ojson.GetBytesNoCopy(body, "input")
 	if !input.IsArray() {
 		return nil
 	}
 	var updates []string
-	input.ForEach(func(_, item gjson.Result) bool {
+	input.ForEach(func(_, item ojson.Result) bool {
 		if item.Get("type").String() == "configuration_update" {
 			updates = append(updates, strings.Clone(item.Raw))
 		}

@@ -9,8 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 const codexTurnStateHeader = "x-codex-turn-state"
@@ -67,11 +66,11 @@ func WithCodexTurnState(ctx context.Context, owner string, headers http.Header, 
 	}
 	for _, path := range []string{"client_metadata.thread_id", "client_metadata.session_id", "prompt_cache_key"} {
 		if session == "" {
-			session = strings.TrimSpace(gjson.GetBytes(body, path).String())
+			session = strings.TrimSpace(ojson.GetBytes(body, path).String())
 		}
 	}
 	if session == "" {
-		embedded := gjson.Parse(gjson.GetBytes(body, "client_metadata.x-codex-turn-metadata").String())
+		embedded := ojson.Parse(ojson.GetBytes(body, "client_metadata.x-codex-turn-metadata").String())
 		for _, key := range []string{"thread_id", "session_id"} {
 			if session == "" {
 				session = strings.TrimSpace(embedded.Get(key).String())
@@ -179,11 +178,11 @@ func GuardCodexTurnStateBody(ctx context.Context, body []byte) []byte {
 	if !ok {
 		return body
 	}
-	metadata := gjson.GetBytes(body, "client_metadata")
-	metadata.ForEach(func(key, value gjson.Result) bool {
-		if strings.EqualFold(key.Str, codexTurnStateHeader) && value.Type == gjson.String && codexTurnStates.foreign(identity, strings.TrimSpace(value.Str)) {
+	metadata := ojson.GetBytes(body, "client_metadata")
+	metadata.ForEach(func(key, value ojson.Result) bool {
+		if strings.EqualFold(key.Str, codexTurnStateHeader) && value.Type == ojson.String && codexTurnStates.foreign(identity, strings.TrimSpace(value.Str)) {
 			// The header name contains no JSON path metacharacters.
-			if updated, err := sjson.DeleteBytes(body, "client_metadata."+key.Str); err == nil {
+			if updated, err := ojson.DeleteBytes(body, "client_metadata."+key.Str); err == nil {
 				body = updated
 			}
 		}
@@ -205,14 +204,14 @@ func CodexTurnStateCommitObserver(ctx context.Context) func(http.Header, []byte)
 	}
 	var responseHeaders sync.Once
 	return func(headers http.Header, payload []byte) {
-		rememberHeaders := func(values gjson.Result) {
-			values.ForEach(func(key, value gjson.Result) bool {
+		rememberHeaders := func(values ojson.Result) {
+			values.ForEach(func(key, value ojson.Result) bool {
 				if strings.EqualFold(key.Str, codexTurnStateHeader) {
-					if value.Type == gjson.String {
+					if value.Type == ojson.String {
 						codexTurnStates.remember(identity, strings.TrimSpace(value.Str))
 					} else if value.IsArray() {
-						value.ForEach(func(_, token gjson.Result) bool {
-							if token.Type == gjson.String {
+						value.ForEach(func(_, token ojson.Result) bool {
+							if token.Type == ojson.String {
 								codexTurnStates.remember(identity, strings.TrimSpace(token.Str))
 							}
 							return true
@@ -235,10 +234,10 @@ func CodexTurnStateCommitObserver(ctx context.Context) func(http.Header, []byte)
 			return
 		}
 		observeEvent := func(data []byte) {
-			if !gjson.ValidBytes(data) {
+			if !ojson.ValidBytes(data) {
 				return
 			}
-			root := gjson.ParseBytes(data)
+			root := ojson.ParseBytes(data)
 			if root.Get("type").String() == "codex.response.metadata" {
 				rememberHeaders(root.Get("headers"))
 			}

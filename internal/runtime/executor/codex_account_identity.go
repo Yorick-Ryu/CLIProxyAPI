@@ -7,12 +7,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 const codexAccountIdentityNamespaceVersion = "v2"
@@ -152,17 +151,17 @@ var codexAccountIdentityTurnMetadataFields = []struct {
 }
 
 func remapCodexAccountIdentityJSON(raw string, state codexAccountIdentityState) string {
-	if !state.enabled || !gjson.Parse(raw).IsObject() {
+	if !state.enabled || !ojson.Parse(raw).IsObject() {
 		return raw
 	}
 	// Malformed metadata keeps the original sequential editor's behavior.
-	if !gjson.Valid(raw) {
+	if !ojson.Valid(raw) {
 		for _, field := range codexAccountIdentityTurnMetadataFields {
-			value := gjson.Get(raw, field.path)
-			if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
+			value := ojson.Get(raw, field.path)
+			if value.Type != ojson.String || strings.TrimSpace(value.String()) == "" {
 				continue
 			}
-			if updated, err := sjson.Set(raw, field.path, codexAccountIdentityUUID(state, field.kind, value.String())); err == nil {
+			if updated, err := ojson.Set(raw, field.path, codexAccountIdentityUUID(state, field.kind, value.String())); err == nil {
 				raw = updated
 			}
 		}
@@ -170,8 +169,8 @@ func remapCodexAccountIdentityJSON(raw string, state codexAccountIdentityState) 
 	}
 	var edits []helps.JSONValueReplacement
 	for _, field := range codexAccountIdentityTurnMetadataFields {
-		value := gjson.Get(raw, field.path)
-		if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
+		value := ojson.Get(raw, field.path)
+		if value.Type != ojson.String || strings.TrimSpace(value.String()) == "" {
 			continue
 		}
 		mapped := codexAccountIdentityUUID(state, field.kind, value.String())
@@ -200,18 +199,18 @@ func applyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth,
 	metadataJSON := metadata.Raw
 	for _, field := range codexAccountIdentityBodyFields {
 		path := strings.TrimPrefix(field.path, "client_metadata.")
-		value := gjson.Get(metadataJSON, path)
-		if value.Type != gjson.String || strings.TrimSpace(value.String()) == "" {
+		value := ojson.Get(metadataJSON, path)
+		if value.Type != ojson.String || strings.TrimSpace(value.String()) == "" {
 			continue
 		}
-		updated, err := sjson.Set(metadataJSON, path, codexAccountIdentityUUID(state, field.kind, value.String()))
+		updated, err := ojson.Set(metadataJSON, path, codexAccountIdentityUUID(state, field.kind, value.String()))
 		if err == nil {
 			metadataJSON = updated
 		}
 	}
 
-	if turnMetadata := strings.TrimSpace(gjson.Get(metadataJSON, "x-codex-turn-metadata").String()); turnMetadata != "" {
-		metadataJSON, _ = sjson.Set(metadataJSON, "x-codex-turn-metadata", remapCodexAccountIdentityJSON(turnMetadata, state))
+	if turnMetadata := strings.TrimSpace(ojson.Get(metadataJSON, "x-codex-turn-metadata").String()); turnMetadata != "" {
+		metadataJSON, _ = ojson.Set(metadataJSON, "x-codex-turn-metadata", remapCodexAccountIdentityJSON(turnMetadata, state))
 	}
 
 	var edits []helps.JSONValueReplacement
@@ -233,9 +232,9 @@ func applyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth,
 	// Collect history edits against the unchanged source, alongside metadata and
 	// cache edits, so a long history does not copy the whole request per turn.
 	if input := util.GetGJSONBytesNoCopy(rawJSON, "input"); input.IsArray() {
-		input.ForEach(func(_, item gjson.Result) bool {
+		input.ForEach(func(_, item ojson.Result) bool {
 			value := item.Get("internal_chat_message_metadata_passthrough.turn_id")
-			if value.Type == gjson.String && strings.TrimSpace(value.String()) != "" {
+			if value.Type == ojson.String && strings.TrimSpace(value.String()) != "" {
 				mapped := codexAccountIdentityUUID(state, "turn", value.String())
 				edits = append(edits, helps.JSONValueReplacement{Value: value, Raw: []byte(`"` + mapped + `"`)})
 			}

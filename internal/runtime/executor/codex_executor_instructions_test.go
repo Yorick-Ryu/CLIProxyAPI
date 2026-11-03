@@ -3,17 +3,17 @@ package executor
 import (
 	"context"
 	"fmt"
-	"github.com/gorilla/websocket"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
+	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 func TestCodexNativeInstructionsOnWire(t *testing.T) {
@@ -68,7 +68,7 @@ func TestCodexNativeInstructionsOnWire(t *testing.T) {
 						t.Fatal(err)
 					}
 					body := <-captured
-					got := gjson.GetBytes(body, "instructions")
+					got := ojson.GetBytes(body, "instructions")
 					if instructions == "" && got.Exists() {
 						t.Fatalf("synthesized instructions: %s", got.Raw)
 					}
@@ -112,11 +112,11 @@ func TestCodexExecutorExecuteNormalizesNullInstructions(t *testing.T) {
 	if gotPath != "/responses" {
 		t.Fatalf("path = %q, want %q", gotPath, "/responses")
 	}
-	if gjson.GetBytes(gotBody, "instructions").Type != gjson.String {
-		t.Fatalf("instructions type = %v, want string", gjson.GetBytes(gotBody, "instructions").Type)
+	if ojson.GetBytes(gotBody, "instructions").Type != ojson.String {
+		t.Fatalf("instructions type = %v, want string", ojson.GetBytes(gotBody, "instructions").Type)
 	}
-	if gjson.GetBytes(gotBody, "instructions").String() != "" {
-		t.Fatalf("instructions = %q, want empty string", gjson.GetBytes(gotBody, "instructions").String())
+	if ojson.GetBytes(gotBody, "instructions").String() != "" {
+		t.Fatalf("instructions = %q, want empty string", ojson.GetBytes(gotBody, "instructions").String())
 	}
 }
 
@@ -153,11 +153,11 @@ func TestCodexExecutorExecuteStreamNormalizesNullInstructions(t *testing.T) {
 	if gotPath != "/responses" {
 		t.Fatalf("path = %q, want %q", gotPath, "/responses")
 	}
-	if gjson.GetBytes(gotBody, "instructions").Type != gjson.String {
-		t.Fatalf("instructions type = %v, want string", gjson.GetBytes(gotBody, "instructions").Type)
+	if ojson.GetBytes(gotBody, "instructions").Type != ojson.String {
+		t.Fatalf("instructions type = %v, want string", ojson.GetBytes(gotBody, "instructions").Type)
 	}
-	if gjson.GetBytes(gotBody, "instructions").String() != "" {
-		t.Fatalf("instructions = %q, want empty string", gjson.GetBytes(gotBody, "instructions").String())
+	if ojson.GetBytes(gotBody, "instructions").String() != "" {
+		t.Fatalf("instructions = %q, want empty string", ojson.GetBytes(gotBody, "instructions").String())
 	}
 }
 

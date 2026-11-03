@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 func TestCodexTimezoneHTTPAndWebsocketPreparation(t *testing.T) {
@@ -39,7 +39,7 @@ func TestCodexTimezoneHTTPAndWebsocketPreparation(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, b := range [][]byte{wire, prepared.upstreamBody} {
-		text := gjson.GetBytes(b, "input.0.content.0.text").String()
+		text := ojson.GetBytes(b, "input.0.content.0.text").String()
 		if !strings.Contains(text, "<timezone>America/Los_Angeles</timezone>") || strings.Contains(text, "Asia/Shanghai") || !strings.Contains(text, "<current_date>2026-09-26</current_date>") {
 			t.Fatal(text)
 		}
@@ -77,11 +77,11 @@ func TestCodexSearchLocationHTTPAndWebsocketPreparation(t *testing.T) {
 	}
 	for _, b := range [][]byte{wire, prepared.upstreamBody} {
 		for field, want := range map[string]string{"country": "JP", "region": "Tokyo", "city": "Tokyo", "timezone": "Asia/Tokyo", "type": "approximate"} {
-			if got := gjson.GetBytes(b, "tools.0.user_location."+field).String(); got != want {
+			if got := ojson.GetBytes(b, "tools.0.user_location."+field).String(); got != want {
 				t.Fatalf("%s got %q want %q", field, got, want)
 			}
 		}
-		if got := gjson.GetBytes(b, "input.0.content.0.text").String(); !strings.Contains(got, "<timezone>Asia/Tokyo</timezone>") || !strings.Contains(got, "2001-01-01") {
+		if got := ojson.GetBytes(b, "input.0.content.0.text").String(); !strings.Contains(got, "<timezone>Asia/Tokyo</timezone>") || !strings.Contains(got, "2001-01-01") {
 			t.Fatal(got)
 		}
 	}

@@ -11,12 +11,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 // Identical fixtures and benchmark entry points are retained on both maintenance
@@ -136,7 +136,7 @@ func TestCodexRuntimeReviewIsolationMatrix(t *testing.T) {
 				t.Fatal("cross-account identity collision")
 			}
 			for _, path := range []string{"client_metadata.turn_id", "input.0.internal_chat_message_metadata_passthrough.turn_id", "prompt_cache_key"} {
-				if gjson.GetBytes(first, path).String() == gjson.GetBytes(second, path).String() {
+				if ojson.GetBytes(first, path).String() == ojson.GetBytes(second, path).String() {
 					t.Fatalf("account isolation lost: %s", path)
 				}
 			}

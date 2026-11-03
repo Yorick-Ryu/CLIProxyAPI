@@ -10,9 +10,9 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/tidwall/gjson"
 )
 
 func globalLocationConfig() *config.Config {
@@ -37,12 +37,12 @@ func TestCodexTimezonePreservesClientDate(t *testing.T) {
 	text := "<environment_context>\n<current_date>2026-01-01</current_date>\n<timezone>Asia/Shanghai</timezone>\n<cwd>/work</cwd>\n</environment_context>"
 	body := timezoneBody(t, text)
 	out := ApplyCodexRequestLocation(context.Background(), cfg, nil, body)
-	got := gjson.GetBytes(out, "input.0.content.0.text").String()
+	got := ojson.GetBytes(out, "input.0.content.0.text").String()
 	want := strings.ReplaceAll(text, "Asia/Shanghai", "America/Los_Angeles")
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
-	if !gjson.GetBytes(out, "unknown.keep").Bool() || gjson.GetBytes(out, "input.0.id").String() != "keep-id" {
+	if !ojson.GetBytes(out, "unknown.keep").Bool() || ojson.GetBytes(out, "input.0.id").String() != "keep-id" {
 		t.Fatal("lost unrelated fields")
 	}
 	if string(body) == string(out) {
@@ -72,10 +72,10 @@ func TestCodexTimezonePreservesStringAndToolContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := ApplyCodexRequestLocation(context.Background(), cfg, nil, b)
-	if gjson.GetBytes(out, "input.0.content").String() != old || gjson.GetBytes(out, "input.2.content").String() != old || gjson.GetBytes(out, "input.3.output").String() != old || gjson.GetBytes(out, "input.4.content").String() != "Please explain: "+old {
+	if ojson.GetBytes(out, "input.0.content").String() != old || ojson.GetBytes(out, "input.2.content").String() != old || ojson.GetBytes(out, "input.3.output").String() != old || ojson.GetBytes(out, "input.4.content").String() != "Please explain: "+old {
 		t.Fatal("changed historical context or user/tool content")
 	}
-	got := gjson.GetBytes(out, "input.1.content.0.text").String()
+	got := ojson.GetBytes(out, "input.1.content.0.text").String()
 	if !strings.Contains(got, "<current_date status=\"unavailable\" />") || !strings.Contains(got, "<timezone>America/Los_Angeles</timezone>") {
 		t.Fatal(got)
 	}
@@ -97,7 +97,7 @@ func TestCodexTimezonePreservesMissingFields(t *testing.T) {
 	cfg := globalLocationConfig()
 	for _, text := range []string{"<environment_context><cwd>/work</cwd></environment_context>", "<environment_context><timezone>Etc/UTC</timezone></environment_context>", "<environment_context><current_date>2001-01-01</current_date></environment_context>"} {
 		out := ApplyCodexRequestLocation(context.Background(), cfg, nil, timezoneBody(t, text))
-		got := gjson.GetBytes(out, "input.0.content.0.text").String()
+		got := ojson.GetBytes(out, "input.0.content.0.text").String()
 		if got != strings.ReplaceAll(text, "<timezone>Etc/UTC</timezone>", "<timezone>America/Los_Angeles</timezone>") {
 			t.Fatal(got)
 		}
@@ -305,9 +305,9 @@ func TestCodexEgressSearchLocation(t *testing.T) {
 	for attempt := 0; attempt < 2; attempt++ {
 		out := ApplyCodexRequestLocation(ctx, cfg, auth, body)
 		for _, path := range []string{"tools.0.user_location", "tools.1.user_location", "tools.2.user_location"} {
-			got := gjson.GetBytes(out, path)
+			got := ojson.GetBytes(out, path)
 			for _, field := range []string{"type", "country", "region", "city", "timezone"} {
-				if got.Get(field).String() != gjson.Get(want, field).String() {
+				if got.Get(field).String() != ojson.Get(want, field).String() {
 					t.Fatalf("%s: %s", path, out)
 				}
 			}
@@ -315,7 +315,7 @@ func TestCodexEgressSearchLocation(t *testing.T) {
 				t.Fatal("did not replace entire location")
 			}
 		}
-		if gjson.GetBytes(out, "tools.0.external_web_access").Bool() || gjson.GetBytes(out, "tools.3.user_location").Exists() || gjson.GetBytes(out, "tools.4.tools.0.user_location").Exists() {
+		if ojson.GetBytes(out, "tools.0.external_web_access").Bool() || ojson.GetBytes(out, "tools.3.user_location").Exists() || ojson.GetBytes(out, "tools.4.tools.0.user_location").Exists() {
 			t.Fatal("changed unrelated tool fields")
 		}
 	}
@@ -392,13 +392,13 @@ func TestCodexRequestLocationPrecedence(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg.Codex.RequestLocation.Enabled = tc.global
 			out := ApplyCodexRequestLocation(context.Background(), cfg, &cliproxyauth.Auth{ID: tc.name, Metadata: tc.metadata}, body)
-			if !strings.Contains(gjson.GetBytes(out, "input.0.content.0.text").String(), "<timezone>"+tc.want+"</timezone>") {
+			if !strings.Contains(ojson.GetBytes(out, "input.0.content.0.text").String(), "<timezone>"+tc.want+"</timezone>") {
 				t.Fatal(string(out))
 			}
-			if tc.want == "Asia/Shanghai" && gjson.GetBytes(out, "tools.0.user_location").Exists() {
+			if tc.want == "Asia/Shanghai" && ojson.GetBytes(out, "tools.0.user_location").Exists() {
 				t.Fatal("disabled location changed web search")
 			}
-			if tc.want != "Asia/Shanghai" && gjson.GetBytes(out, "tools.0.user_location.timezone").String() != tc.want {
+			if tc.want != "Asia/Shanghai" && ojson.GetBytes(out, "tools.0.user_location.timezone").String() != tc.want {
 				t.Fatal(string(out))
 			}
 		})

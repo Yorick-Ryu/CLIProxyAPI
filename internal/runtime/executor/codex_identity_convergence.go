@@ -5,13 +5,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/google/uuid"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 // codexIdentityConvergenceState contains one outbound Codex device + session
@@ -111,7 +110,7 @@ func codexClientMetadataSessionID(payload []byte) string {
 	if len(payload) == 0 {
 		return ""
 	}
-	return strings.TrimSpace(gjson.GetBytes(payload, "client_metadata.session_id").String())
+	return strings.TrimSpace(ojson.GetBytes(payload, "client_metadata.session_id").String())
 }
 
 func resolveCodexIdentityConvergenceState(cfg *config.Config, auth *cliproxyauth.Auth, userPayload []byte, rawJSON []byte, clientHeaders http.Header) codexIdentityConvergenceState {
@@ -139,8 +138,8 @@ func resolveCodexIdentityConvergenceState(cfg *config.Config, auth *cliproxyauth
 	// Account mapping has already scoped client-owned turn identities. Keep them
 	// stable across retries and consistent with parent/root references.
 	turnID := uuid.Must(uuid.NewV7())
-	nested := gjson.Parse(gjson.GetBytes(rawJSON, "client_metadata.x-codex-turn-metadata").String())
-	for _, candidate := range []string{nested.Get("turn_id").String(), gjson.GetBytes(rawJSON, "client_metadata.turn_id").String()} {
+	nested := ojson.Parse(ojson.GetBytes(rawJSON, "client_metadata.x-codex-turn-metadata").String())
+	for _, candidate := range []string{nested.Get("turn_id").String(), ojson.GetBytes(rawJSON, "client_metadata.turn_id").String()} {
 		if existing, err := uuid.Parse(candidate); err == nil {
 			turnID = existing
 			break
@@ -172,7 +171,7 @@ func applyCodexIdentityConvergenceBody(cfg *config.Config, auth *cliproxyauth.Au
 		return rawJSON, state
 	}
 	metadata := util.GetGJSONBytesNoCopy(rawJSON, "client_metadata")
-	if !metadata.IsObject() || !gjson.Valid(metadata.Raw) {
+	if !metadata.IsObject() || !ojson.Valid(metadata.Raw) {
 		return applyCodexIdentityConvergenceBodyValues(rawJSON, state)
 	}
 	cache := util.GetGJSONBytesNoCopy(rawJSON, "prompt_cache_key")
@@ -186,7 +185,7 @@ func applyCodexIdentityConvergenceBody(cfg *config.Config, auth *cliproxyauth.Au
 	var edits []helps.JSONValueReplacement
 	for _, field := range []struct {
 		path   string
-		source gjson.Result
+		source ojson.Result
 	}{
 		{"client_metadata", metadata}, {"prompt_cache_key", cache},
 	} {
@@ -211,22 +210,22 @@ func applyCodexIdentityConvergenceBodyValues(rawJSON []byte, state codexIdentity
 		rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.thread_id", state.threadID)
 		rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.turn_id", state.turnID)
 		rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.x-codex-window-id", state.windowID)
-		if gjson.GetBytes(rawJSON, "client_metadata.window_id").Exists() {
+		if ojson.GetBytes(rawJSON, "client_metadata.window_id").Exists() {
 			rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.window_id", state.windowID)
 		}
-		if gjson.GetBytes(rawJSON, "client_metadata.window_number").Type == gjson.String {
+		if ojson.GetBytes(rawJSON, "client_metadata.window_number").Type == ojson.String {
 			rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.window_number", state.windowOrdinal)
-		} else if gjson.GetBytes(rawJSON, "client_metadata.window_number").Type == gjson.Number {
-			rawJSON, _ = sjson.SetRawBytes(rawJSON, "client_metadata.window_number", []byte(state.windowOrdinal))
+		} else if ojson.GetBytes(rawJSON, "client_metadata.window_number").Type == ojson.Number {
+			rawJSON, _ = ojson.SetRawBytes(rawJSON, "client_metadata.window_number", []byte(state.windowOrdinal))
 		}
 	}
 
-	if turnMetadata := strings.TrimSpace(gjson.GetBytes(rawJSON, "client_metadata.x-codex-turn-metadata").String()); turnMetadata != "" {
+	if turnMetadata := strings.TrimSpace(ojson.GetBytes(rawJSON, "client_metadata.x-codex-turn-metadata").String()); turnMetadata != "" {
 		rewrittenMetadata := rewriteCodexIdentityConvergenceTurnMetadata(turnMetadata, state)
 		rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "client_metadata.x-codex-turn-metadata", rewrittenMetadata)
 	}
 
-	promptCacheKey := strings.TrimSpace(gjson.GetBytes(rawJSON, "prompt_cache_key").String())
+	promptCacheKey := strings.TrimSpace(ojson.GetBytes(rawJSON, "prompt_cache_key").String())
 	if state.mode != codexIdentityConvergenceDevice && state.originalBodySessionID != "" && promptCacheKey == state.originalBodySessionID {
 		rawJSON = setCodexIdentityConvergenceBodyValue(rawJSON, "prompt_cache_key", state.sessionID)
 		state.promptCacheKeyWasConverged = true
@@ -236,7 +235,7 @@ func applyCodexIdentityConvergenceBodyValues(rawJSON []byte, state codexIdentity
 }
 
 func setCodexIdentityConvergenceBodyValue(rawJSON []byte, path string, value any) []byte {
-	updated, err := sjson.SetBytes(rawJSON, path, value)
+	updated, err := ojson.SetBytes(rawJSON, path, value)
 	if err != nil {
 		return rawJSON
 	}
@@ -247,12 +246,12 @@ func rewriteCodexIdentityConvergenceTurnMetadata(raw string, state codexIdentity
 	if !state.enabled {
 		return raw
 	}
-	if !gjson.Parse(raw).IsObject() {
+	if !ojson.Parse(raw).IsObject() {
 		raw = "{}"
 	}
 	// Native memory blobs deliberately omit thread/window/device identities.
 	// Outer compatibility metadata remains independently scoped.
-	if gjson.Get(raw, "request_kind").String() == "memory" {
+	if ojson.Get(raw, "request_kind").String() == "memory" {
 		return raw
 	}
 	fields := map[string]any{"installation_id": state.installationID}
@@ -264,15 +263,15 @@ func rewriteCodexIdentityConvergenceTurnMetadata(raw string, state codexIdentity
 			"turn_id":         state.turnID,
 			"window_id":       state.windowID,
 		}
-		if !gjson.Get(raw, "turn_started_at_unix_ms").Exists() {
+		if !ojson.Get(raw, "turn_started_at_unix_ms").Exists() {
 			fields["turn_started_at_unix_ms"] = state.turnStartedAtUnixMs
 		}
-		if gjson.Get(raw, "window_number").Type == gjson.Number && state.windowOrdinal != "" {
-			raw, _ = sjson.SetRaw(raw, "window_number", state.windowOrdinal)
+		if ojson.Get(raw, "window_number").Type == ojson.Number && state.windowOrdinal != "" {
+			raw, _ = ojson.SetRaw(raw, "window_number", state.windowOrdinal)
 		}
 	}
 	for path, value := range fields {
-		updated, err := sjson.Set(raw, path, value)
+		updated, err := ojson.Set(raw, path, value)
 		if err != nil {
 			continue
 		}

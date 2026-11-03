@@ -7,13 +7,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gorilla/websocket"
 	"github.com/klauspost/compress/zstd"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 // Inspect the wire after account identity, timezone, compression, and framing.
@@ -102,11 +102,11 @@ func TestCodexForkPayloadBarrier(t *testing.T) {
 				select {
 				case body := <-captured:
 					for _, path := range []string{"prompt_cache_key", "client_metadata", "instructions"} {
-						if gjson.GetBytes(body, path).Exists() {
+						if ojson.GetBytes(body, path).Exists() {
 							t.Fatalf("filtered field %s was restored: %s", path, body)
 						}
 					}
-					if gjson.GetBytes(body, "input.#").Int() != 1 || gjson.GetBytes(body, "input.0.id").String() != "configured-id" || gjson.GetBytes(body, "input.0.content.0.text").String() != "<timezone>UTC</timezone>" {
+					if ojson.GetBytes(body, "input.#").Int() != 1 || ojson.GetBytes(body, "input.0.id").String() != "configured-id" || ojson.GetBytes(body, "input.0.content.0.text").String() != "<timezone>UTC</timezone>" {
 						t.Fatalf("payload rules changed after finalization: %s", body)
 					}
 				default:

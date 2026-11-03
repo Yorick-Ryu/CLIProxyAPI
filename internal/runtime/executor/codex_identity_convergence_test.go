@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/google/uuid"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/tidwall/gjson"
 )
 
 func TestCodexIdentityConvergenceUsesStableAccountDeviceAndSession(t *testing.T) {
@@ -30,34 +30,34 @@ func TestCodexIdentityConvergenceUsesStableAccountDeviceAndSession(t *testing.T)
 	if !first.enabled {
 		t.Fatal("identity convergence was not enabled for Codex OAuth")
 	}
-	if got, want := gjson.GetBytes(firstBody, "client_metadata.x-codex-installation-id").String(), first.installationID; got != want {
+	if got, want := ojson.GetBytes(firstBody, "client_metadata.x-codex-installation-id").String(), first.installationID; got != want {
 		t.Fatalf("installation id = %q, want %q", got, want)
 	}
 	if version := uuid.MustParse(first.installationID).Version(); version != 4 {
 		t.Fatalf("installation UUID version = %d, want 4", version)
 	}
-	if got, want := gjson.GetBytes(firstBody, "client_metadata.session_id").String(), first.sessionID; got != want {
+	if got, want := ojson.GetBytes(firstBody, "client_metadata.session_id").String(), first.sessionID; got != want {
 		t.Fatalf("session id = %q, want %q", got, want)
 	}
 	if version := uuid.MustParse(first.sessionID).Version(); version != 7 {
 		t.Fatalf("session UUID version = %d, want 7", version)
 	}
-	if got, want := gjson.GetBytes(firstBody, "client_metadata.thread_id").String(), first.threadID; got != want {
+	if got, want := ojson.GetBytes(firstBody, "client_metadata.thread_id").String(), first.threadID; got != want {
 		t.Fatalf("thread id = %q, want %q", got, want)
 	}
 	if version := uuid.MustParse(first.threadID).Version(); version != 7 {
 		t.Fatalf("thread UUID version = %d, want 7", version)
 	}
-	if got, want := gjson.GetBytes(firstBody, "client_metadata.x-codex-window-id").String(), first.windowID; got != want {
+	if got, want := ojson.GetBytes(firstBody, "client_metadata.x-codex-window-id").String(), first.windowID; got != want {
 		t.Fatalf("window id = %q, want %q", got, want)
 	}
-	if got, want := gjson.GetBytes(firstBody, "prompt_cache_key").String(), first.sessionID; got != want {
+	if got, want := ojson.GetBytes(firstBody, "prompt_cache_key").String(), first.sessionID; got != want {
 		t.Fatalf("prompt_cache_key = %q, want %q", got, want)
 	}
 	if !first.promptCacheKeyWasConverged {
 		t.Fatal("expected prompt_cache_key to converge when it matches the client metadata session")
 	}
-	if _, err := uuid.Parse(gjson.GetBytes(firstBody, "client_metadata.turn_id").String()); err != nil {
+	if _, err := uuid.Parse(ojson.GetBytes(firstBody, "client_metadata.turn_id").String()); err != nil {
 		t.Fatalf("turn id is not a UUID: %v", err)
 	}
 	turn := uuid.MustParse(first.turnID)
@@ -66,7 +66,7 @@ func TestCodexIdentityConvergenceUsesStableAccountDeviceAndSession(t *testing.T)
 		t.Fatal("generated turn UUID must retain the exact turn-start timestamp")
 	}
 
-	firstMetadata := gjson.GetBytes(firstBody, "client_metadata.x-codex-turn-metadata").String()
+	firstMetadata := ojson.GetBytes(firstBody, "client_metadata.x-codex-turn-metadata").String()
 	for path, want := range map[string]string{
 		"installation_id": first.installationID,
 		"session_id":      first.sessionID,
@@ -74,11 +74,11 @@ func TestCodexIdentityConvergenceUsesStableAccountDeviceAndSession(t *testing.T)
 		"turn_id":         first.turnID,
 		"window_id":       first.windowID,
 	} {
-		if got := gjson.Get(firstMetadata, path).String(); got != want {
+		if got := ojson.Get(firstMetadata, path).String(); got != want {
 			t.Fatalf("turn metadata %s = %q, want %q", path, got, want)
 		}
 	}
-	if got := gjson.Get(firstMetadata, "turn_started_at_unix_ms").Int(); got != first.turnStartedAtUnixMs {
+	if got := ojson.Get(firstMetadata, "turn_started_at_unix_ms").Int(); got != first.turnStartedAtUnixMs {
 		t.Fatalf("turn metadata timestamp = %d, want %d", got, first.turnStartedAtUnixMs)
 	}
 
@@ -103,7 +103,7 @@ func TestCodexIdentityConvergenceUsesStableAccountDeviceAndSession(t *testing.T)
 		t.Fatalf("X-Codex-Window-Id = %q, want %q", got, want)
 	}
 	headerMetadata := headers.Get("X-Codex-Turn-Metadata")
-	if got, want := gjson.Get(headerMetadata, "session_id").String(), first.sessionID; got != want {
+	if got, want := ojson.Get(headerMetadata, "session_id").String(), first.sessionID; got != want {
 		t.Fatalf("header metadata session id = %q, want %q", got, want)
 	}
 
@@ -192,13 +192,13 @@ func TestCodexIdentityConvergenceGlobalDefaultPreservesClientSessions(t *testing
 		{body: string(firstBody), wantSession: "client-session-a", wantThread: "client-thread-a"},
 		{body: string(secondBody), wantSession: "client-session-b", wantThread: "client-thread-b"},
 	} {
-		if got := gjson.Get(test.body, "client_metadata.session_id").String(); got != test.wantSession {
+		if got := ojson.Get(test.body, "client_metadata.session_id").String(); got != test.wantSession {
 			t.Fatalf("session id = %q, want %q", got, test.wantSession)
 		}
-		if got := gjson.Get(test.body, "client_metadata.thread_id").String(); got != test.wantThread {
+		if got := ojson.Get(test.body, "client_metadata.thread_id").String(); got != test.wantThread {
 			t.Fatalf("thread id = %q, want %q", got, test.wantThread)
 		}
-		if got := gjson.Get(test.body, "prompt_cache_key").String(); got != test.wantSession {
+		if got := ojson.Get(test.body, "prompt_cache_key").String(); got != test.wantSession {
 			t.Fatalf("prompt_cache_key = %q, want %q", got, test.wantSession)
 		}
 	}
@@ -241,13 +241,13 @@ func TestCodexIdentityConvergenceSupportsDeviceAndFullAccountModes(t *testing.T)
 	if deviceState.mode != codexIdentityConvergenceDevice {
 		t.Fatalf("device mode = %q", deviceState.mode)
 	}
-	if got := gjson.GetBytes(deviceBody, "client_metadata.x-codex-installation-id").String(); got != deviceState.installationID {
+	if got := ojson.GetBytes(deviceBody, "client_metadata.x-codex-installation-id").String(); got != deviceState.installationID {
 		t.Fatalf("device installation id = %q, want %q", got, deviceState.installationID)
 	}
-	if got := gjson.GetBytes(deviceBody, "client_metadata.session_id").String(); got != "client-session" {
+	if got := ojson.GetBytes(deviceBody, "client_metadata.session_id").String(); got != "client-session" {
 		t.Fatalf("device mode changed session id to %q", got)
 	}
-	if got := gjson.GetBytes(deviceBody, "prompt_cache_key").String(); got != "client-session" {
+	if got := ojson.GetBytes(deviceBody, "prompt_cache_key").String(); got != "client-session" {
 		t.Fatalf("device mode changed prompt cache key to %q", got)
 	}
 

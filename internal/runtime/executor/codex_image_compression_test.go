@@ -12,11 +12,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/klauspost/compress/zstd"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	"github.com/tidwall/gjson"
 )
 
 func TestCodexDirectImageCompressionAfterPayloadConfig(t *testing.T) {
@@ -76,10 +76,10 @@ func TestCodexDirectImageCompressionAfterPayloadConfig(t *testing.T) {
 						} else if request.Header.Get("Content-Encoding") != "" {
 							t.Error("unexpected compression header")
 						}
-						if !json.Valid(body) || gjson.GetBytes(body, "padding").String() != strings.Repeat("x", test.finalSize) {
+						if !json.Valid(body) || ojson.GetBytes(body, "padding").String() != strings.Repeat("x", test.finalSize) {
 							t.Errorf("wire body does not contain final configured payload: type=%s prefix=%.180s", request.Header.Get("Content-Type"), body)
 						}
-						if gjson.GetBytes(body, "quality").String() != "high" || gjson.GetBytes(body, "markers").Raw != `["keep"]` {
+						if ojson.GetBytes(body, "quality").String() != "high" || ojson.GetBytes(body, "markers").Raw != `["keep"]` {
 							t.Error("payload rules must run exactly once before compression")
 						}
 						if stream {

@@ -3,13 +3,13 @@ package helps
 import (
 	"sort"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // JSONValueReplacement replaces an existing value identified in the unchanged
 // source document. Raw must contain an encoded JSON value.
 type JSONValueReplacement struct {
-	Value gjson.Result
+	Value ojson.Result
 	Raw   []byte
 }
 

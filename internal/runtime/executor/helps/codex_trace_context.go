@@ -4,9 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 var codexTraceFields = [...]string{
@@ -19,12 +18,12 @@ var codexTraceMetadataFields = [...]string{"turnMetadata", "turn_metadata", "x-c
 // stripCodexTraceObject removes only direct trace fields, never business input
 // or arbitrary nested extensions. Duplicate trace keys are removed as well.
 func stripCodexTraceObject(raw string) string {
-	if !gjson.Parse(raw).IsObject() || !gjson.Valid(raw) {
+	if !ojson.Parse(raw).IsObject() || !ojson.Valid(raw) {
 		return raw
 	}
 	for _, key := range codexTraceFields {
-		for gjson.Get(raw, key).Exists() {
-			updated, err := sjson.Delete(raw, key)
+		for ojson.Get(raw, key).Exists() {
+			updated, err := ojson.Delete(raw, key)
 			if err != nil || updated == raw {
 				break
 			}
@@ -43,14 +42,14 @@ type codexTraceEdit struct {
 
 // rewriteCodexTraceObject collects field deletions and metadata replacements,
 // then copies the enclosing object at most once. Unchanged objects reuse input.
-func rewriteCodexTraceObject(body []byte, rewrite func(string, gjson.Result) []byte) []byte {
+func rewriteCodexTraceObject(body []byte, rewrite func(string, ojson.Result) []byte) []byte {
 	object := util.ParseGJSONBytesNoCopy(body)
 	if !object.IsObject() {
 		return body
 	}
 	var edits []codexTraceEdit
 	pending, pendingStart, previousEnd, lastEnd := false, 0, 0, 0
-	object.ForEach(func(key, value gjson.Result) bool {
+	object.ForEach(func(key, value ojson.Result) bool {
 		remove := false
 		for _, field := range codexTraceFields {
 			if key.Str == field {
@@ -106,16 +105,16 @@ func rewriteCodexTraceObject(body []byte, rewrite func(string, gjson.Result) []b
 	return append(result, body[end:]...)
 }
 
-func codexTraceMetadataReplacement(value gjson.Result, canonical bool) []byte {
+func codexTraceMetadataReplacement(value ojson.Result, canonical bool) []byte {
 	switch {
-	case value.Type == gjson.String:
+	case value.Type == ojson.String:
 		updated := stripCodexTraceObject(value.Str)
 		if canonical && validCodexMetadataString(value.Raw) {
 			updated = CanonicalCodexTurnMetadata(updated)
 		}
 		if updated != value.Str {
 			// Match sjson's existing string encoding on a small envelope, not the request.
-			envelope, err := sjson.SetBytes([]byte(`{}`), "v", updated)
+			envelope, err := ojson.SetBytes([]byte(`{}`), "v", updated)
 			if err == nil {
 				return []byte(util.GetGJSONBytesNoCopy(envelope, "v").Raw)
 			}
@@ -142,13 +141,13 @@ func codexTraceMetadataField(name string) bool {
 }
 
 func prepareCodexTraceMetadataBody(body []byte, canonical bool) []byte {
-	return rewriteCodexTraceObject(body, func(name string, value gjson.Result) []byte {
+	return rewriteCodexTraceObject(body, func(name string, value ojson.Result) []byte {
 		if codexTraceMetadataField(name) {
 			return codexTraceMetadataReplacement(value, false)
 		}
 		if name == "client_metadata" && value.IsObject() {
 			raw := []byte(value.Raw)
-			updated := rewriteCodexTraceObject(raw, func(field string, nested gjson.Result) []byte {
+			updated := rewriteCodexTraceObject(raw, func(field string, nested ojson.Result) []byte {
 				if codexTraceMetadataField(field) {
 					return codexTraceMetadataReplacement(nested, canonical && field == "x-codex-turn-metadata")
 				}

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -18,7 +19,6 @@ import (
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 func TestCodexAccountIdentityPreservesSessionAndTurnLineage(t *testing.T) {
@@ -44,16 +44,16 @@ func TestCodexAccountIdentityPreservesSessionAndTurnLineage(t *testing.T) {
 	if session != headers.Get("Thread-Id") || session != headers.Get("X-Client-Request-Id") || headers.Get("X-Codex-Window-Id") != session+":3" {
 		t.Fatal("session/thread/request/window relationship lost")
 	}
-	if session != gjson.GetBytes(parent, "prompt_cache_key").String() {
+	if session != ojson.GetBytes(parent, "prompt_cache_key").String() {
 		t.Fatal("cache key differs from session")
 	}
-	turn := gjson.GetBytes(parent, "client_metadata.turn_id").String()
+	turn := ojson.GetBytes(parent, "client_metadata.turn_id").String()
 	assertCodexIdentityV7Timestamp(t, turn, rootTurn)
-	if turn == rootTurn || turn != gjson.GetBytes(parent, "client_metadata.root_turn_id").String() {
+	if turn == rootTurn || turn != ojson.GetBytes(parent, "client_metadata.root_turn_id").String() {
 		t.Fatal("root turn relation lost")
 	}
 	child, childHeaders := mapRequest(childThread, childTurn, rootTurn, rootTurn)
-	childMeta := gjson.Parse(childHeaders.Get("X-Codex-Turn-Metadata"))
+	childMeta := ojson.Parse(childHeaders.Get("X-Codex-Turn-Metadata"))
 	assertCodexIdentityV7Timestamp(t, childHeaders.Get("Thread-Id"), childThread)
 	assertCodexIdentityV7Timestamp(t, childMeta.Get("turn_id").String(), childTurn)
 	if childHeaders.Get("Session-Id") != session || childHeaders.Get("Thread-Id") == session {
@@ -65,7 +65,7 @@ func TestCodexAccountIdentityPreservesSessionAndTurnLineage(t *testing.T) {
 	if childMeta.Get("parent_thread_id").String() != session || childMeta.Get("forked_from_thread_id").String() != session {
 		t.Fatal("parent thread lineage lost")
 	}
-	if childHeaders.Get("X-Codex-Turn-Metadata") != gjson.GetBytes(child, "client_metadata.x-codex-turn-metadata").String() {
+	if childHeaders.Get("X-Codex-Turn-Metadata") != ojson.GetBytes(child, "client_metadata.x-codex-turn-metadata").String() {
 		t.Fatal("header/body metadata differs")
 	}
 }
@@ -87,15 +87,15 @@ func TestCodexAccountIdentityPreservesThreadRelationsAndWindowGeneration(t *test
 	for _, generation := range []string{"0", "2", "1024"} {
 		body := []byte(fmt.Sprintf(`{"client_metadata":{"thread_id":"thread-a","x-client-request-id":"thread-a","x-codex-window-id":"thread-a:%s","x-codex-turn-metadata":"{\"thread_id\":\"thread-a\",\"x-client-request-id\":\"thread-a\",\"window_id\":\"thread-a:%s\"}"}}`, generation, generation))
 		mapped, state := applyCodexAccountIdentityBody(codexAccountIdentityTestContext("caller"), auth, body)
-		thread := gjson.GetBytes(mapped, "client_metadata.thread_id").String()
+		thread := ojson.GetBytes(mapped, "client_metadata.thread_id").String()
 		if thread == "" || thread == "thread-a" {
 			t.Fatal("thread identity must be scoped")
 		}
-		metadata := gjson.Get(gjson.GetBytes(mapped, "client_metadata.x-codex-turn-metadata").String(), "@this")
-		if gjson.GetBytes(mapped, "client_metadata.x-client-request-id").String() != thread || metadata.Get("x-client-request-id").String() != thread {
+		metadata := ojson.Get(ojson.GetBytes(mapped, "client_metadata.x-codex-turn-metadata").String(), "@this")
+		if ojson.GetBytes(mapped, "client_metadata.x-client-request-id").String() != thread || metadata.Get("x-client-request-id").String() != thread {
 			t.Fatal("request identity lost its relationship with the thread")
 		}
-		if gjson.GetBytes(mapped, "client_metadata.x-codex-window-id").String() != thread+":"+generation || metadata.Get("window_id").String() != thread+":"+generation {
+		if ojson.GetBytes(mapped, "client_metadata.x-codex-window-id").String() != thread+":"+generation || metadata.Get("window_id").String() != thread+":"+generation {
 			t.Fatal("window generation or thread prefix changed")
 		}
 		headers := http.Header{"Thread-Id": {"thread-a"}, "X-Client-Request-Id": {"independent-request"}, "X-Codex-Window-Id": {"thread-a:" + generation}}
@@ -190,18 +190,18 @@ func TestCodexGuardianAndForkOnWire(t *testing.T) {
 						t.Fatal(err)
 					}
 					got := <-captured
-					cache := gjson.GetBytes(got.body, "prompt_cache_key").String()
+					cache := ojson.GetBytes(got.body, "prompt_cache_key").String()
 					if sharedCache == "" {
 						sharedCache = cache
 					}
 					if cache == "" || cache == "parent" || cache != sharedCache || got.headers.Get("Session-Id") != cache {
 						t.Fatal("parent and forks lost their shared cache routing identity")
 					}
-					thread := gjson.GetBytes(got.body, "client_metadata.thread_id").String()
-					if got.headers.Get("Thread-Id") != thread || gjson.GetBytes(got.body, "client_metadata.session_id").String() != thread || (thread == cache) != (tc.thread == "parent") {
+					thread := ojson.GetBytes(got.body, "client_metadata.thread_id").String()
+					if got.headers.Get("Thread-Id") != thread || ojson.GetBytes(got.body, "client_metadata.session_id").String() != thread || (thread == cache) != (tc.thread == "parent") {
 						t.Fatal("fork must retain its own session/thread identity")
 					}
-					if gjson.GetBytes(got.body, "client_metadata.parent_response_id").String() != "resp_upstream_opaque" {
+					if ojson.GetBytes(got.body, "client_metadata.parent_response_id").String() != "resp_upstream_opaque" {
 						t.Fatal("upstream response reference must not be remapped")
 					}
 					if got.headers.Get("X-Codex-Guardian") != tc.guardian {
@@ -233,14 +233,14 @@ func TestCodexAccountIdentityScopesByAccountAndRawIdentity(t *testing.T) {
 	if !first.enabled || !second.enabled || string(firstBody) != string(secondBody) {
 		t.Fatal("the same account and raw identity must map deterministically")
 	}
-	mappedSession := gjson.GetBytes(firstBody, "client_metadata.session_id").String()
+	mappedSession := ojson.GetBytes(firstBody, "client_metadata.session_id").String()
 	if mappedSession == "" || mappedSession == "client-session-a" {
 		t.Fatalf("mapped session = %q, want a non-empty anonymous value", mappedSession)
 	}
-	if got := gjson.GetBytes(firstBody, "prompt_cache_key").String(); got != mappedSession {
+	if got := ojson.GetBytes(firstBody, "prompt_cache_key").String(); got != mappedSession {
 		t.Fatalf("mapped prompt_cache_key = %q, want mapped session %q", got, mappedSession)
 	}
-	if got := gjson.Get(gjson.GetBytes(firstBody, "client_metadata.x-codex-turn-metadata").String(), "session_id").String(); got != mappedSession {
+	if got := ojson.Get(ojson.GetBytes(firstBody, "client_metadata.x-codex-turn-metadata").String(), "session_id").String(); got != mappedSession {
 		t.Fatalf("embedded session = %q, want %q", got, mappedSession)
 	}
 
@@ -253,7 +253,7 @@ func TestCodexAccountIdentityScopesByAccountAndRawIdentity(t *testing.T) {
 	if got := headers.Get("Session-Id"); got != mappedSession {
 		t.Fatalf("mapped Session-Id = %q, want body session %q", got, mappedSession)
 	}
-	if got, want := headers.Get("Thread-Id"), gjson.GetBytes(firstBody, "client_metadata.thread_id").String(); got != want {
+	if got, want := headers.Get("Thread-Id"), ojson.GetBytes(firstBody, "client_metadata.thread_id").String(); got != want {
 		t.Fatalf("mapped Thread-Id = %q, want body thread %q", got, want)
 	}
 
@@ -280,12 +280,12 @@ func TestCodexAccountIdentityScopesByAccountAndRawIdentity(t *testing.T) {
 		Metadata: map[string]any{"account_id": "upstream-account-b"},
 	}
 	differentAccountBody, _ := applyCodexAccountIdentityBody(codexAccountIdentityTestContext("caller-key-a"), differentAuth, body)
-	if got := gjson.GetBytes(differentAccountBody, "client_metadata.session_id").String(); got == mappedSession {
+	if got := ojson.GetBytes(differentAccountBody, "client_metadata.session_id").String(); got == mappedSession {
 		t.Fatal("different OAuth accounts must not share an upstream session identity")
 	}
 	differentSession := []byte(`{"prompt_cache_key":"client-session-b","client_metadata":{"session_id":"client-session-b","thread_id":"client-thread-b"}}`)
 	differentSessionBody, _ := applyCodexAccountIdentityBody(codexAccountIdentityTestContext("caller-key-a"), auth, differentSession)
-	if got := gjson.GetBytes(differentSessionBody, "client_metadata.session_id").String(); got == mappedSession {
+	if got := ojson.GetBytes(differentSessionBody, "client_metadata.session_id").String(); got == mappedSession {
 		t.Fatal("different client sessions must remain distinct after remapping")
 	}
 }
@@ -312,17 +312,17 @@ func TestCodexAccountIdentityUsesStableOAuthAccountAndComposesWithDeviceMode(t *
 	if firstConvergence.installationID != secondConvergence.installationID {
 		t.Fatal("the same OAuth account must retain one converged device across local auth rows")
 	}
-	if got, want := gjson.GetBytes(firstFinal, "client_metadata.session_id").String(), gjson.GetBytes(firstScoped, "client_metadata.session_id").String(); got != want {
+	if got, want := ojson.GetBytes(firstFinal, "client_metadata.session_id").String(), ojson.GetBytes(firstScoped, "client_metadata.session_id").String(); got != want {
 		t.Fatalf("device mode changed scoped session from %q to %q", want, got)
 	}
-	if got, want := gjson.GetBytes(secondFinal, "prompt_cache_key").String(), gjson.GetBytes(secondScoped, "prompt_cache_key").String(); got != want {
+	if got, want := ojson.GetBytes(secondFinal, "prompt_cache_key").String(), ojson.GetBytes(secondScoped, "prompt_cache_key").String(); got != want {
 		t.Fatalf("device mode changed scoped prompt cache key from %q to %q", want, got)
 	}
 
 	headers := http.Header{"Session-Id": []string{"client-session"}, "X-Codex-Installation-Id": []string{"client-install"}}
 	applyCodexAccountIdentityHeaders(headers, &firstIdentity)
 	applyCodexIdentityConvergenceHeaders(headers, &firstConvergence)
-	if got, want := headers.Get("Session-Id"), gjson.GetBytes(firstFinal, "client_metadata.session_id").String(); got != want {
+	if got, want := headers.Get("Session-Id"), ojson.GetBytes(firstFinal, "client_metadata.session_id").String(); got != want {
 		t.Fatalf("composed Session-Id = %q, want %q", got, want)
 	}
 	if got := headers.Get("X-Codex-Installation-Id"); got != firstConvergence.installationID {
@@ -410,8 +410,8 @@ func TestCodexChildIdentityOnWire(t *testing.T) {
 					auth := &cliproxyauth.Auth{ID: "child-wire", Provider: "codex", Attributes: map[string]string{"base_url": server.URL}, Metadata: map[string]any{"account_id": "synthetic-account", "access_token": "synthetic-token"}}
 					ctx := codexAccountIdentityTestContext("synthetic-caller")
 					parentBody, _ := applyCodexAccountIdentityBody(ctx, auth, []byte(fmt.Sprintf(`{"client_metadata":{"thread_id":%q,"turn_id":%q}}`, parentThreadSource, parentTurnSource)))
-					parent := gjson.GetBytes(parentBody, "client_metadata.thread_id").String()
-					parentTurn := gjson.GetBytes(parentBody, "client_metadata.turn_id").String()
+					parent := ojson.GetBytes(parentBody, "client_metadata.thread_id").String()
+					parentTurn := ojson.GetBytes(parentBody, "client_metadata.turn_id").String()
 					metadata := map[string]string{"session_id": parentThreadSource, "thread_id": childThreadSource, "turn_id": childTurnSource, "root_turn_id": parentTurnSource, "parent_turn_id": parentTurnSource, "x-codex-window-id": childThreadSource + ":3"}
 					nestedMetadata, err := json.Marshal(map[string]any{"parent_thread_id": parentThreadSource, "x-codex-parent-thread-id": parentThreadSource, "thread_id": childThreadSource, "turn_id": childTurnSource, "root_turn_id": parentTurnSource, "parent_turn_id": parentTurnSource, "turn_started_at_unix_ms": turnStarted})
 					if err != nil {
@@ -467,10 +467,10 @@ func TestCodexChildIdentityOnWire(t *testing.T) {
 					child := got.headers.Get("Thread-Id")
 					assertCodexIdentityV7Timestamp(t, parent, parentThreadSource)
 					assertCodexIdentityV7Timestamp(t, child, childThreadSource)
-					childTurn := gjson.GetBytes(got.body, "client_metadata.turn_id").String()
+					childTurn := ojson.GetBytes(got.body, "client_metadata.turn_id").String()
 					assertCodexIdentityV7Timestamp(t, childTurn, childTurnSource)
 					for i, want := range []string{parentTurn, parentTurn, childTurn} {
-						item := gjson.GetBytes(got.body, fmt.Sprintf("input.%d.internal_chat_message_metadata_passthrough", i))
+						item := ojson.GetBytes(got.body, fmt.Sprintf("input.%d.internal_chat_message_metadata_passthrough", i))
 						if item.Get("turn_id").String() != want || item.Get("create_time").Float() != 123.5 {
 							t.Fatalf("input %d lost its original turn association or timestamp: %s", i, item.Raw)
 						}
@@ -479,17 +479,17 @@ func TestCodexChildIdentityOnWire(t *testing.T) {
 					if parent == parentThreadSource || child == childThreadSource || child == parent || got.headers.Get("Session-Id") != parent {
 						t.Fatal("child and parent thread relationship lost")
 					}
-					if got.headers.Get("X-Client-Request-Id") != child || got.headers.Get("X-Codex-Window-Id") != child+":3" || gjson.GetBytes(got.body, "client_metadata.x-codex-window-id").String() != child+":3" {
+					if got.headers.Get("X-Client-Request-Id") != child || got.headers.Get("X-Codex-Window-Id") != child+":3" || ojson.GetBytes(got.body, "client_metadata.x-codex-window-id").String() != child+":3" {
 						t.Fatal("request and window IDs lost their thread relationship")
 					}
-					if gjson.GetBytes(got.body, "client_metadata.root_turn_id").String() != parentTurn || gjson.GetBytes(got.body, "client_metadata.parent_turn_id").String() != parentTurn {
+					if ojson.GetBytes(got.body, "client_metadata.root_turn_id").String() != parentTurn || ojson.GetBytes(got.body, "client_metadata.parent_turn_id").String() != parentTurn {
 						t.Fatal("parent turn references no longer match the independently mapped parent")
 					}
 					if hasHeaders {
 						if got.headers.Get("X-Codex-Parent-Thread-Id") != parent || got.headers.Get("X-OpenAI-Subagent") != "review" {
 							t.Fatal("independent parent or subagent header dropped or incorrectly mapped")
 						}
-						headerMetadata := gjson.Parse(got.headers.Get("X-Codex-Turn-Metadata"))
+						headerMetadata := ojson.Parse(got.headers.Get("X-Codex-Turn-Metadata"))
 						if headerMetadata.Get("turn_id").String() != childTurn || headerMetadata.Get("turn_started_at_unix_ms").Int() != turnStarted || headerMetadata.Get("parent_turn_id").String() != parentTurn {
 							t.Fatal("header turn timestamp or lineage differs from the body")
 						}
@@ -499,16 +499,16 @@ func TestCodexChildIdentityOnWire(t *testing.T) {
 					} else if got.headers.Get("X-Codex-Parent-Thread-Id") != "" || got.headers.Get("X-OpenAI-Subagent") != "" {
 						t.Fatal("missing child headers must not be synthesized")
 					}
-					alias := gjson.GetBytes(got.body, "client_metadata.x-codex-parent-thread-id")
+					alias := ojson.GetBytes(got.body, "client_metadata.x-codex-parent-thread-id")
 					if hasBody {
-						nested := gjson.Parse(gjson.GetBytes(got.body, "client_metadata.x-codex-turn-metadata").String())
+						nested := ojson.Parse(ojson.GetBytes(got.body, "client_metadata.x-codex-turn-metadata").String())
 						if alias.String() != parent || nested.Get("parent_thread_id").String() != parent || nested.Get("x-codex-parent-thread-id").String() != parent || nested.Get("thread_id").String() != child {
 							t.Fatal("body aliases and nested parent metadata must match the parent thread")
 						}
 						if nested.Get("turn_id").String() != childTurn || nested.Get("turn_started_at_unix_ms").Int() != turnStarted || nested.Get("root_turn_id").String() != parentTurn || nested.Get("parent_turn_id").String() != parentTurn {
 							t.Fatal("embedded turn timestamp or lineage differs from the outer metadata")
 						}
-						if gjson.GetBytes(got.body, "client_metadata.x-openai-subagent").String() != "review" {
+						if ojson.GetBytes(got.body, "client_metadata.x-openai-subagent").String() != "review" {
 							t.Fatal("subagent label changed")
 						}
 					} else if alias.Exists() {
@@ -527,15 +527,15 @@ func TestCodexContextWindowIdentityScopedWithoutSynthesis(t *testing.T) {
 	for _, account := range []string{"account-a", "account-b"} {
 		auth := &cliproxyauth.Auth{ID: account, Provider: "codex", Metadata: map[string]any{"account_id": account}}
 		mapped, _ := applyCodexAccountIdentityBody(codexAccountIdentityTestContext("caller"), auth, body)
-		id := gjson.GetBytes(mapped, "client_metadata.context_window_id").String()
+		id := ojson.GetBytes(mapped, "client_metadata.context_window_id").String()
 		assertCodexIdentityV7Timestamp(t, id, source)
-		nested := gjson.Parse(gjson.GetBytes(mapped, "client_metadata.x-codex-turn-metadata").String())
+		nested := ojson.Parse(ojson.GetBytes(mapped, "client_metadata.x-codex-turn-metadata").String())
 		if id == source || id == previous || nested.Get("context_window_id").String() != id || nested.Get("window_number").Int() != 3 {
 			t.Fatal("context window isolation or ordinal preservation failed")
 		}
 		previous = id
 		missing, _ := applyCodexAccountIdentityBody(codexAccountIdentityTestContext("caller"), auth, []byte(`{"client_metadata":{"x-codex-turn-metadata":"{\"thread_id\":\"thread\"}"}}`))
-		if gjson.GetBytes(missing, "client_metadata.context_window_id").Exists() || gjson.Get(gjson.GetBytes(missing, "client_metadata.x-codex-turn-metadata").String(), "context_window_id").Exists() {
+		if ojson.GetBytes(missing, "client_metadata.context_window_id").Exists() || ojson.Get(ojson.GetBytes(missing, "client_metadata.x-codex-turn-metadata").String(), "context_window_id").Exists() {
 			t.Fatal("mapper synthesized an absent context window")
 		}
 	}
@@ -553,10 +553,10 @@ func TestCodexInputTurnMappingPreservesUnrelatedValues(t *testing.T) {
 	}
 	body := []byte(`{"input":[{"internal_chat_message_metadata_passthrough":{"turn_id":"turn-a","create_time":1.2300,"extra":{"turn_id":"opaque"}}}]}`)
 	got, state := applyCodexAccountIdentityBody(ctx, auth, body)
-	if gjson.GetBytes(got, "input.0.internal_chat_message_metadata_passthrough.turn_id").String() != codexAccountIdentityUUID(state, "turn", "turn-a") {
+	if ojson.GetBytes(got, "input.0.internal_chat_message_metadata_passthrough.turn_id").String() != codexAccountIdentityUUID(state, "turn", "turn-a") {
 		t.Fatal("input-only turn was not scoped")
 	}
-	if gjson.GetBytes(got, "input.0.internal_chat_message_metadata_passthrough.create_time").Raw != "1.2300" || gjson.GetBytes(got, "input.0.internal_chat_message_metadata_passthrough.extra.turn_id").String() != "opaque" {
+	if ojson.GetBytes(got, "input.0.internal_chat_message_metadata_passthrough.create_time").Raw != "1.2300" || ojson.GetBytes(got, "input.0.internal_chat_message_metadata_passthrough.extra.turn_id").String() != "opaque" {
 		t.Fatal("unrelated metadata changed")
 	}
 	apiAuth := &cliproxyauth.Auth{ID: "api", Provider: "codex", Attributes: map[string]string{"api_key": "test"}}

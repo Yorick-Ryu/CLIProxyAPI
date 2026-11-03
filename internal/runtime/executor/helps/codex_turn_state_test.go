@@ -4,14 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
+	"github.com/gin-gonic/gin"
 )
 
 func TestCodexTurnStateCommittedProvenance(t *testing.T) {
@@ -27,7 +27,7 @@ func TestCodexTurnStateCommittedProvenance(t *testing.T) {
 		}
 		body := []byte(fmt.Sprintf(`{"client_metadata":{"X-Codex-Turn-State":%q,"unknown":"keep"}}`, token))
 		guarded := GuardCodexTurnStateBody(ctx, body)
-		if gjson.GetBytes(guarded, "client_metadata.X-Codex-Turn-State").Exists() != want || gjson.GetBytes(guarded, "client_metadata.unknown").String() != "keep" {
+		if ojson.GetBytes(guarded, "client_metadata.X-Codex-Turn-State").Exists() != want || ojson.GetBytes(guarded, "client_metadata.unknown").String() != "keep" {
 			t.Fatal("body guard changed unrelated metadata or retained foreign token")
 		}
 	}

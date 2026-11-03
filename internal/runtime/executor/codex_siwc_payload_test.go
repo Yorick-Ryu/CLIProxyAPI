@@ -6,12 +6,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 func TestCodexSIWCPayloadRulesAfterCleanupAndIdentity(t *testing.T) {
@@ -98,16 +98,16 @@ func TestCodexSIWCPayloadRulesAfterCleanupAndIdentity(t *testing.T) {
 			}
 
 			body := <-captured
-			if gjson.GetBytes(body, "temperature").Float() != 0.25 || !gjson.GetBytes(body, "store").Bool() || gjson.GetBytes(body, "prompt_cache_key").String() != "configured-cache" {
+			if ojson.GetBytes(body, "temperature").Float() != 0.25 || !ojson.GetBytes(body, "store").Bool() || ojson.GetBytes(body, "prompt_cache_key").String() != "configured-cache" {
 				t.Fatalf("cleanup or identity overwrote payload rules: %s", body)
 			}
-			if !gjson.GetBytes(body, "cleanup_observed").Bool() {
+			if !ojson.GetBytes(body, "cleanup_observed").Bool() {
 				t.Fatalf("rules ran before SIWC cleanup: %s", body)
 			}
-			if gjson.GetBytes(body, "instructions").Exists() || gjson.GetBytes(body, "client_metadata").Exists() {
+			if ojson.GetBytes(body, "instructions").Exists() || ojson.GetBytes(body, "client_metadata").Exists() {
 				t.Fatalf("filtered identity or instructions restored: %s", body)
 			}
-			input := gjson.GetBytes(body, "input").Array()
+			input := ojson.GetBytes(body, "input").Array()
 			if len(input) != 1 || input[0].Get("content").String() != "keep" {
 				t.Fatalf("payload filter must run exactly once: %s", body)
 			}

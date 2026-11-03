@@ -1,9 +1,8 @@
 package helps
 
 import (
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 // DeleteTopLevelJSONFields scans once for the requested top-level fields and
@@ -15,7 +14,7 @@ func DeleteTopLevelJSONFields(payload []byte, paths ...string) []byte {
 		present[path] = false
 	}
 	remaining := len(present)
-	util.ParseGJSONBytesNoCopy(payload).ForEach(func(key, _ gjson.Result) bool {
+	util.ParseGJSONBytesNoCopy(payload).ForEach(func(key, _ ojson.Result) bool {
 		if found, wanted := present[key.String()]; wanted && !found {
 			present[key.String()] = true
 			remaining--
@@ -26,7 +25,7 @@ func DeleteTopLevelJSONFields(payload []byte, paths ...string) []byte {
 		if !present[path] {
 			continue
 		}
-		if updated, err := sjson.DeleteBytes(payload, path); err == nil {
+		if updated, err := ojson.DeleteBytes(payload, path); err == nil {
 			payload = updated
 		}
 	}
@@ -36,42 +35,80 @@ func DeleteTopLevelJSONFields(payload []byte, paths ...string) []byte {
 // SetStringIfDifferent updates path only when its value is not already the
 // canonical JSON string. Values with another JSON type are still normalized.
 func SetStringIfDifferent(payload []byte, path, value string) []byte {
-	current := gjson.GetBytes(payload, path)
-	if current.Type == gjson.String && current.String() == value {
+	current := ojson.GetBytesNoCopy(payload, path)
+	if current.Type == ojson.String && current.String() == value {
 		return payload
 	}
-	updated, errSet := sjson.SetBytes(payload, path, value)
+	updated, errSet := ojson.SetBytes(payload, path, value)
 	if errSet != nil {
 		return payload
 	}
 	return updated
+}
+
+// SetStringIfDifferentDoc updates path on doc in place only when its value is not
+// already the canonical JSON string. Values with another JSON type are still normalized.
+func SetStringIfDifferentDoc(doc *ojson.Doc, path, value string) bool {
+	if doc == nil {
+		return false
+	}
+	current := doc.Get(path)
+	if current.Type == ojson.String && current.String() == value {
+		return false
+	}
+	return doc.Set(path, value) == nil
 }
 
 // SetBoolIfDifferent updates path only when its value is not already the
 // canonical JSON boolean. Values with another JSON type are still normalized.
 func SetBoolIfDifferent(payload []byte, path string, value bool) []byte {
-	current := gjson.GetBytes(payload, path)
-	if (value && current.Type == gjson.True) || (!value && current.Type == gjson.False) {
+	current := ojson.GetBytesNoCopy(payload, path)
+	if (value && current.Type == ojson.True) || (!value && current.Type == ojson.False) {
 		return payload
 	}
-	updated, errSet := sjson.SetBytes(payload, path, value)
+	updated, errSet := ojson.SetBytes(payload, path, value)
 	if errSet != nil {
 		return payload
 	}
 	return updated
 }
 
+// SetBoolIfDifferentDoc updates path on doc in place only when its value is not
+// already the canonical JSON boolean. Values with another JSON type are still normalized.
+func SetBoolIfDifferentDoc(doc *ojson.Doc, path string, value bool) bool {
+	if doc == nil {
+		return false
+	}
+	current := doc.Get(path)
+	if (value && current.Type == ojson.True) || (!value && current.Type == ojson.False) {
+		return false
+	}
+	return doc.Set(path, value) == nil
+}
+
 // SetRawIfDifferent updates path only when the existing raw JSON is identical.
 func SetRawIfDifferent(payload []byte, path string, value []byte) []byte {
-	current := gjson.GetBytes(payload, path)
+	current := ojson.GetBytesNoCopy(payload, path)
 	if current.Exists() && len(current.Indexes) == 0 && current.Raw == string(value) {
 		return payload
 	}
-	updated, errSet := sjson.SetRawBytes(payload, path, value)
+	updated, errSet := ojson.SetRawBytes(payload, path, value)
 	if errSet != nil {
 		return payload
 	}
 	return updated
+}
+
+// SetRawIfDifferentDoc updates path on doc in place only when the existing raw JSON differs.
+func SetRawIfDifferentDoc(doc *ojson.Doc, path string, value []byte) bool {
+	if doc == nil {
+		return false
+	}
+	current := doc.Get(path)
+	if current.Exists() && len(current.Indexes) == 0 && current.Raw == string(value) {
+		return false
+	}
+	return doc.SetRawBytes(path, value) == nil
 }
 
 // JoinRawJSONArray joins validated raw JSON array items without re-encoding them.

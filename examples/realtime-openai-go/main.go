@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MoeForge/moego/base64"
 	"github.com/gorilla/websocket"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"

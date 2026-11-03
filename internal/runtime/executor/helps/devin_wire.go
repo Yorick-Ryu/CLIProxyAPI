@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -18,6 +17,7 @@ import (
 	"sync/atomic"
 	"unicode/utf8"
 
+	"github.com/MoeForge/moego/base64"
 	"github.com/google/uuid"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/cache"
 	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"

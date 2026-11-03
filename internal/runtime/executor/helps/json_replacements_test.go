@@ -4,9 +4,8 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 func TestReplaceJSONValuesPreservesSourceAndUntouchedBytes(t *testing.T) {
@@ -26,9 +25,9 @@ func TestReplaceJSONValuesPreservesSourceAndUntouchedBytes(t *testing.T) {
 func TestReplaceJSONValuesRejectsInvalidAndOverlappingRanges(t *testing.T) {
 	body := []byte(`{"a":{"b":1}}`)
 	for _, edits := range [][]JSONValueReplacement{
-		{{Value: gjson.Result{Index: -1, Raw: "x"}, Raw: []byte(`0`)}},
-		{{Value: gjson.Result{Index: len(body), Raw: "x"}, Raw: []byte(`0`)}},
-		{{Value: gjson.Result{Index: 1, Raw: "wrong"}, Raw: []byte(`0`)}},
+		{{Value: ojson.Result{Index: -1, Raw: "x"}, Raw: []byte(`0`)}},
+		{{Value: ojson.Result{Index: len(body), Raw: "x"}, Raw: []byte(`0`)}},
+		{{Value: ojson.Result{Index: 1, Raw: "wrong"}, Raw: []byte(`0`)}},
 		{{Value: util.GetGJSONBytesNoCopy(body, "a"), Raw: []byte(`{}`)}, {Value: util.GetGJSONBytesNoCopy(body, "a.b"), Raw: []byte(`2`)}},
 	} {
 		out, ok := ReplaceJSONValues(body, edits)
@@ -48,8 +47,8 @@ func TestDeleteTopLevelJSONFieldsMatchesSequentialDeletes(t *testing.T) {
 		`{}`,
 	} {
 		body := []byte(input)
-		want, _ := sjson.DeleteBytes(body, "drop")
-		want, _ = sjson.DeleteBytes(want, "remove")
+		want, _ := ojson.DeleteBytes(body, "drop")
+		want, _ = ojson.DeleteBytes(want, "remove")
 		got := DeleteTopLevelJSONFields(body, "drop", "remove")
 		if !bytes.Equal(got, want) || string(body) != input {
 			t.Fatalf("delete differs for %s: got %s want %s", input, got, want)

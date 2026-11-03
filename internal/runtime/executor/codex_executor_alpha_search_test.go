@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/google/uuid"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/tidwall/gjson"
 )
 
 type codexAlphaSearchRoundTripFunc func(*http.Request) (*http.Response, error)
@@ -54,8 +54,8 @@ func TestCodexAlphaSearchNativeHeadersAndScopedIdentity(t *testing.T) {
 			if req.Header.Get("Version") != "0.162.0" || req.Header.Get("User-Agent") != codexUserAgent {
 				t.Fatal("fixed identity version is inconsistent")
 			}
-			m := gjson.Parse(req.Header.Get("X-Codex-Turn-Metadata"))
-			mappedID := gjson.GetBytes(firstBody, "id").String()
+			m := ojson.Parse(req.Header.Get("X-Codex-Turn-Metadata"))
+			mappedID := ojson.GetBytes(firstBody, "id").String()
 			if mappedID == thread || m.Get("session_id").String() != mappedID || m.Get("thread_id").String() != mappedID {
 				t.Fatal("search id and metadata lost their association")
 			}
@@ -76,10 +76,10 @@ func TestCodexAlphaSearchNativeHeadersAndScopedIdentity(t *testing.T) {
 			if err != nil || u.Version() != 7 || u.String()[:13] != thread[:13] {
 				t.Fatal("UUIDv7 timestamp changed")
 			}
-			if m.Get("turn_id").String() != gjson.GetBytes(firstBody, "input.0.internal_chat_message_metadata_passthrough.turn_id").String() {
+			if m.Get("turn_id").String() != ojson.GetBytes(firstBody, "input.0.internal_chat_message_metadata_passthrough.turn_id").String() {
 				t.Fatal("history turn link changed")
 			}
-			if m.Get("turn_started_at_unix_ms").Int() != 1234567890123 || m.Get("extension").String() != "测试" || !gjson.GetBytes(firstBody, "extension.keep").Bool() || gjson.GetBytes(firstBody, "commands.search_query.0.q").String() != "test" {
+			if m.Get("turn_started_at_unix_ms").Int() != 1234567890123 || m.Get("extension").String() != "测试" || !ojson.GetBytes(firstBody, "extension.keep").Bool() || ojson.GetBytes(firstBody, "commands.search_query.0.q").String() != "test" {
 				t.Fatal("business data changed")
 			}
 			for _, header := range []string{"Session-Id", "Thread-Id", "X-Codex-Window-Id", "X-Client-Request-Id"} {
@@ -204,7 +204,7 @@ func TestCodexAlphaSearchFinalizerAndAccountRetry(t *testing.T) {
 	r, _ := req.GetBody()
 	body, _ := io.ReadAll(r)
 	_ = r.Close()
-	if calls != 1 || gjson.GetBytes(body, "id").String() != "operator-id" {
+	if calls != 1 || ojson.GetBytes(body, "id").String() != "operator-id" {
 		t.Fatal("payload finalizer was repeated or overwritten")
 	}
 	// A different account must rebuild from the original client body, then run

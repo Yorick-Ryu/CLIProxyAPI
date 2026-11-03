@@ -6,16 +6,17 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 	"github.com/tiktoken-go/tokenizer"
 )
 
 func (e *CodexExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
+	ctx = helps.WithCodexCommentaryPolicy(ctx, e.cfg)
 	if errExpand := helps.ExpandRecognizedResponsesCompactionCapsules(&req, &opts); errExpand != nil {
 		return cliproxyexecutor.Response{}, statusErr{code: http.StatusBadRequest, msg: errExpand.Error()}
 	}
@@ -87,7 +88,7 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
 		return 0, nil
 	}
 
-	root := gjson.ParseBytes(body)
+	root := ojson.ParseBytes(body)
 	var segments []string
 
 	if inst := strings.TrimSpace(root.Get("instructions").String()); inst != "" {
@@ -143,7 +144,7 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
 			}
 			if params := tool.Get("parameters"); params.Exists() {
 				val := params.Raw
-				if params.Type == gjson.String {
+				if params.Type == ojson.String {
 					val = params.String()
 				}
 				if trimmed := strings.TrimSpace(val); trimmed != "" {
@@ -160,7 +161,7 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
 		}
 		if schema := textFormat.Get("schema"); schema.Exists() {
 			val := schema.Raw
-			if schema.Type == gjson.String {
+			if schema.Type == ojson.String {
 				val = schema.String()
 			}
 			if trimmed := strings.TrimSpace(val); trimmed != "" {

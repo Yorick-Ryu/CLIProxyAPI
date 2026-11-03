@@ -4,11 +4,11 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 // Both serial and duplex streams must preserve account isolation after
@@ -36,7 +36,7 @@ func TestPrepareCodexWebsocketStreamPreservesAccountIdentity(t *testing.T) {
 		return prepared
 	}
 	first := prepare("caller-a", "account-a")
-	session := gjson.GetBytes(first.upstreamBody, "prompt_cache_key").String()
+	session := ojson.GetBytes(first.upstreamBody, "prompt_cache_key").String()
 	if session == "" || session == "client-session" {
 		t.Fatal("upstream session must be scoped")
 	}
@@ -56,17 +56,17 @@ func TestPrepareCodexWebsocketStreamPreservesAccountIdentity(t *testing.T) {
 		{"X-Codex-Window-Id", "client_metadata.x-codex-window-id", "client-thread:2"},
 	} {
 		got := first.wsHeaders.Get(field.header)
-		if got == "" || got == field.original || got != gjson.GetBytes(first.upstreamBody, field.path).String() {
+		if got == "" || got == field.original || got != ojson.GetBytes(first.upstreamBody, field.path).String() {
 			t.Fatalf("%s must be scoped and match the request body, got %q", field.header, got)
 		}
 	}
-	if got := gjson.GetBytes(first.clientBody, "prompt_cache_key").String(); got != "client-session" {
+	if got := ojson.GetBytes(first.clientBody, "prompt_cache_key").String(); got != "client-session" {
 		t.Fatal("client identity must remain available for response restoration")
 	}
 	for _, caller := range []string{"caller-a", "caller-b", ""} {
 		other := prepare(caller, "account-a")
 		for _, path := range []string{"prompt_cache_key", "client_metadata.session_id", "client_metadata.thread_id", "client_metadata.x-codex-window-id", "client_metadata.x-codex-installation-id"} {
-			if gjson.GetBytes(other.upstreamBody, path).String() != gjson.GetBytes(first.upstreamBody, path).String() {
+			if ojson.GetBytes(other.upstreamBody, path).String() != ojson.GetBytes(first.upstreamBody, path).String() {
 				t.Fatalf("rotating or omitting the caller key changed %s", path)
 			}
 		}
@@ -76,7 +76,7 @@ func TestPrepareCodexWebsocketStreamPreservesAccountIdentity(t *testing.T) {
 			}
 		}
 	}
-	if gjson.GetBytes(prepare("caller-a", "account-b").upstreamBody, "prompt_cache_key").String() == session {
+	if ojson.GetBytes(prepare("caller-a", "account-b").upstreamBody, "prompt_cache_key").String() == session {
 		t.Fatal("session leaked across accounts")
 	}
 	if first.wsHeaders.Get("X-Client-Request-Id") != first.wsHeaders.Get("Thread-Id") {
@@ -85,7 +85,7 @@ func TestPrepareCodexWebsocketStreamPreservesAccountIdentity(t *testing.T) {
 	if first.wsHeaders.Get("X-Codex-Window-Id") != first.wsHeaders.Get("Thread-Id")+":2" {
 		t.Fatal("window header must retain the mapped thread and context generation")
 	}
-	device := gjson.GetBytes(first.upstreamBody, "client_metadata.x-codex-installation-id").String()
+	device := ojson.GetBytes(first.upstreamBody, "client_metadata.x-codex-installation-id").String()
 	if device == "" || device == "client-device" {
 		t.Fatal("body installation ID must still converge")
 	}
