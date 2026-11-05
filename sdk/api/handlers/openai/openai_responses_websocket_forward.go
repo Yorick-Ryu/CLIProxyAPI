@@ -803,7 +803,6 @@ func buildResponsesWebsocketErrorPayload(errMsg *interfaces.ErrorMessage) ([]byt
 	if errMsg != nil {
 		headersDoc := ojson.NewDoc([]byte(`{}`))
 		hasHeaders := false
-		trustedDeadline := coreauth.HasTrustedRetryDeadline(errMsg.Error)
 		for key, values := range coreauth.SafeResponseHeaders(errMsg.Error) {
 			if len(values) == 0 || strings.TrimSpace(values[0]) == "" {
 				continue
@@ -816,9 +815,6 @@ func buildResponsesWebsocketErrorPayload(errMsg *interfaces.ErrorMessage) ([]byt
 		}
 		for key, values := range errMsg.Addon {
 			if len(values) == 0 || strings.TrimSpace(values[0]) == "" {
-				continue
-			}
-			if trustedDeadline && http.CanonicalHeaderKey(key) == "Retry-After" {
 				continue
 			}
 			headerPath := strings.ReplaceAll(strings.ReplaceAll(key, `\\`, `\\\\`), ".", `\\.`)
