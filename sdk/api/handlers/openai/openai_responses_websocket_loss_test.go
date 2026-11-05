@@ -892,8 +892,9 @@ func TestResponsesWebsocketEarly429RetriesAnotherCredentialWithoutClosingDownstr
 				if got := int(ojson.GetBytesNoCopy(frame4, "error.resets_in_seconds").Int()); got != 600 {
 					t.Fatalf("frame4 error.resets_in_seconds = %d, want 600: %s", got, frame4)
 				}
-				if got := ojson.GetBytesNoCopy(frame4, "headers.Retry-After").String(); got == "" {
-					t.Fatalf("frame4 headers.Retry-After is empty: %s", frame4)
+				// The maintained branch does not synthesize Retry-After from reset hints.
+				if got := ojson.GetBytesNoCopy(frame4, "headers.Retry-After").String(); got != "" {
+					t.Fatalf("frame4 synthesized unexpected Retry-After: %s", frame4)
 				}
 				if _, extraFrame, errAfter := conn3.ReadMessage(); errAfter == nil {
 					t.Fatalf("expected socket close after terminal 429 error frame, got frame: %s", extraFrame)
