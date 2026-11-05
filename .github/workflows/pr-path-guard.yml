@@ -9,6 +9,8 @@ on:
 
 jobs:
   ensure-no-translator-changes:
+    # This contribution policy belongs to upstream, not maintained forks.
+    if: github.repository == 'router-for-me/CLIProxyAPI'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

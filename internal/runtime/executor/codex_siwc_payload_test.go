@@ -62,7 +62,7 @@ func TestCodexSIWCPayloadRulesAfterCleanupAndIdentity(t *testing.T) {
 						Models: models,
 						Params: map[string]any{"temperature": 0.25, "store": true, "prompt_cache_key": "configured-cache"},
 					}, {
-						Models: []config.PayloadModelRule{{Name: "*", NotExist: []string{"max_output_tokens"}}},
+						Models: []config.PayloadModelRule{{Name: "*", NotExist: []string{"prompt_cache_retention"}}},
 						Params: map[string]any{"cleanup_observed": true},
 					}},
 					Filter: []config.PayloadFilterRule{{Models: models, Params: []string{"input.0", "instructions", "client_metadata"}}},
@@ -76,7 +76,7 @@ func TestCodexSIWCPayloadRulesAfterCleanupAndIdentity(t *testing.T) {
 			if mode == "ws" || mode == "ws-stream" {
 				executor = NewCodexWebsocketsExecutor(cfg)
 			}
-			payload := []byte(`{"model":"gpt-5.4","instructions":"explicit","input":[{"role":"user","content":"remove"},{"role":"user","content":"keep"}],"temperature":0.7,"max_output_tokens":123,"prompt_cache_key":"original-cache","client_metadata":{"session_id":"original-session","thread_id":"original-thread"}}`)
+			payload := []byte(`{"model":"gpt-5.4","instructions":"explicit","input":[{"role":"user","content":"remove"},{"role":"user","content":"keep"}],"temperature":0.7,"max_output_tokens":123,"prompt_cache_retention":"24h","prompt_cache_key":"original-cache","client_metadata":{"session_id":"original-session","thread_id":"original-thread"}}`)
 			req := cliproxyexecutor.Request{Model: "gpt-5.4", Payload: payload}
 			opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse}
 			if mode == "compact" {
@@ -100,6 +100,9 @@ func TestCodexSIWCPayloadRulesAfterCleanupAndIdentity(t *testing.T) {
 			body := <-captured
 			if ojson.GetBytes(body, "temperature").Float() != 0.25 || !ojson.GetBytes(body, "store").Bool() || ojson.GetBytes(body, "prompt_cache_key").String() != "configured-cache" {
 				t.Fatalf("cleanup or identity overwrote payload rules: %s", body)
+			}
+			if ojson.GetBytes(body, "max_output_tokens").Int() != 123 {
+				t.Fatalf("SIWC must preserve max_output_tokens: %s", body)
 			}
 			if !ojson.GetBytes(body, "cleanup_observed").Bool() {
 				t.Fatalf("rules ran before SIWC cleanup: %s", body)

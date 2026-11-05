@@ -661,7 +661,6 @@ func stripCodexSIWCUnsupportedFields(body []byte, hasExplicitInstructions bool, 
 	body = thinking.CollapseConfigurationUpdates(body, len(opts) > 0 && opts[0].KeepTopLevelEffort)
 	body, _ = ojson.DeleteBytes(body, "prompt_cache_retention")
 	body, _ = ojson.DeleteBytes(body, "prompt_cache_options")
-	body, _ = ojson.DeleteBytes(body, "max_output_tokens")
 	body, _ = ojson.DeleteBytes(body, "max_completion_tokens")
 	body, _ = ojson.DeleteBytes(body, "temperature")
 	if !hasExplicitInstructions {
