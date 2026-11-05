@@ -2699,7 +2699,7 @@ func TestShouldExposeResponsesUpstreamError(t *testing.T) {
 		{status: http.StatusUnprocessableEntity, want: true},
 		{status: http.StatusUnauthorized},
 		{status: http.StatusRequestTimeout},
-		{status: http.StatusTooManyRequests},
+		{status: http.StatusTooManyRequests, want: true},
 		{status: http.StatusInternalServerError},
 	}
 
@@ -2740,12 +2740,25 @@ func TestResponsesUpstreamErrorBodyDrivesExposure(t *testing.T) {
 			body:   `{"error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"too long"}}`,
 			want:   true,
 		},
-		// Credential, quota and transport failures stay silent: the client just
+		// Credential and transport failures stay silent: the client just
 		// reconnects, and a fresh socket already implies a full context resend.
+		// Terminal 429 / quota / model-cooldown errors are exposed once failover ends.
 		{name: "unauthorized", status: http.StatusUnauthorized, body: "invalid token"},
 		{name: "payment required", status: http.StatusPaymentRequired, body: "insufficient credits"},
 		{name: "forbidden", status: http.StatusForbidden, body: "forbidden"},
-		{name: "too many requests", status: http.StatusTooManyRequests, body: "usage limit reached"},
+		{name: "too many requests", status: http.StatusTooManyRequests, body: "usage limit reached", want: true},
+		{
+			name:   "usage limit reached at 502",
+			status: http.StatusBadGateway,
+			body:   `{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached","resets_in_seconds":600}}`,
+			want:   true,
+		},
+		{
+			name:   "model cooldown at 500",
+			status: http.StatusInternalServerError,
+			body:   `{"error":{"code":"model_cooldown","message":"All credentials for model gpt-5 are cooling down","reset_seconds":60}}`,
+			want:   true,
+		},
 		{name: "request timeout", status: http.StatusRequestTimeout, body: "timeout"},
 		{name: "bad gateway", status: http.StatusBadGateway, body: "bad gateway"},
 		{
@@ -3115,15 +3128,6 @@ func TestResponsesWebsocketHidesNonClientUpstreamDisconnectErrors(t *testing.T) 
 		{
 			name: "upstream read timeout",
 			err:  errors.New("read tcp 198.18.0.1:53030->145.223.58.12:6281: i/o timeout"),
-		},
-		{
-			// Credential failover already ran and lost; the client only needs to
-			// reconnect, so no downstream error is produced.
-			name: "quota exhausted",
-			err: websocketPinnedFailoverStatusError{
-				status: http.StatusTooManyRequests,
-				msg:    `{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached"}}`,
-			},
 		},
 		{
 			name: "credential rejected",
@@ -4279,16 +4283,16 @@ func TestResponsesWebsocketPinnedAuthMatchesModel(t *testing.T) {
 		registry.GetGlobalRegistry().UnregisterClient(otherAuthID)
 	})
 
-	if !responsesWebsocketPinnedAuthMatchesModel(auth, modelA, modelA, false) {
+	if !responsesWebsocketPinnedAuthMatchesModel(context.Background(), auth, modelA, modelA, false) {
 		t.Fatal("expected registered auth to match its supported model")
 	}
-	if responsesWebsocketPinnedAuthMatchesModel(auth, modelB, modelA, false) {
+	if responsesWebsocketPinnedAuthMatchesModel(context.Background(), auth, modelB, modelA, false) {
 		t.Fatal("registered auth matched an unsupported model from the same provider")
 	}
 
 	disabledAuth := auth.Clone()
 	disabledAuth.Disabled = true
-	if responsesWebsocketPinnedAuthMatchesModel(disabledAuth, modelA, modelA, false) {
+	if responsesWebsocketPinnedAuthMatchesModel(context.Background(), disabledAuth, modelA, modelA, false) {
 		t.Fatal("disabled auth matched a model")
 	}
 
@@ -4296,18 +4300,18 @@ func TestResponsesWebsocketPinnedAuthMatchesModel(t *testing.T) {
 	cooldownAuth.ModelStates = map[string]*coreauth.ModelState{
 		modelA: {Unavailable: true, NextRetryAfter: time.Now().Add(time.Minute)},
 	}
-	if responsesWebsocketPinnedAuthMatchesModel(cooldownAuth, modelA, modelA, false) {
+	if responsesWebsocketPinnedAuthMatchesModel(context.Background(), cooldownAuth, modelA, modelA, false) {
 		t.Fatal("auth in model cooldown matched a model")
 	}
 
 	unregisteredAuth := &coreauth.Auth{ID: "unregistered-auth", Provider: "xai", Status: coreauth.StatusActive}
-	if responsesWebsocketPinnedAuthMatchesModel(unregisteredAuth, modelA, modelA, false) {
+	if responsesWebsocketPinnedAuthMatchesModel(context.Background(), unregisteredAuth, modelA, modelA, false) {
 		t.Fatal("unregistered ordinary auth matched a model")
 	}
-	if !responsesWebsocketPinnedAuthMatchesModel(unregisteredAuth, modelA, modelA, true) {
+	if !responsesWebsocketPinnedAuthMatchesModel(context.Background(), unregisteredAuth, modelA, modelA, true) {
 		t.Fatal("expected Home runtime auth to match its pinned model")
 	}
-	if responsesWebsocketPinnedAuthMatchesModel(unregisteredAuth, modelB, modelA, true) {
+	if responsesWebsocketPinnedAuthMatchesModel(context.Background(), unregisteredAuth, modelB, modelA, true) {
 		t.Fatal("Home runtime auth matched a different model")
 	}
 }
@@ -4330,7 +4334,7 @@ func TestWebsocketUpstreamSupportsIncrementalInputForModel(t *testing.T) {
 
 	base := handlers.NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, manager)
 	h := NewOpenAIResponsesAPIHandler(base)
-	if !h.websocketUpstreamSupportsIncrementalInputForModel("test-model") {
+	if !h.websocketUpstreamSupportsIncrementalInputForModel(context.Background(), "test-model") {
 		t.Fatalf("expected websocket-capable upstream for test-model")
 	}
 }
@@ -4353,7 +4357,7 @@ func TestWebsocketUpstreamSupportsIncrementalInputForXAI(t *testing.T) {
 
 	base := handlers.NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, manager)
 	h := NewOpenAIResponsesAPIHandler(base)
-	if !h.websocketUpstreamSupportsIncrementalInputForModel("xai-test-model") {
+	if !h.websocketUpstreamSupportsIncrementalInputForModel(context.Background(), "xai-test-model") {
 		t.Fatalf("expected xai websocket upstream to support previous_response_id incremental input")
 	}
 }
@@ -4380,7 +4384,7 @@ func TestResponsesWebsocketUsesUpstreamWebsocketPassthroughForXAI(t *testing.T) 
 
 	base := handlers.NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, manager)
 	h := NewOpenAIResponsesAPIHandler(base)
-	if !h.responsesWebsocketUsesUpstreamWebsocketPassthrough(modelName) {
+	if !h.responsesWebsocketUsesUpstreamWebsocketPassthrough(context.Background(), modelName) {
 		t.Fatalf("expected xai websocket upstream passthrough for %s", modelName)
 	}
 }
@@ -4402,7 +4406,7 @@ func TestWebsocketUpstreamSupportsCompactionReplayForModel(t *testing.T) {
 
 	base := handlers.NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, manager)
 	h := NewOpenAIResponsesAPIHandler(base)
-	if !h.websocketUpstreamSupportsCompactionReplayForModel("test-model") {
+	if !h.websocketUpstreamSupportsCompactionReplayForModel(context.Background(), "test-model") {
 		t.Fatalf("expected codex upstream to support compaction replay")
 	}
 }
@@ -4427,7 +4431,7 @@ func TestWebsocketUpstreamSupportsCompactionReplayForModelFalseWhenMixedBackends
 
 	base := handlers.NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, manager)
 	h := NewOpenAIResponsesAPIHandler(base)
-	if h.websocketUpstreamSupportsCompactionReplayForModel("test-model") {
+	if h.websocketUpstreamSupportsCompactionReplayForModel(context.Background(), "test-model") {
 		t.Fatalf("expected mixed backend model to disable compaction replay bypass")
 	}
 }
