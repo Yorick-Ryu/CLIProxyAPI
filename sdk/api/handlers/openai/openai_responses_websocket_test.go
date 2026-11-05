@@ -4283,16 +4283,16 @@ func TestResponsesWebsocketPinnedAuthMatchesModel(t *testing.T) {
 		registry.GetGlobalRegistry().UnregisterClient(otherAuthID)
 	})
 
-	if !responsesWebsocketPinnedAuthMatchesModel(auth, modelA, modelA, false) {
+	if !responsesWebsocketPinnedAuthMatchesModel(context.Background(), auth, modelA, modelA, false) {
 		t.Fatal("expected registered auth to match its supported model")
 	}
-	if responsesWebsocketPinnedAuthMatchesModel(auth, modelB, modelA, false) {
+	if responsesWebsocketPinnedAuthMatchesModel(context.Background(), auth, modelB, modelA, false) {
 		t.Fatal("registered auth matched an unsupported model from the same provider")
 	}
 
 	disabledAuth := auth.Clone()
 	disabledAuth.Disabled = true
-	if responsesWebsocketPinnedAuthMatchesModel(disabledAuth, modelA, modelA, false) {
+	if responsesWebsocketPinnedAuthMatchesModel(context.Background(), disabledAuth, modelA, modelA, false) {
 		t.Fatal("disabled auth matched a model")
 	}
 
@@ -4300,18 +4300,18 @@ func TestResponsesWebsocketPinnedAuthMatchesModel(t *testing.T) {
 	cooldownAuth.ModelStates = map[string]*coreauth.ModelState{
 		modelA: {Unavailable: true, NextRetryAfter: time.Now().Add(time.Minute)},
 	}
-	if responsesWebsocketPinnedAuthMatchesModel(cooldownAuth, modelA, modelA, false) {
+	if responsesWebsocketPinnedAuthMatchesModel(context.Background(), cooldownAuth, modelA, modelA, false) {
 		t.Fatal("auth in model cooldown matched a model")
 	}
 
 	unregisteredAuth := &coreauth.Auth{ID: "unregistered-auth", Provider: "xai", Status: coreauth.StatusActive}
-	if responsesWebsocketPinnedAuthMatchesModel(unregisteredAuth, modelA, modelA, false) {
+	if responsesWebsocketPinnedAuthMatchesModel(context.Background(), unregisteredAuth, modelA, modelA, false) {
 		t.Fatal("unregistered ordinary auth matched a model")
 	}
-	if !responsesWebsocketPinnedAuthMatchesModel(unregisteredAuth, modelA, modelA, true) {
+	if !responsesWebsocketPinnedAuthMatchesModel(context.Background(), unregisteredAuth, modelA, modelA, true) {
 		t.Fatal("expected Home runtime auth to match its pinned model")
 	}
-	if responsesWebsocketPinnedAuthMatchesModel(unregisteredAuth, modelB, modelA, true) {
+	if responsesWebsocketPinnedAuthMatchesModel(context.Background(), unregisteredAuth, modelB, modelA, true) {
 		t.Fatal("Home runtime auth matched a different model")
 	}
 }
@@ -4334,7 +4334,7 @@ func TestWebsocketUpstreamSupportsIncrementalInputForModel(t *testing.T) {
 
 	base := handlers.NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, manager)
 	h := NewOpenAIResponsesAPIHandler(base)
-	if !h.websocketUpstreamSupportsIncrementalInputForModel("test-model") {
+	if !h.websocketUpstreamSupportsIncrementalInputForModel(context.Background(), "test-model") {
 		t.Fatalf("expected websocket-capable upstream for test-model")
 	}
 }
@@ -4357,7 +4357,7 @@ func TestWebsocketUpstreamSupportsIncrementalInputForXAI(t *testing.T) {
 
 	base := handlers.NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, manager)
 	h := NewOpenAIResponsesAPIHandler(base)
-	if !h.websocketUpstreamSupportsIncrementalInputForModel("xai-test-model") {
+	if !h.websocketUpstreamSupportsIncrementalInputForModel(context.Background(), "xai-test-model") {
 		t.Fatalf("expected xai websocket upstream to support previous_response_id incremental input")
 	}
 }
@@ -4384,7 +4384,7 @@ func TestResponsesWebsocketUsesUpstreamWebsocketPassthroughForXAI(t *testing.T) 
 
 	base := handlers.NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, manager)
 	h := NewOpenAIResponsesAPIHandler(base)
-	if !h.responsesWebsocketUsesUpstreamWebsocketPassthrough(modelName) {
+	if !h.responsesWebsocketUsesUpstreamWebsocketPassthrough(context.Background(), modelName) {
 		t.Fatalf("expected xai websocket upstream passthrough for %s", modelName)
 	}
 }
@@ -4406,7 +4406,7 @@ func TestWebsocketUpstreamSupportsCompactionReplayForModel(t *testing.T) {
 
 	base := handlers.NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, manager)
 	h := NewOpenAIResponsesAPIHandler(base)
-	if !h.websocketUpstreamSupportsCompactionReplayForModel("test-model") {
+	if !h.websocketUpstreamSupportsCompactionReplayForModel(context.Background(), "test-model") {
 		t.Fatalf("expected codex upstream to support compaction replay")
 	}
 }
@@ -4431,7 +4431,7 @@ func TestWebsocketUpstreamSupportsCompactionReplayForModelFalseWhenMixedBackends
 
 	base := handlers.NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, manager)
 	h := NewOpenAIResponsesAPIHandler(base)
-	if h.websocketUpstreamSupportsCompactionReplayForModel("test-model") {
+	if h.websocketUpstreamSupportsCompactionReplayForModel(context.Background(), "test-model") {
 		t.Fatalf("expected mixed backend model to disable compaction replay bypass")
 	}
 }

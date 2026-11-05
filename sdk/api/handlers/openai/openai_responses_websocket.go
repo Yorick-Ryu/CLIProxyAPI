@@ -533,7 +533,7 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 				providerKey = strings.ToLower(strings.TrimSpace(pinnedAuth.Provider))
 			}
 			state, hasState := pinnedAuthByProvider[providerKey]
-			if !ok || !hasState || state.authID != pinnedAuthID || !responsesWebsocketPinnedAuthMatchesModel(pinnedAuth, requestModelName, state.modelKey, homeRuntime) {
+			if !ok || !hasState || state.authID != pinnedAuthID || !responsesWebsocketPinnedAuthMatchesModel(executionParent, pinnedAuth, requestModelName, state.modelKey, homeRuntime) {
 				pinnedAuthID = ""
 			}
 		}
@@ -543,7 +543,7 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 				for providerKey := range providerSet {
 					state, ok := pinnedAuthByProvider[providerKey]
 					candidateAuth, homeRuntime, okAuth := sessionAuthByIDWithSource(state.authID)
-					if ok && okAuth && responsesWebsocketPinnedAuthMatchesModel(candidateAuth, requestModelName, state.modelKey, homeRuntime) {
+					if ok && okAuth && responsesWebsocketPinnedAuthMatchesModel(executionParent, candidateAuth, requestModelName, state.modelKey, homeRuntime) {
 						pinnedAuthID = state.authID
 					} else {
 						delete(pinnedAuthByProvider, providerKey)
@@ -551,7 +551,7 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 				}
 			}
 		}
-		useUpstreamWebsocketPassthrough := h.responsesWebsocketUsesUpstreamWebsocketPassthrough(requestModelName)
+		useUpstreamWebsocketPassthrough := h.responsesWebsocketUsesUpstreamWebsocketPassthrough(executionParent, requestModelName)
 		if pinnedAuthID != "" {
 			if pinnedAuth, ok := sessionAuthByID(pinnedAuthID); ok && responsesWebsocketAuthSupportsIncrementalInput(pinnedAuth) {
 				provider := strings.ToLower(strings.TrimSpace(pinnedAuth.Provider))
@@ -621,7 +621,7 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 									observedCompactionSupported = true
 									observedCompactionReplayAuthID = observedCompaction.authID
 								}
-							} else if responsesWebsocketPinnedAuthMatchesModel(compactionAuth, requestModelName, observedCompaction.modelKey, false) {
+							} else if responsesWebsocketPinnedAuthMatchesModel(executionParent, compactionAuth, requestModelName, observedCompaction.modelKey, false) {
 								observedCompactionSupported = true
 								observedCompactionReplayAuthID = observedCompaction.authID
 							}
@@ -637,7 +637,7 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 					allowCompactionReplayBypass = allowCompactionReplayBypass || responsesWebsocketAuthSupportsCompactionReplay(pinnedAuth)
 				}
 			} else {
-				allowCompactionReplayBypass = allowCompactionReplayBypass || h.websocketUpstreamSupportsCompactionReplayForModel(requestModelName)
+				allowCompactionReplayBypass = allowCompactionReplayBypass || h.websocketUpstreamSupportsCompactionReplayForModel(executionParent, requestModelName)
 			}
 		}
 
