@@ -513,7 +513,7 @@ func TestPayloadBarrierMultiExecutorSingleDocConsistency(t *testing.T) {
 	})
 }
 
-func TestPayloadBarrierCodexHostedImageFallback(t *testing.T) {
+func TestPayloadBarrierCodexHostedImageExplicitModelOverride(t *testing.T) {
 	for _, transport := range []string{"http", "websocket"} {
 		for _, stream := range []bool{false, true} {
 			mode := "execute"
@@ -554,7 +554,7 @@ func TestPayloadBarrierCodexHostedImageFallback(t *testing.T) {
 				}))
 				defer server.Close()
 				cfg := &config.Config{Payload: config.PayloadConfig{
-					Override: []config.PayloadRule{{Models: []config.PayloadModelRule{{Name: "gpt-6-astra"}}, Params: map[string]any{"tools.0.complexity": "admin-choice", "reasoning.effort": "max"}}},
+					Override: []config.PayloadRule{{Models: []config.PayloadModelRule{{Name: "gpt-6-astra"}}, Params: map[string]any{"model": "gpt-5.5", "tools.0.complexity": "admin-choice", "reasoning.effort": "max"}}},
 					Filter:   []config.PayloadFilterRule{{Models: []config.PayloadModelRule{{Name: "gpt-6-astra"}}, Params: []string{"input.0", "instructions"}}},
 				}}
 				var exec cliproxyauth.ProviderExecutor = NewCodexExecutor(cfg)
@@ -578,8 +578,8 @@ func TestPayloadBarrierCodexHostedImageFallback(t *testing.T) {
 					t.Fatal(err)
 				}
 				body := <-captured
-				if got := ojson.GetBytes(body, "model").String(); got != codexOpenAIImagesMainModel {
-					t.Fatalf("model = %q, want hosted-image fallback", got)
+				if got := ojson.GetBytes(body, "model").String(); got != "gpt-5.5" {
+					t.Fatalf("model = %q, want explicitly configured model", got)
 				}
 				if got := ojson.GetBytes(body, "tools.0.complexity").String(); got != "admin-choice" {
 					t.Fatalf("hosted tool cleanup overwrote final payload rule: %s", body)
