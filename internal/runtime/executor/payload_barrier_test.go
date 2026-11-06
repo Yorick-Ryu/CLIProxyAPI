@@ -21,7 +21,7 @@ import (
 func TestPayloadBarrierCodexImageFilter(t *testing.T) {
 	for _, transport := range []string{"http", "websocket"} {
 		for _, stream := range []bool{false, true} {
-			for _, model := range []string{"gpt-5.6-sol", "gpt-5.6-luna"} {
+			for _, model := range []string{"gpt-5.4", "gpt-5.5"} {
 				t.Run(transport+"/"+model+map[bool]string{false: "/execute", true: "/stream"}[stream], func(t *testing.T) {
 					captured := make(chan []byte, 1)
 					completed := []byte(`{"type":"response.completed","response":{"id":"resp_barrier","status":"completed","output":[],"usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}}}`)
@@ -59,7 +59,7 @@ func TestPayloadBarrierCodexImageFilter(t *testing.T) {
 						_, _ = w.Write(append(append([]byte("data: "), completed...), '\n', '\n'))
 					}))
 					defer server.Close()
-					cfg := &config.Config{Payload: config.PayloadConfig{Filter: []config.PayloadFilterRule{{Models: []config.PayloadModelRule{{Name: "gpt-5.6-sol"}}, Params: []string{`tools.#(type=="image_generation")#`, "instructions", "prompt_cache_key"}}}}}
+					cfg := &config.Config{Payload: config.PayloadConfig{Filter: []config.PayloadFilterRule{{Models: []config.PayloadModelRule{{Name: "gpt-5.4"}}, Params: []string{`tools.#(type=="image_generation")#`, "instructions", "prompt_cache_key"}}}}}
 					var executor cliproxyauth.ProviderExecutor = NewCodexExecutor(cfg)
 					if transport == "websocket" {
 						executor = NewCodexWebsocketsExecutor(cfg)
@@ -82,10 +82,10 @@ func TestPayloadBarrierCodexImageFilter(t *testing.T) {
 					}
 					body := <-captured
 					image := ojson.GetBytes(body, `tools.#(type=="image_generation")`).Exists()
-					if image != (model == "gpt-5.6-luna") {
+					if image != (model == "gpt-5.5") {
 						t.Fatalf("image tool presence = %v: %s", image, body)
 					}
-					if model == "gpt-5.6-sol" && (ojson.GetBytes(body, "instructions").Exists() || ojson.GetBytes(body, "prompt_cache_key").Exists()) {
+					if model == "gpt-5.4" && (ojson.GetBytes(body, "instructions").Exists() || ojson.GetBytes(body, "prompt_cache_key").Exists()) {
 						t.Fatalf("late injection undid filter: %s", body)
 					}
 				})
@@ -511,4 +511,86 @@ func TestPayloadBarrierMultiExecutorSingleDocConsistency(t *testing.T) {
 			t.Fatalf("filtered_out should be removed by finalizer: %s", out)
 		}
 	})
+}
+
+func TestPayloadBarrierCodexHostedImageFallback(t *testing.T) {
+	for _, transport := range []string{"http", "websocket"} {
+		for _, stream := range []bool{false, true} {
+			mode := "execute"
+			if stream {
+				mode = "stream"
+			}
+			t.Run(transport+"/"+mode, func(t *testing.T) {
+				captured := make(chan []byte, 1)
+				completed := []byte(`{"type":"response.completed","response":{"id":"resp_hosted_barrier","status":"completed","output":[],"usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}}}`)
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if transport == "websocket" {
+						upgrader := websocket.Upgrader{}
+						conn, err := upgrader.Upgrade(w, r, nil)
+						if err != nil {
+							t.Error(err)
+							return
+						}
+						defer func() { _ = conn.Close() }()
+						_, body, errRead := conn.ReadMessage()
+						if errRead != nil {
+							t.Error(errRead)
+							return
+						}
+						captured <- body
+						if errWrite := conn.WriteMessage(websocket.TextMessage, completed); errWrite != nil {
+							t.Error(errWrite)
+						}
+						return
+					}
+					body, err := io.ReadAll(r.Body)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					captured <- body
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = w.Write(append(append([]byte("data: "), completed...), '\n', '\n'))
+				}))
+				defer server.Close()
+				cfg := &config.Config{Payload: config.PayloadConfig{
+					Override: []config.PayloadRule{{Models: []config.PayloadModelRule{{Name: "gpt-6-astra"}}, Params: map[string]any{"tools.0.complexity": "admin-choice", "reasoning.effort": "max"}}},
+					Filter:   []config.PayloadFilterRule{{Models: []config.PayloadModelRule{{Name: "gpt-6-astra"}}, Params: []string{"input.0", "instructions"}}},
+				}}
+				var exec cliproxyauth.ProviderExecutor = NewCodexExecutor(cfg)
+				if transport == "websocket" {
+					exec = NewCodexWebsocketsExecutor(cfg)
+				}
+				auth := &cliproxyauth.Auth{ID: t.Name(), Provider: "codex", Attributes: map[string]string{"base_url": server.URL, "plan_type": "pro"}, Metadata: map[string]any{"access_token": "test-outer", "account_id": "test-account"}}
+				req := cliproxyexecutor.Request{Model: "gpt-6-astra", Payload: []byte(`{"model":"gpt-6-astra","instructions":"remove me","reasoning":{"effort":"medium"},"input":[{"role":"user","content":"first"},{"role":"user","content":"second"}],"tools":[{"type":"image_generation","complexity":"high"}],"tool_choice":{"type":"image_generation"}}`)}
+				opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse, Stream: stream}
+				if stream {
+					result, err := exec.ExecuteStream(context.Background(), auth, req, opts)
+					if err != nil {
+						t.Fatal(err)
+					}
+					for chunk := range result.Chunks {
+						if chunk.Err != nil {
+							t.Fatal(chunk.Err)
+						}
+					}
+				} else if _, err := exec.Execute(context.Background(), auth, req, opts); err != nil {
+					t.Fatal(err)
+				}
+				body := <-captured
+				if got := ojson.GetBytes(body, "model").String(); got != codexOpenAIImagesMainModel {
+					t.Fatalf("model = %q, want hosted-image fallback", got)
+				}
+				if got := ojson.GetBytes(body, "tools.0.complexity").String(); got != "admin-choice" {
+					t.Fatalf("hosted tool cleanup overwrote final payload rule: %s", body)
+				}
+				if got := ojson.GetBytes(body, "reasoning.effort").String(); got != "max" {
+					t.Fatalf("thinking normalization overwrote final payload rule: %s", body)
+				}
+				if ojson.GetBytes(body, "instructions").Exists() || ojson.GetBytes(body, "input.#").Int() != 1 {
+					t.Fatalf("filter was undone or applied more than once: %s", body)
+				}
+			})
+		}
+	}
 }

@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -11,8 +12,8 @@ import (
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
-func (h *OpenAIResponsesAPIHandler) websocketUpstreamSupportsIncrementalInputForModel(modelName string) bool {
-	auths, _ := h.responsesWebsocketAvailableAuthsForModel(modelName)
+func (h *OpenAIResponsesAPIHandler) websocketUpstreamSupportsIncrementalInputForModel(ctx context.Context, modelName string) bool {
+	auths, _ := h.responsesWebsocketAvailableAuthsForModel(ctx, modelName)
 	for _, auth := range auths {
 		if responsesWebsocketAuthSupportsIncrementalInput(auth) {
 			return true
@@ -21,8 +22,8 @@ func (h *OpenAIResponsesAPIHandler) websocketUpstreamSupportsIncrementalInputFor
 	return false
 }
 
-func (h *OpenAIResponsesAPIHandler) websocketUpstreamSupportsCompactionReplayForModel(modelName string) bool {
-	auths, _ := h.responsesWebsocketAvailableAuthsForModel(modelName)
+func (h *OpenAIResponsesAPIHandler) websocketUpstreamSupportsCompactionReplayForModel(ctx context.Context, modelName string) bool {
+	auths, _ := h.responsesWebsocketAvailableAuthsForModel(ctx, modelName)
 	if len(auths) == 0 {
 		return false
 	}
@@ -34,7 +35,7 @@ func (h *OpenAIResponsesAPIHandler) websocketUpstreamSupportsCompactionReplayFor
 	return true
 }
 
-func (h *OpenAIResponsesAPIHandler) responsesWebsocketAvailableAuthsForModel(modelName string) ([]*coreauth.Auth, string) {
+func (h *OpenAIResponsesAPIHandler) responsesWebsocketAvailableAuthsForModel(ctx context.Context, modelName string) ([]*coreauth.Auth, string) {
 	if h == nil || h.AuthManager == nil {
 		return nil, ""
 	}
@@ -49,7 +50,7 @@ func (h *OpenAIResponsesAPIHandler) responsesWebsocketAvailableAuthsForModel(mod
 	auths := h.AuthManager.List()
 	available := make([]*coreauth.Auth, 0, len(auths))
 	for _, auth := range auths {
-		if !responsesWebsocketAuthMatchesModel(auth, providerSet, modelKey, registryRef, now) {
+		if !responsesWebsocketAuthMatchesModel(ctx, auth, providerSet, modelKey, registryRef, now) {
 			continue
 		}
 		available = append(available, auth)
@@ -57,16 +58,23 @@ func (h *OpenAIResponsesAPIHandler) responsesWebsocketAvailableAuthsForModel(mod
 	return available, modelKey
 }
 
-func (h *OpenAIResponsesAPIHandler) responsesWebsocketUsesCodexWebsocketPassthrough(modelName string) bool {
-	return h.responsesWebsocketUsesUpstreamWebsocketPassthrough(modelName)
+func (h *OpenAIResponsesAPIHandler) responsesWebsocketHasAlternativeReplayTarget(ctx context.Context, modelName string, rawJSON []byte, failedAuthID string) bool {
+	if h == nil || h.BaseAPIHandler == nil || h.AuthManager == nil {
+		return false
+	}
+	return h.HasAlternativeExecutionTarget(ctx, h.HandlerType(), modelName, rawJSON, failedAuthID)
 }
 
-func (h *OpenAIResponsesAPIHandler) responsesWebsocketUsesUpstreamWebsocketPassthrough(modelName string) bool {
+func (h *OpenAIResponsesAPIHandler) responsesWebsocketUsesCodexWebsocketPassthrough(ctx context.Context, modelName string) bool {
+	return h.responsesWebsocketUsesUpstreamWebsocketPassthrough(ctx, modelName)
+}
+
+func (h *OpenAIResponsesAPIHandler) responsesWebsocketUsesUpstreamWebsocketPassthrough(ctx context.Context, modelName string) bool {
 	modelName = strings.TrimSpace(modelName)
 	if h == nil || h.AuthManager == nil || modelName == "" {
 		return false
 	}
-	auths, _ := h.responsesWebsocketAvailableAuthsForModel(modelName)
+	auths, _ := h.responsesWebsocketAvailableAuthsForModel(ctx, modelName)
 	if len(auths) == 0 {
 		return false
 	}
@@ -101,7 +109,7 @@ func responsesWebsocketAuthSupportsIncrementalInput(auth *coreauth.Auth) bool {
 	return auth.EffectiveWebsocketsEnabled()
 }
 
-func responsesWebsocketPinnedAuthMatchesModel(auth *coreauth.Auth, modelName string, pinnedModelKey string, homeRuntime bool) bool {
+func responsesWebsocketPinnedAuthMatchesModel(ctx context.Context, auth *coreauth.Auth, modelName string, pinnedModelKey string, homeRuntime bool) bool {
 	if auth == nil {
 		return false
 	}
@@ -112,7 +120,7 @@ func responsesWebsocketPinnedAuthMatchesModel(auth *coreauth.Auth, modelName str
 			return false
 		}
 	}
-	if !responsesWebsocketAuthAvailableForModel(auth, modelKey, time.Now()) {
+	if !responsesWebsocketAuthAvailableForModel(ctx, auth, modelKey, time.Now()) {
 		return false
 	}
 
@@ -156,7 +164,7 @@ func responsesWebsocketProviderSetForModel(resolvedModelName string) (map[string
 	return providerSet, modelKey
 }
 
-func responsesWebsocketAuthMatchesModel(auth *coreauth.Auth, providerSet map[string]struct{}, modelKey string, registryRef *registry.ModelRegistry, now time.Time) bool {
+func responsesWebsocketAuthMatchesModel(ctx context.Context, auth *coreauth.Auth, providerSet map[string]struct{}, modelKey string, registryRef *registry.ModelRegistry, now time.Time) bool {
 	if auth == nil {
 		return false
 	}
@@ -167,7 +175,7 @@ func responsesWebsocketAuthMatchesModel(auth *coreauth.Auth, providerSet map[str
 	if modelKey != "" && registryRef != nil && !registryRef.ClientSupportsModel(auth.ID, modelKey) {
 		return false
 	}
-	return responsesWebsocketAuthAvailableForModel(auth, modelKey, now)
+	return responsesWebsocketAuthAvailableForModel(ctx, auth, modelKey, now)
 }
 
 func responsesWebsocketAuthSupportsCompactionReplay(auth *coreauth.Auth) bool {
@@ -177,33 +185,6 @@ func responsesWebsocketAuthSupportsCompactionReplay(auth *coreauth.Auth) bool {
 	return strings.EqualFold(strings.TrimSpace(auth.Provider), "codex")
 }
 
-func responsesWebsocketAuthAvailableForModel(auth *coreauth.Auth, modelName string, now time.Time) bool {
-	if auth == nil {
-		return false
-	}
-	if auth.Disabled || auth.Status == coreauth.StatusDisabled {
-		return false
-	}
-	if modelName != "" && len(auth.ModelStates) > 0 {
-		state, ok := auth.ModelStates[modelName]
-		if (!ok || state == nil) && modelName != "" {
-			baseModel := strings.TrimSpace(thinking.ParseSuffix(modelName).ModelName)
-			if baseModel != "" && baseModel != modelName {
-				state, ok = auth.ModelStates[baseModel]
-			}
-		}
-		if ok && state != nil {
-			if state.Status == coreauth.StatusDisabled {
-				return false
-			}
-			if state.Unavailable && !state.NextRetryAfter.IsZero() && state.NextRetryAfter.After(now) {
-				return false
-			}
-			return true
-		}
-	}
-	if auth.Unavailable && !auth.NextRetryAfter.IsZero() && auth.NextRetryAfter.After(now) {
-		return false
-	}
-	return true
+func responsesWebsocketAuthAvailableForModel(ctx context.Context, auth *coreauth.Auth, modelName string, now time.Time) bool {
+	return coreauth.IsAuthAvailableForModelForRequest(ctx, auth, modelName, now)
 }

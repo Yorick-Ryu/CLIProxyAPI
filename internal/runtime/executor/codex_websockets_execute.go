@@ -80,6 +80,7 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 	body = helps.SetStringIfDifferent(body, "model", baseModel)
 	body = helps.SetBoolIfDifferent(body, "stream", true)
 	body = helps.DeleteTopLevelJSONFields(body, "prompt_cache_retention", "safety_identifier")
+	upstreamModel := baseModel
 	if !useSIWC {
 		body = normalizeCodexInstructions(body, helps.PreserveCodexInstructions(req.Payload, opts))
 		body, err = helps.EnsureCodexWebSearchHistoryTool(body, auth, opts.Headers)
@@ -88,7 +89,16 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 		}
 		if e.cfg == nil || e.cfg.DisableImageGeneration == config.DisableImageGenerationOff {
 			body = ensureImageGenerationTool(body, baseModel, auth, opts.Headers)
+			if !codexAuthUsesAPIKey(auth) {
+				body, upstreamModel, err = prepareCodexHostedImageGenerationBody(e.cfg, body, baseModel, req.Model)
+				if err != nil {
+					return resp, err
+				}
+			}
 		}
+	}
+	if upstreamModel != baseModel {
+		reporter.SetUpstreamModel(upstreamModel)
 	}
 	body = normalizeCodexWebsocketParallelToolCalls(body, opts.Headers)
 	body = helps.NormalizeCodexToolSchemas(body)
@@ -132,8 +142,8 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 	upstreamBody = finalizePayload(upstreamBody)
 	reporter.SetTranslatedReasoningEffort(clientBody, to.String())
 	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, nativeRequest, opts.Headers)
-	applyCodexRoutingHint(ctx, wsHeaders, auth, baseModel, upstreamBody, opts.Headers)
-	applyModelHeaderOverrides(wsHeaders, baseModel)
+	applyCodexRoutingHint(ctx, wsHeaders, auth, upstreamModel, upstreamBody, opts.Headers)
+	applyModelHeaderOverrides(wsHeaders, upstreamModel)
 	applyCodexIdentityConfuseHeaders(wsHeaders, &identityState)
 
 	var authID, authLabel, authType, authValue string
