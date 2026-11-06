@@ -910,6 +910,7 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
 		return nil, err
 	}
 	originalTranslated = helps.SetStringIfDifferent(originalTranslated, "model", baseModel)
+	body = normalizeCodexClaudeOutputBudget(body, from, req.Payload)
 	body = helps.SetStringIfDifferent(body, "model", baseModel)
 
 	body, err = helps.ApplyRequestThinking(body, req, opts, from.String(), to.String(), e.Identifier(), updatesChanged)

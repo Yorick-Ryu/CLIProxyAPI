@@ -67,6 +67,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 		return nil, err
 	}
 	originalTranslated = helps.SetStringIfDifferent(originalTranslated, "model", baseModel)
+	body = normalizeCodexClaudeOutputBudget(body, from, req.Payload)
 	body = helps.SetStringIfDifferent(body, "model", baseModel)
 
 	body, err = helps.ApplyRequestThinking(body, req, opts, from.String(), to.String(), e.Identifier(), updatesChanged)

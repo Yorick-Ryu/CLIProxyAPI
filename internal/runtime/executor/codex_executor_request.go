@@ -64,6 +64,29 @@ func translateCodexRequestPairWithUpdateIntentContext(ctx context.Context, from,
 	return originalTranslated, body, changed, err
 }
 
+// normalizeCodexClaudeOutputBudget bridges Claude's smaller valid budgets to Codex's minimum.
+func normalizeCodexClaudeOutputBudget(body []byte, from sdktranslator.Format, payload []byte) []byte {
+	if len(body) == 0 || from != sdktranslator.FormatClaude {
+		return body
+	}
+	requested := ojson.GetBytesNoCopy(payload, "max_tokens")
+	if !requested.Exists() {
+		requested = ojson.GetBytesNoCopy(payload, "max_output_tokens")
+	}
+	if requested.Type != ojson.Number {
+		return body
+	}
+	requestedTokens, errParse := strconv.ParseInt(requested.Raw, 10, 64)
+	if errParse != nil || requestedTokens < 1 || requestedTokens >= 16 {
+		return body
+	}
+	translated := ojson.GetBytesNoCopy(body, "max_output_tokens")
+	if translated.Type == ojson.Number && translated.Int() > 0 && translated.Int() < 16 {
+		body, _ = ojson.SetBytes(body, "max_output_tokens", 16)
+	}
+	return body
+}
+
 // PrepareRequest injects Codex credentials into the outgoing HTTP request.
 func (e *CodexExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Auth) error {
 	if req == nil {
