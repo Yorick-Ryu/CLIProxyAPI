@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -64,27 +65,46 @@ func translateCodexRequestPairWithUpdateIntentContext(ctx context.Context, from,
 	return originalTranslated, body, changed, err
 }
 
-// normalizeCodexClaudeOutputBudget bridges Claude's smaller valid budgets to Codex's minimum.
-func normalizeCodexClaudeOutputBudget(body []byte, from sdktranslator.Format, payload []byte) []byte {
-	if len(body) == 0 || from != sdktranslator.FormatClaude {
+// codexMinOutputTokens is the smallest integer max_output_tokens value the ChatGPT
+// Codex backend accepts; smaller integers are rejected with invalid_request_error.
+const codexMinOutputTokens = 16
+
+// normalizeCodexOutputBudgetDoc raises small positive integer output budgets to the
+// Codex minimum. It judges the translated payload (max_output_tokens) rather than the
+// client payload so every source format and budget field (max_tokens,
+// max_completion_tokens, generation_config, ...) is covered uniformly. Budgets that
+// are missing, non-numeric, non-integral, or <= 0 are left untouched for the upstream
+// to reject. This runs before user payload rules so overrides and filters stay final.
+func normalizeCodexOutputBudgetDoc(doc *ojson.Doc) {
+	if doc == nil {
+		return
+	}
+	translated := doc.Get("max_output_tokens")
+	if translated.Type != ojson.Number {
+		return
+	}
+	tokens, errFloat := strconv.ParseFloat(translated.Raw, 64)
+	if errFloat != nil || tokens < 1 || tokens >= codexMinOutputTokens || tokens != math.Trunc(tokens) {
+		return
+	}
+	_ = doc.Set("max_output_tokens", codexMinOutputTokens)
+}
+
+// normalizeCodexOutputBudget preserves the byte pipeline when no adjustment is needed.
+func normalizeCodexOutputBudget(body []byte) []byte {
+	doc := ojson.NewDoc(body)
+	normalizeCodexOutputBudgetDoc(doc)
+	if ojson.GetBytesNoCopy(body, "max_output_tokens").Raw == doc.Get("max_output_tokens").Raw {
 		return body
 	}
-	requested := ojson.GetBytesNoCopy(payload, "max_tokens")
-	if !requested.Exists() {
-		requested = ojson.GetBytesNoCopy(payload, "max_output_tokens")
+	return doc.Bytes()
+}
+
+func codexHostedImageRequestedModel(requested, fallback string) string {
+	if strings.TrimSpace(requested) != "" {
+		return requested
 	}
-	if requested.Type != ojson.Number {
-		return body
-	}
-	requestedTokens, errParse := strconv.ParseInt(requested.Raw, 10, 64)
-	if errParse != nil || requestedTokens < 1 || requestedTokens >= 16 {
-		return body
-	}
-	translated := ojson.GetBytesNoCopy(body, "max_output_tokens")
-	if translated.Type == ojson.Number && translated.Int() > 0 && translated.Int() < 16 {
-		body, _ = ojson.SetBytes(body, "max_output_tokens", 16)
-	}
-	return body
+	return fallback
 }
 
 // PrepareRequest injects Codex credentials into the outgoing HTTP request.
@@ -925,28 +945,66 @@ func isImageGenerationFunctionTool(tool ojson.Result) bool {
 }
 
 func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth.Auth, headers http.Header) []byte {
-	if util.IsCodexResponsesLiteRequest(body, headers) || isCodexResponsesLiteModel(baseModel) {
+	doc := ojson.NewDoc(body)
+	if !ensureImageGenerationToolDoc(doc, baseModel, auth, headers) {
 		return body
 	}
-	if strings.HasSuffix(baseModel, "spark") {
-		return body
-	}
-	if isCodexFreePlanAuth(auth) {
-		return body
-	}
+	return doc.Bytes()
+}
 
-	tools := ojson.GetBytes(body, "tools")
+func codexRequestHasReasoningForHostedImageDoc(doc *ojson.Doc, model string) bool {
+	return helps.CodexRequestHasReasoningForHostedImageDoc(doc, model)
+}
+
+func isCodexResponsesLiteRequestForAuthDoc(doc *ojson.Doc, modelName string, auth *cliproxyauth.Auth, headers http.Header) bool {
+	return helps.CodexResponsesLiteRequestForAuthDoc(doc, modelName, auth, headers)
+}
+
+func codexToolsAlreadyContainImageGenDoc(doc *ojson.Doc) bool {
+	if doc == nil {
+		return false
+	}
+	tools := doc.Get("tools")
 	if !tools.Exists() || !tools.IsArray() {
-		body, _ = ojson.SetRawBytes(body, "tools", imageGenToolArrayJSON)
-		return body
+		return false
 	}
 	for _, t := range tools.Array() {
 		if t.Get("type").String() == "image_generation" || isImageGenerationFunctionTool(t) {
-			return body
+			return true
 		}
 	}
-	body, _ = ojson.SetRawBytes(body, "tools.-1", imageGenToolJSON)
-	return body
+	return false
+}
+
+func appendImageGenerationToolDoc(doc *ojson.Doc) bool {
+	if doc == nil {
+		return false
+	}
+	tools := doc.Get("tools")
+	if !tools.Exists() || !tools.IsArray() {
+		return doc.SetRawBytes("tools", imageGenToolArrayJSON) == nil
+	}
+	return doc.SetRawBytes("tools.-1", imageGenToolJSON) == nil
+}
+
+func ensureImageGenerationToolDoc(doc *ojson.Doc, baseModel string, auth *cliproxyauth.Auth, headers http.Header) bool {
+	if doc == nil || isCodexFreePlanAuth(auth) || codexToolsAlreadyContainImageGenDoc(doc) {
+		return false
+	}
+	modelName := strings.TrimSpace(thinking.ParseSuffix(baseModel).ModelName)
+	if modelName == "" {
+		modelName = strings.TrimSpace(thinking.ParseSuffix(doc.Get("model").String()).ModelName)
+	}
+	if isCodexResponsesLiteRequestForAuthDoc(doc, modelName, auth, headers) {
+		return false
+	}
+	if isCodexResponsesLiteModel(modelName) && codexRequestHasReasoningForHostedImageDoc(doc, baseModel) {
+		return false
+	}
+	if strings.HasSuffix(strings.ToLower(modelName), "spark") {
+		return false
+	}
+	return appendImageGenerationToolDoc(doc)
 }
 
 // normalizeCodexImageGenerationBody normalizes hosted tools before identity and

@@ -3,7 +3,6 @@ package cache
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -90,7 +89,7 @@ func useFakeXAIReasoningReplayKVClient(t *testing.T, client *fakeXAIReasoningRep
 
 func mustXAIReasoningReplayJSON(t *testing.T, items [][]byte) []byte {
 	t.Helper()
-	raw, err := json.Marshal(items)
+	raw, err := marshalReasoningReplayRawJSONArray(items)
 	if err != nil {
 		t.Fatalf("marshal replay items: %v", err)
 	}
