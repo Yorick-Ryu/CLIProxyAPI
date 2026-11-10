@@ -19,6 +19,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 	}
 
 	// Simple scalars
+	if oldCfg.Client.Codex.StripQuota != newCfg.Client.Codex.StripQuota {
+		changes = append(changes, fmt.Sprintf("client.codex.strip-quota: %t -> %t", oldCfg.Client.Codex.StripQuota, newCfg.Client.Codex.StripQuota))
+	}
 	if oldCfg.Client.Codex.StripModelsETag != newCfg.Client.Codex.StripModelsETag {
 		changes = append(changes, fmt.Sprintf("client.codex.strip-models-etag: %t -> %t", oldCfg.Client.Codex.StripModelsETag, newCfg.Client.Codex.StripModelsETag))
 	}

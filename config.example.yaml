@@ -365,6 +365,10 @@ client:
     # Preserves other metadata and the catalog endpoint's own ETag. Default false.
     # Hot reload applies to new HTTP requests and subsequent WebSocket turns.
     strip-models-etag: false
+    # Hide upstream Codex quota/credits headers and codex.rate_limits events.
+    # Keeps internal quota tracking, Retry-After, errors and token usage unchanged.
+    # Default false; hot reload applies to new requests and subsequent WS turns.
+    strip-quota: false
     # When false (default), only models that natively declare freeform apply_patch advertise it.
     # When true, non-template and bridged models supported by every routing executor also advertise "freeform".
     enable-apply-patch: false

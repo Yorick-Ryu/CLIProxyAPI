@@ -17,12 +17,12 @@ func (h *OpenAIResponsesAPIHandler) stripModelsETagEnabled() bool {
 	return cfg != nil && cfg.Client.Codex.StripModelsETag
 }
 
-func writeResponsesUpstreamHeaders(dst, src http.Header, stripModelsETag bool) {
+func writeResponsesUpstreamHeaders(dst, src http.Header, stripModelsETag, stripQuota bool) {
 	handlers.WriteUpstreamHeaders(dst, src)
-	if stripModelsETag {
+	if stripModelsETag || stripQuota {
 		// Do not mutate the upstream map shared with tracing and interceptors.
 		for key := range dst {
-			if strings.EqualFold(key, "x-models-etag") {
+			if (stripModelsETag && strings.EqualFold(key, "x-models-etag")) || (stripQuota && handlers.IsCodexQuotaHeader(key)) {
 				delete(dst, key)
 			}
 		}

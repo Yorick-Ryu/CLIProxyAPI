@@ -45,6 +45,7 @@ func (h *OpenAIResponsesAPIHandler) forwardResponsesWebsocket(
 	options ...responsesWebsocketForwardOptions,
 ) ([]byte, string, []string, *interfaces.ErrorMessage, error) {
 	stripModelsETag := h.stripModelsETagEnabled()
+	stripQuota := h.stripQuotaEnabled()
 	var opts responsesWebsocketForwardOptions
 	if len(options) > 0 {
 		opts = options[0]
@@ -108,7 +109,7 @@ func (h *OpenAIResponsesAPIHandler) forwardResponsesWebsocket(
 			return completedOutput, completedResponseID, sortedStringSet(pendingToolCallIDs), errMsg, websocket.ErrCloseSent
 		}
 
-		errorPayload, wrote, errTerminate := writeResponsesWebsocketTerminalError(writer, wsTimelineLog, errMsg, nil)
+		errorPayload, wrote, errTerminate := writeResponsesWebsocketTerminalError(writer, wsTimelineLog, handlers.StripCodexQuotaError(errMsg, stripQuota), nil)
 		if wrote {
 			log.Infof(
 				"responses websocket: downstream_out id=%s type=%d event=%s payload=%s",
@@ -218,6 +219,10 @@ func (h *OpenAIResponsesAPIHandler) forwardResponsesWebsocket(
 			payloads := websocketJSONPayloadsFromChunk(chunk)
 			for i := range payloads {
 				eventType := ojson.GetBytesNoCopy(payloads[i], "type").String()
+				if stripQuota && eventType == "codex.rate_limits" {
+					continue
+				}
+				payloads[i] = filterResponsesQuota(payloads[i], eventType, stripQuota)
 				payloads[i] = filterResponsesModelsETag(payloads[i], eventType, stripModelsETag)
 				if eventType == "response.subscription_usage" ||
 					(eventType == "response.metadata" && !isCodexResponsesClientRequest(c)) {

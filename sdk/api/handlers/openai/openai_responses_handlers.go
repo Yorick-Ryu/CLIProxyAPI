@@ -75,6 +75,7 @@ type responsesSSEFramer struct {
 	failureEvent         string
 	isCodexClient        bool
 	stripModelsETag      bool
+	stripQuota           bool
 	dataFrames           int
 	writeErr             error
 	canComplete          func() bool
@@ -259,6 +260,10 @@ func (f *responsesSSEFramer) shouldFilterPrivateEvent(streamEvent, payloadType s
 			return false
 		}
 
+		if f != nil && f.stripQuota && name == "codex.rate_limits" {
+			return true
+		}
+
 		// Always filter internal WebSocket timing telemetry and Meta subscription usage from SSE streams.
 		if strings.HasPrefix(name, "responsesapi.") || name == "response.subscription_usage" {
 			return true
@@ -306,6 +311,15 @@ func (f *responsesSSEFramer) repairFrame(frame []byte) []byte {
 		return frame
 	}
 
+	quotaEventType := payloadType
+	if quotaEventType == "" {
+		quotaEventType = streamEvent
+	}
+	filteredQuota := filterResponsesQuota(payload, quotaEventType, f.stripQuota)
+	if !bytes.Equal(filteredQuota, payload) {
+		payload = filteredQuota
+		frame = responsesSSEFrameWithData(frame, payload)
+	}
 	f.dataFrames++
 
 	if responsesSSEErrorEvent(payloadType) || responsesSSEPayloadHasError(payload) {
@@ -980,6 +994,7 @@ func (h *OpenAIResponsesAPIHandler) Responses(c *gin.Context) {
 
 func (h *OpenAIResponsesAPIHandler) Compact(c *gin.Context) {
 	stripModelsETag := h.stripModelsETagEnabled()
+	stripQuota := h.stripQuotaEnabled()
 	rawJSON, err := handlers.ReadRequestBody(c)
 	if err != nil {
 		c.JSON(clienterror.HTTPStatusFromErrorOr(err, http.StatusBadRequest), handlers.ErrorResponse{
@@ -1025,7 +1040,7 @@ func (h *OpenAIResponsesAPIHandler) Compact(c *gin.Context) {
 		cliCancel(errMsg.Error)
 		return
 	}
-	writeResponsesUpstreamHeaders(c.Writer.Header(), upstreamHeaders, stripModelsETag)
+	writeResponsesUpstreamHeaders(c.Writer.Header(), upstreamHeaders, stripModelsETag, stripQuota)
 	_, _ = c.Writer.Write(resp)
 	cliCancel()
 }
@@ -1039,6 +1054,7 @@ func (h *OpenAIResponsesAPIHandler) Compact(c *gin.Context) {
 //   - rawJSON: The raw JSON bytes of the OpenAIResponses-compatible request
 func (h *OpenAIResponsesAPIHandler) handleNonStreamingResponse(c *gin.Context, rawJSON []byte) {
 	stripModelsETag := h.stripModelsETagEnabled()
+	stripQuota := h.stripQuotaEnabled()
 	c.Header("Content-Type", "application/json")
 
 	modelName := strings.Clone(ojson.GetBytesNoCopy(rawJSON, "model").String())
@@ -1052,7 +1068,7 @@ func (h *OpenAIResponsesAPIHandler) handleNonStreamingResponse(c *gin.Context, r
 		cliCancel(errMsg.Error)
 		return
 	}
-	writeResponsesUpstreamHeaders(c.Writer.Header(), upstreamHeaders, stripModelsETag)
+	writeResponsesUpstreamHeaders(c.Writer.Header(), upstreamHeaders, stripModelsETag, stripQuota)
 	_, _ = c.Writer.Write(resp)
 	cliCancel()
 }
@@ -1066,6 +1082,7 @@ func (h *OpenAIResponsesAPIHandler) handleNonStreamingResponse(c *gin.Context, r
 //   - rawJSON: The raw JSON bytes of the OpenAIResponses-compatible request
 func (h *OpenAIResponsesAPIHandler) handleStreamingResponse(c *gin.Context, rawJSON []byte) {
 	stripModelsETag := h.stripModelsETagEnabled()
+	stripQuota := h.stripQuotaEnabled()
 	// Get the http.Flusher interface to manually flush the response.
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
@@ -1100,7 +1117,7 @@ func (h *OpenAIResponsesAPIHandler) handleStreamingResponse(c *gin.Context, rawJ
 			return
 		}
 		setSSEHeaders()
-		writeResponsesUpstreamHeaders(c.Writer.Header(), upstreamHeaders, stripModelsETag)
+		writeResponsesUpstreamHeaders(c.Writer.Header(), upstreamHeaders, stripModelsETag, stripQuota)
 		committed = true
 	}
 	writeKeepAlive := func() bool {
@@ -1131,7 +1148,7 @@ func (h *OpenAIResponsesAPIHandler) handleStreamingResponse(c *gin.Context, rawJ
 	if isCodexClient {
 		failureEvent = "response.failed"
 	}
-	framer := &responsesSSEFramer{failureEvent: failureEvent, isCodexClient: isCodexClient, stripModelsETag: stripModelsETag, canComplete: func() bool { return usage.StreamDeliverySupported(cliCtx) }}
+	framer := &responsesSSEFramer{failureEvent: failureEvent, isCodexClient: isCodexClient, stripModelsETag: stripModelsETag, stripQuota: stripQuota, canComplete: func() bool { return usage.StreamDeliverySupported(cliCtx) }}
 	var initialOutput bytes.Buffer
 
 	// Peek at the first complete SSE data frame.

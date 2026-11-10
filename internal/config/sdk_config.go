@@ -148,6 +148,10 @@ type CodexClientConfig struct {
 	// Default false preserves HTTP headers and Codex metadata events unchanged.
 	StripModelsETag bool `yaml:"strip-models-etag" json:"strip-models-etag"`
 
+	// StripQuota removes upstream Codex quota and credits from client-facing replies.
+	// Internal quota observation and account scheduling remain unchanged.
+	StripQuota bool `yaml:"strip-quota" json:"strip-quota"`
+
 	// OptimizeMultiAgentV2 optimizes official Codex multi-agent requests across providers.
 	// Default false leaves the client's multi-agent behavior unchanged.
 	OptimizeMultiAgentV2 bool `yaml:"optimize-multi-agent-v2" json:"optimize-multi-agent-v2"`
