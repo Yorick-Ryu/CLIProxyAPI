@@ -31,13 +31,23 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 	if opts.Alt == "responses/compact" {
 		return nil, statusErr{code: http.StatusBadRequest, msg: "streaming not supported for /responses/compact"}
 	}
-	if errExpand := helps.ExpandRecognizedResponsesCompactionCapsules(&req, &opts); errExpand != nil {
-		return nil, statusErr{code: http.StatusBadRequest, msg: errExpand.Error()}
-	}
 	if isCodexOpenAIImageRequest(opts) {
+		if errExpand := helps.ExpandRecognizedResponsesCompactionCapsules(&req, &opts); errExpand != nil {
+			return nil, statusErr{code: http.StatusBadRequest, msg: errExpand.Error()}
+		}
 		return e.executeOpenAIImageStream(ctx, auth, req, opts)
 	}
 	baseModel := thinking.ParseSuffix(req.Model).ModelName
+	isCompat, errExpand := e.expandCodexResponsesCompaction(auth, &req, &opts, baseModel)
+	if errExpand != nil {
+		return nil, statusErr{code: http.StatusBadRequest, msg: errExpand.Error()}
+	}
+	if e.shouldCompactCompatResponsesTrigger(isCompat, req, opts) {
+		return e.executeCodexResponsesCompactionStream(ctx, auth, req, opts)
+	}
+	if errPrev := rejectSyntheticCompactionPreviousResponseID(ctx, req.Payload); errPrev != nil {
+		return nil, errPrev
+	}
 
 	apiKey, baseURL := codexCredsForRequest(ctx, auth, opts.Headers)
 	if errSIWC := ensureCodexSIWCCredentialsForRequest(ctx, auth, apiKey, opts.Headers); errSIWC != nil {
@@ -60,14 +70,13 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 		originalPayloadSource = opts.OriginalRequest
 	}
 	originalPayload := originalPayloadSource
-	isCompat := e.resolveCodexModelIsCompat(auth, req, baseModel)
 	targetModel := resolveResponsesSignatureTargetModel(baseModel, req, opts)
 	originalTranslated, body, updatesChanged, err := translateCodexRequestPairWithUpdateIntentContext(ctx, from, to, targetModel, originalPayload, req.Payload, true, isCompat)
 	if err != nil {
 		return nil, err
 	}
 	originalTranslated = helps.SetStringIfDifferent(originalTranslated, "model", baseModel)
-	body = normalizeCodexClaudeOutputBudget(body, from, req.Payload)
+	body = normalizeCodexOutputBudget(body)
 	body = helps.SetStringIfDifferent(body, "model", baseModel)
 
 	body, err = helps.ApplyRequestThinking(body, req, opts, from.String(), to.String(), e.Identifier(), updatesChanged)
@@ -75,7 +84,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 		return nil, err
 	}
 
-	ctx = helps.WithPayloadFinalizer(ctx, helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslated, req, opts))
+	ctx = helps.WithPayloadFinalizer(ctx, helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslated, req, opts, auth))
 	reasoningSummaryDelivery := ojson.GetBytes(body, "stream_options.reasoning_summary_delivery")
 	body = helps.DeleteTopLevelJSONFields(body, "previous_response_id", "generate", "prompt_cache_retention", "safety_identifier", "stream_options")
 	if reasoningSummaryDelivery.Exists() {
@@ -84,7 +93,6 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 	body = helps.SetStringIfDifferent(body, "model", baseModel)
 	useSIWC := codexUseSIWCForRequest(ctx, auth, opts.Headers)
 	hasExplicitInstructions := ojson.GetBytes(req.Payload, "instructions").Exists() && strings.TrimSpace(ojson.GetBytes(req.Payload, "instructions").String()) != ""
-	upstreamModel := baseModel
 	if !useSIWC {
 		body = normalizeCodexInstructions(body, helps.PreserveCodexInstructions(req.Payload, opts))
 		body, err = helps.EnsureCodexWebSearchHistoryTool(body, auth, opts.Headers)
@@ -92,19 +100,13 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 			return nil, err
 		}
 		if e.cfg == nil || e.cfg.DisableImageGeneration == config.DisableImageGenerationOff {
-			body = ensureImageGenerationTool(body, baseModel, auth, opts.Headers)
+			body = ensureImageGenerationTool(body, codexHostedImageRequestedModel(req.Model, baseModel), auth, opts.Headers)
 			if !codexAuthUsesAPIKey(auth) {
-				body, upstreamModel, err = prepareCodexHostedImageGenerationBody(e.cfg, body, baseModel, req.Model)
-				if err != nil {
-					return nil, err
-				}
+				body = normalizeCodexImageGenerationBody(body)
 			}
 		}
 	} else {
 		body = applyCodexSIWCRequestBodyRules(body, hasExplicitInstructions, cliproxyexecutor.Options{KeepTopLevelEffort: thinking.HasThinkingSuffix(req.Model)})
-	}
-	if upstreamModel != baseModel {
-		reporter.SetUpstreamModel(upstreamModel)
 	}
 	body = normalizeCodexParallelToolCalls(body, opts.Headers)
 	body = helps.NormalizeCodexToolSchemas(body)
@@ -121,11 +123,18 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 	if err != nil {
 		return nil, err
 	}
+	upstreamModel := strings.TrimSpace(ojson.GetBytes(upstreamBody, "model").String())
+	if upstreamModel != "" && upstreamModel != baseModel {
+		reporter.SetUpstreamModel(upstreamModel)
+	}
 	reporter.SetTranslatedReasoningEffort(upstreamBody, to.String())
 	applyCodexHeaders(httpReq, auth, apiKey, true, e.cfg, opts.Headers)
 	applyCodexRoutingHint(ctx, httpReq.Header, auth, upstreamModel, upstreamBody, opts.Headers)
 	applyModelHeaderOverrides(httpReq.Header, upstreamModel)
 	applyCodexIdentityConfuseHeaders(httpReq.Header, &identityState)
+	if errValidate := helps.ValidateCodexHostedImageGenerationDoc(ojson.NewDoc(upstreamBody), httpReq.Header, e.cfg, !useSIWC && !codexAuthUsesAPIKey(auth)); errValidate != nil {
+		return nil, errValidate
+	}
 	var authID, authLabel, authType, authValue string
 	if auth != nil {
 		authID = auth.ID

@@ -3,7 +3,6 @@ package cache
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -130,7 +129,7 @@ func validCodexReasoningReplayItemForTest(seed byte) []byte {
 
 func mustCodexReasoningReplayJSON(t *testing.T, items [][]byte) []byte {
 	t.Helper()
-	raw, errMarshal := json.Marshal(items)
+	raw, errMarshal := marshalReasoningReplayRawJSONArray(items)
 	if errMarshal != nil {
 		t.Fatalf("marshal replay items: %v", errMarshal)
 	}

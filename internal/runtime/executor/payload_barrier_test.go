@@ -21,7 +21,7 @@ import (
 func TestPayloadBarrierCodexImageFilter(t *testing.T) {
 	for _, transport := range []string{"http", "websocket"} {
 		for _, stream := range []bool{false, true} {
-			for _, model := range []string{"gpt-5.4", "gpt-5.5"} {
+			for _, model := range []string{"gpt-5.4", "gpt-5.5", "gpt-6-astra", "gpt-6-sol"} {
 				t.Run(transport+"/"+model+map[bool]string{false: "/execute", true: "/stream"}[stream], func(t *testing.T) {
 					captured := make(chan []byte, 1)
 					completed := []byte(`{"type":"response.completed","response":{"id":"resp_barrier","status":"completed","output":[],"usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}}}`)
@@ -59,7 +59,7 @@ func TestPayloadBarrierCodexImageFilter(t *testing.T) {
 						_, _ = w.Write(append(append([]byte("data: "), completed...), '\n', '\n'))
 					}))
 					defer server.Close()
-					cfg := &config.Config{Payload: config.PayloadConfig{Filter: []config.PayloadFilterRule{{Models: []config.PayloadModelRule{{Name: "gpt-5.4"}}, Params: []string{`tools.#(type=="image_generation")#`, "instructions", "prompt_cache_key"}}}}}
+					cfg := &config.Config{Payload: config.PayloadConfig{Filter: []config.PayloadFilterRule{{Models: []config.PayloadModelRule{{Name: "gpt-5.4"}, {Name: "gpt-6-astra"}}, Params: []string{`tools.#(type=="image_generation")#`, "instructions", "prompt_cache_key"}}}}}
 					var executor cliproxyauth.ProviderExecutor = NewCodexExecutor(cfg)
 					if transport == "websocket" {
 						executor = NewCodexWebsocketsExecutor(cfg)
@@ -81,11 +81,12 @@ func TestPayloadBarrierCodexImageFilter(t *testing.T) {
 						t.Fatal(errExecute)
 					}
 					body := <-captured
+					filteredModel := model == "gpt-5.4" || model == "gpt-6-astra"
 					image := ojson.GetBytes(body, `tools.#(type=="image_generation")`).Exists()
-					if image != (model == "gpt-5.5") {
+					if image != !filteredModel {
 						t.Fatalf("image tool presence = %v: %s", image, body)
 					}
-					if model == "gpt-5.4" && (ojson.GetBytes(body, "instructions").Exists() || ojson.GetBytes(body, "prompt_cache_key").Exists()) {
+					if filteredModel && (ojson.GetBytes(body, "instructions").Exists() || ojson.GetBytes(body, "prompt_cache_key").Exists()) {
 						t.Fatalf("late injection undid filter: %s", body)
 					}
 				})
@@ -513,7 +514,7 @@ func TestPayloadBarrierMultiExecutorSingleDocConsistency(t *testing.T) {
 	})
 }
 
-func TestPayloadBarrierCodexHostedImageFallback(t *testing.T) {
+func TestPayloadBarrierCodexHostedImageExplicitModelOverride(t *testing.T) {
 	for _, transport := range []string{"http", "websocket"} {
 		for _, stream := range []bool{false, true} {
 			mode := "execute"
@@ -554,7 +555,7 @@ func TestPayloadBarrierCodexHostedImageFallback(t *testing.T) {
 				}))
 				defer server.Close()
 				cfg := &config.Config{Payload: config.PayloadConfig{
-					Override: []config.PayloadRule{{Models: []config.PayloadModelRule{{Name: "gpt-6-astra"}}, Params: map[string]any{"tools.0.complexity": "admin-choice", "reasoning.effort": "max"}}},
+					Override: []config.PayloadRule{{Models: []config.PayloadModelRule{{Name: "gpt-6-astra"}}, Params: map[string]any{"model": "gpt-5.5", "tools.0.complexity": "admin-choice", "reasoning.effort": "max"}}},
 					Filter:   []config.PayloadFilterRule{{Models: []config.PayloadModelRule{{Name: "gpt-6-astra"}}, Params: []string{"input.0", "instructions"}}},
 				}}
 				var exec cliproxyauth.ProviderExecutor = NewCodexExecutor(cfg)
@@ -578,8 +579,8 @@ func TestPayloadBarrierCodexHostedImageFallback(t *testing.T) {
 					t.Fatal(err)
 				}
 				body := <-captured
-				if got := ojson.GetBytes(body, "model").String(); got != codexOpenAIImagesMainModel {
-					t.Fatalf("model = %q, want hosted-image fallback", got)
+				if got := ojson.GetBytes(body, "model").String(); got != "gpt-5.5" {
+					t.Fatalf("model = %q, want explicitly configured model", got)
 				}
 				if got := ojson.GetBytes(body, "tools.0.complexity").String(); got != "admin-choice" {
 					t.Fatalf("hosted tool cleanup overwrote final payload rule: %s", body)
