@@ -19,7 +19,7 @@ func TestWeightedWebsocketPreferenceAcrossPriorities(t *testing.T) {
 				ctx := cliproxyexecutor.WithDownstreamWebsocket(t.Context())
 				const model = "weighted-ws-priority"
 				for _, auth := range []*Auth{
-					{ID: t.Name() + "-http", Provider: provider, Attributes: map[string]string{"priority": "10"}},
+					{ID: t.Name() + "-http", Provider: provider, Attributes: map[string]string{"priority": "10", "websockets": "false"}},
 					{ID: t.Name() + "-ws", Provider: provider, Attributes: map[string]string{"priority": "0", "websockets": "true"}},
 				} {
 					registry.GetGlobalRegistry().RegisterClient(auth.ID, provider, []*registry.ModelInfo{{ID: model}})
