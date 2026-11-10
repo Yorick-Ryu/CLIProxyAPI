@@ -44,6 +44,7 @@ func (h *OpenAIResponsesAPIHandler) forwardResponsesWebsocket(
 	sessionID string,
 	options ...responsesWebsocketForwardOptions,
 ) ([]byte, string, []string, *interfaces.ErrorMessage, error) {
+	stripModelsETag := h.stripModelsETagEnabled()
 	var opts responsesWebsocketForwardOptions
 	if len(options) > 0 {
 		opts = options[0]
@@ -217,6 +218,7 @@ func (h *OpenAIResponsesAPIHandler) forwardResponsesWebsocket(
 			payloads := websocketJSONPayloadsFromChunk(chunk)
 			for i := range payloads {
 				eventType := ojson.GetBytesNoCopy(payloads[i], "type").String()
+				payloads[i] = filterResponsesModelsETag(payloads[i], eventType, stripModelsETag)
 				if eventType == "response.subscription_usage" ||
 					(eventType == "response.metadata" && !isCodexResponsesClientRequest(c)) {
 					continue

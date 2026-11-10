@@ -360,6 +360,11 @@ requests:
 # Client-facing compatibility settings apply to both OAuth and API-key routes.
 client:
   codex:
+    # Remove x-models-etag from Responses HTTP headers and codex.response.metadata
+    # event headers (SSE and WebSocket). Use when clients load a separate model catalog.
+    # Preserves other metadata and the catalog endpoint's own ETag. Default false.
+    # Hot reload applies to new HTTP requests and subsequent WebSocket turns.
+    strip-models-etag: false
     # When false (default), only models that natively declare freeform apply_patch advertise it.
     # When true, non-template and bridged models supported by every routing executor also advertise "freeform".
     enable-apply-patch: false

@@ -74,6 +74,7 @@ type responsesSSEFramer struct {
 	terminalError        *interfaces.ErrorMessage
 	failureEvent         string
 	isCodexClient        bool
+	stripModelsETag      bool
 	dataFrames           int
 	writeErr             error
 	canComplete          func() bool
@@ -330,6 +331,11 @@ func (f *responsesSSEFramer) repairFrame(frame []byte) []byte {
 	}
 
 	switch eventType {
+	case "codex.response.metadata":
+		filtered := filterResponsesModelsETag(payload, eventType, f.stripModelsETag)
+		if !bytes.Equal(filtered, payload) {
+			return responsesSSEFrameWithData(frame, filtered)
+		}
 	case "response.output_item.done":
 		f.recordOutputItem(payload)
 	case "response.completed":
@@ -973,6 +979,7 @@ func (h *OpenAIResponsesAPIHandler) Responses(c *gin.Context) {
 }
 
 func (h *OpenAIResponsesAPIHandler) Compact(c *gin.Context) {
+	stripModelsETag := h.stripModelsETagEnabled()
 	rawJSON, err := handlers.ReadRequestBody(c)
 	if err != nil {
 		c.JSON(clienterror.HTTPStatusFromErrorOr(err, http.StatusBadRequest), handlers.ErrorResponse{
@@ -1018,7 +1025,7 @@ func (h *OpenAIResponsesAPIHandler) Compact(c *gin.Context) {
 		cliCancel(errMsg.Error)
 		return
 	}
-	handlers.WriteUpstreamHeaders(c.Writer.Header(), upstreamHeaders)
+	writeResponsesUpstreamHeaders(c.Writer.Header(), upstreamHeaders, stripModelsETag)
 	_, _ = c.Writer.Write(resp)
 	cliCancel()
 }
@@ -1031,6 +1038,7 @@ func (h *OpenAIResponsesAPIHandler) Compact(c *gin.Context) {
 //   - c: The Gin context containing the HTTP request and response
 //   - rawJSON: The raw JSON bytes of the OpenAIResponses-compatible request
 func (h *OpenAIResponsesAPIHandler) handleNonStreamingResponse(c *gin.Context, rawJSON []byte) {
+	stripModelsETag := h.stripModelsETagEnabled()
 	c.Header("Content-Type", "application/json")
 
 	modelName := strings.Clone(ojson.GetBytesNoCopy(rawJSON, "model").String())
@@ -1044,7 +1052,7 @@ func (h *OpenAIResponsesAPIHandler) handleNonStreamingResponse(c *gin.Context, r
 		cliCancel(errMsg.Error)
 		return
 	}
-	handlers.WriteUpstreamHeaders(c.Writer.Header(), upstreamHeaders)
+	writeResponsesUpstreamHeaders(c.Writer.Header(), upstreamHeaders, stripModelsETag)
 	_, _ = c.Writer.Write(resp)
 	cliCancel()
 }
@@ -1057,6 +1065,7 @@ func (h *OpenAIResponsesAPIHandler) handleNonStreamingResponse(c *gin.Context, r
 //   - c: The Gin context containing the HTTP request and response
 //   - rawJSON: The raw JSON bytes of the OpenAIResponses-compatible request
 func (h *OpenAIResponsesAPIHandler) handleStreamingResponse(c *gin.Context, rawJSON []byte) {
+	stripModelsETag := h.stripModelsETagEnabled()
 	// Get the http.Flusher interface to manually flush the response.
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
@@ -1091,7 +1100,7 @@ func (h *OpenAIResponsesAPIHandler) handleStreamingResponse(c *gin.Context, rawJ
 			return
 		}
 		setSSEHeaders()
-		handlers.WriteUpstreamHeaders(c.Writer.Header(), upstreamHeaders)
+		writeResponsesUpstreamHeaders(c.Writer.Header(), upstreamHeaders, stripModelsETag)
 		committed = true
 	}
 	writeKeepAlive := func() bool {
@@ -1122,7 +1131,7 @@ func (h *OpenAIResponsesAPIHandler) handleStreamingResponse(c *gin.Context, rawJ
 	if isCodexClient {
 		failureEvent = "response.failed"
 	}
-	framer := &responsesSSEFramer{failureEvent: failureEvent, isCodexClient: isCodexClient, canComplete: func() bool { return usage.StreamDeliverySupported(cliCtx) }}
+	framer := &responsesSSEFramer{failureEvent: failureEvent, isCodexClient: isCodexClient, stripModelsETag: stripModelsETag, canComplete: func() bool { return usage.StreamDeliverySupported(cliCtx) }}
 	var initialOutput bytes.Buffer
 
 	// Peek at the first complete SSE data frame.

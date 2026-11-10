@@ -144,6 +144,10 @@ type ClaudeClientConfig struct {
 
 // CodexClientConfig configures Codex client compatibility and the model catalog.
 type CodexClientConfig struct {
+	// StripModelsETag removes upstream catalog refresh hints from Responses replies.
+	// Default false preserves HTTP headers and Codex metadata events unchanged.
+	StripModelsETag bool `yaml:"strip-models-etag" json:"strip-models-etag"`
+
 	// OptimizeMultiAgentV2 optimizes official Codex multi-agent requests across providers.
 	// Default false leaves the client's multi-agent behavior unchanged.
 	OptimizeMultiAgentV2 bool `yaml:"optimize-multi-agent-v2" json:"optimize-multi-agent-v2"`

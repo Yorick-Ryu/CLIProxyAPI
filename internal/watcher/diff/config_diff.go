@@ -19,6 +19,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 	}
 
 	// Simple scalars
+	if oldCfg.Client.Codex.StripModelsETag != newCfg.Client.Codex.StripModelsETag {
+		changes = append(changes, fmt.Sprintf("client.codex.strip-models-etag: %t -> %t", oldCfg.Client.Codex.StripModelsETag, newCfg.Client.Codex.StripModelsETag))
+	}
 	if oldCfg.Client.Codex.EnableApplyPatch != newCfg.Client.Codex.EnableApplyPatch {
 		changes = append(changes, fmt.Sprintf("client.codex.enable-apply-patch: %t -> %t", oldCfg.Client.Codex.EnableApplyPatch, newCfg.Client.Codex.EnableApplyPatch))
 	}
