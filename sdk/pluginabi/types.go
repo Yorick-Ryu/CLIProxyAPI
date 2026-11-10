@@ -160,9 +160,9 @@ const (
 	// records quota reason "credential_quota"). Plugins may also set
 	// Error.CredentialScoped = true while keeping a provider-specific Code.
 	ErrorCodeCredentialQuota = "credential_quota"
-	// ErrorCodeTransientRateLimit marks a 429 refusal as a transient per-model
-	// capacity/admission limit that cools only the reporting model until
-	// RetryAfterSeconds without recording quota exhaustion or advancing backoff.
+	// ErrorCodeTransientRateLimit preserves the upstream transient-capacity code.
+	// This fork retains its existing 429 quota/cooldown policy for this code;
+	// credential-scoped classification still takes precedence.
 	ErrorCodeTransientRateLimit = "transient_rate_limit"
 	// ErrorCodeRequestScoped marks a failure as caused by the request itself:
 	// CPA skips credential/model cooldown and stops credential rotation.
@@ -203,8 +203,8 @@ type Envelope struct {
 //   - CredentialScoped: true (or Code: ErrorCodeCredentialQuota) on a 429 marks
 //     the entire credential as rate-limited across all of its models
 //     (reason "credential_quota") until RetryAfterSeconds or the quota backoff.
-//   - Code: ErrorCodeTransientRateLimit on a 429 cools only the reporting model
-//     until RetryAfterSeconds without marking quota exceeded.
+//   - Code: ErrorCodeTransientRateLimit uses this fork's existing 429 cooldown
+//     policy; it does not opt into upstream transient-capacity scheduling.
 //   - Code: ErrorCodeRequestScoped, ErrorCodeStreamTruncated,
 //     ErrorCodeConnectionLifecycle, or ErrorCodeTransientTransport skips
 //     credential/model cooldown.

@@ -2034,7 +2034,7 @@ func resultErrorFromError(err error) *Error {
 		// normalize conflicting model-only or cooldown-skipping codes so MarkResult
 		// cannot downgrade whole-credential exhaustion.
 		switch strings.ToLower(strings.TrimSpace(resultErr.Code)) {
-		case requestScopedErrorCode,
+		case "transient_rate_limit", requestScopedErrorCode,
 			streamTruncatedErrorCode,
 			connectionLifecycleErrorCode,
 			transientTransportErrorCode:
