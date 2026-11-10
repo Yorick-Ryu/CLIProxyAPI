@@ -356,7 +356,6 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 	socketCtx, cancelSocket := context.WithCancelCause(logging.WithDeferredAPIRequestCaptureDisabled(c.Request.Context()))
 	defer cancelSocket(nil)
 	c.Request = c.Request.WithContext(socketCtx)
-	upgradeRequest := c.Request.Clone(socketCtx)
 	// Start Ping at upgrade, before opening an upstream stream can block.
 	var keepAliveIntervals chan time.Duration
 	var keepAliveInterval time.Duration

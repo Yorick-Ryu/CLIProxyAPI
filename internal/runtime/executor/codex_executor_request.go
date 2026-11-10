@@ -1249,29 +1249,6 @@ func isCodexResponsesLiteRequestDoc(doc *ojson.Doc, headers http.Header) bool {
 	return helps.CodexResponsesLiteRequestDoc(doc, headers)
 }
 
-func ensureImageGenerationToolDoc(doc *ojson.Doc, baseModel string, auth *cliproxyauth.Auth, headers http.Header) bool {
-	if doc == nil || isCodexResponsesLiteRequestDoc(doc, headers) {
-		return false
-	}
-	if strings.HasSuffix(baseModel, "spark") {
-		return false
-	}
-	if isCodexFreePlanAuth(auth) {
-		return false
-	}
-
-	tools := doc.Get("tools")
-	if !tools.Exists() || !tools.IsArray() {
-		return doc.SetRawBytes("tools", imageGenToolArrayJSON) == nil
-	}
-	for _, t := range tools.Array() {
-		if t.Get("type").String() == "image_generation" || isImageGenerationFunctionTool(t) {
-			return false
-		}
-	}
-	return doc.SetRawBytes("tools.-1", imageGenToolJSON) == nil
-}
-
 func normalizeCodexParallelToolCallsDoc(doc *ojson.Doc, headers http.Header) bool {
 	if doc == nil {
 		return false

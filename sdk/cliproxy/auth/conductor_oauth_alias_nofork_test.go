@@ -4312,7 +4312,7 @@ func (e *stub429CooldownExecutor) Execute(_ context.Context, _ *Auth, req clipro
 	e.models = append(e.models, req.Model)
 	e.mu.Unlock()
 	ra := e.retryAfter
-	return cliproxyexecutor.Response{}, withTrustedRetryAfter(&Error{
+	return cliproxyexecutor.Response{}, aliasCooldownRetryAfter(&Error{
 		Code:       "rate_limit_exceeded",
 		Message:    "upstream 429 cooldown",
 		HTTPStatus: http.StatusTooManyRequests,
@@ -4587,7 +4587,7 @@ func TestManager_Issue7360_Shape2_CooldownRecordedBeforeAliasMappingMigratesToTa
 						close(startedCh)
 						<-releaseCh
 					}
-					return cliproxyexecutor.Response{}, withTrustedRetryAfter(&Error{
+					return cliproxyexecutor.Response{}, aliasCooldownRetryAfter(&Error{
 						Code:       "rate_limit_exceeded",
 						Message:    "upstream 429 cooldown",
 						HTTPStatus: http.StatusTooManyRequests,
@@ -4938,4 +4938,17 @@ func (s *blockingSelectiveAuthStore) Save(_ context.Context, auth *Auth) (string
 
 func (s *blockingSelectiveAuthStore) Delete(context.Context, string) error {
 	return nil
+}
+
+// aliasCooldownHint keeps provider retry hints in these tests without enabling
+// the upstream native Codex Retry-After deadline wrapper excluded by this fork.
+type aliasCooldownHint struct {
+	error
+	delay *time.Duration
+}
+
+func (e aliasCooldownHint) Unwrap() error              { return e.error }
+func (e aliasCooldownHint) RetryAfter() *time.Duration { return e.delay }
+func aliasCooldownRetryAfter(err error, delay *time.Duration) error {
+	return aliasCooldownHint{error: err, delay: delay}
 }
