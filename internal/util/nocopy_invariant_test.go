@@ -104,6 +104,7 @@ type reviewedInPlaceByteWrite struct {
 }
 
 var reviewedInPlaceByteWrites = map[string]reviewedInPlaceByteWrite{
+	"sdk/cliproxy/auth/selector_weighted.go":                        {2, "shifts weightedPoolMember structs while holding the selector mutex; no JSON byte buffer or no-copy result is modified"},
 	"internal/kvstore/bolt_store.go":                                {1, "encodeEnvelope copies into a newly allocated private buffer before publishing it; no no-copy reader exists"},
 	"internal/runtime/executor/helps/codex_identity_uuid.go":        {1, "copies a timestamp between private UUID arrays; no JSON buffer is modified"},
 	"internal/runtime/executor/helps/codex_compression.go":          {1, "shifts compressed bytes in a newly allocated zstd output buffer; JSON readers only reference the unmodified input"},
