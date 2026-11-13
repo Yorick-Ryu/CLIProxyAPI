@@ -4,7 +4,6 @@ package claude
 import (
 	"strings"
 
-	"github.com/MoeForge/moego/base64"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/cache"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
