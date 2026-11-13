@@ -17,7 +17,7 @@ import (
 
 func TestCodexSIWCNormalizesNativeResponsesEffort(t *testing.T) {
 	const completed = `{"type":"response.completed","response":{"id":"resp_effort","object":"response","status":"completed","model":"gpt-6.1-sol","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`
-	for _, mode := range []string{"http", "stream", "compact", "websocket", "websocket stream preparation"} {
+	for _, mode := range []string{"http", "stream", "compact", "websocket", "websocket stream", "websocket stream preparation"} {
 		for _, tc := range []struct {
 			name       string
 			body       string
@@ -115,11 +115,22 @@ func TestCodexSIWCNormalizesNativeResponsesEffort(t *testing.T) {
 					_, err = executor.Execute(context.Background(), auth, req, opts)
 				case "websocket":
 					_, err = NewCodexWebsocketsExecutor(cfg).Execute(context.Background(), auth, req, opts)
+				case "websocket stream":
+					var result *cliproxyexecutor.StreamResult
+					result, err = NewCodexWebsocketsExecutor(cfg).ExecuteStream(context.Background(), auth, req, opts)
+					if err == nil {
+						for chunk := range result.Chunks {
+							if chunk.Err != nil {
+								t.Errorf("websocket stream chunk: %v", chunk.Err)
+							}
+						}
+					}
 				case "websocket stream preparation":
 					prepared, errPrepare := NewCodexWebsocketsExecutor(cfg).prepareCodexWebsocketStream(context.Background(), auth, req, opts)
 					err = errPrepare
 					if err == nil {
-						captured <- prepared.clientBody
+						// Fork identity mapping precedes the final payload rules on the upstream body.
+						captured <- prepared.upstreamBody
 					}
 				default:
 					_, err = executor.Execute(context.Background(), auth, req, opts)
