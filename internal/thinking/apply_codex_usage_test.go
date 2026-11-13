@@ -160,7 +160,7 @@ func TestExtractCodexReasoningEffortWithConfigurationUpdateTargetRouting(t *test
 			name = "supported"
 		}
 		t.Run(name, func(t *testing.T) {
-			info := &registry.ModelInfo{ID: "opaque-route", Type: "codex", SupportConfigurationUpdate: supported, Thinking: &registry.ThinkingSupport{Levels: []string{"low", "high", "xhigh"}}}
+			info := &registry.ModelInfo{ID: "opaque-route", Type: "codex", SupportConfigurationUpdate: supported, Thinking: &registry.ThinkingSupport{Levels: []string{"low", "medium", "high", "xhigh"}}}
 			body, err := thinking.ApplyThinkingWithModelInfoAndSummary([]byte(source), []byte(source), "opaque-route(high)", "openai-response", "codex", "codex", info, thinking.SummaryConfig{})
 			if err != nil {
 				t.Fatalf("ApplyThinkingWithModelInfoAndSummary() error = %v", err)
@@ -357,6 +357,7 @@ func TestApplyThinkingLogsNativeResponsesEffectiveEffort(t *testing.T) {
 	tests := []struct {
 		name         string
 		body         string
+		wantBody     string
 		wantEffort   string
 		wantLevel    thinking.ThinkingLevel
 		wantMode     thinking.ThinkingMode
@@ -388,9 +389,10 @@ func TestApplyThinkingLogsNativeResponsesEffectiveEffort(t *testing.T) {
 			wantEffort: "xhigh", wantLevel: thinking.LevelXHigh, wantMode: thinking.ModeLevel,
 		},
 		{
-			name:       "update disables thinking",
+			name:       "unsupported none uses minimum effort",
 			body:       `{"model":"gpt-6-sol","reasoning":{"effort":"high"},"input":[{"type":"configuration_update","reasoning":{"effort":"none"}}]}`,
-			wantEffort: "none", wantMode: thinking.ModeNone, wantBaseline: thinking.LevelHigh,
+			wantBody:   `{"model":"gpt-6-sol","reasoning":{"effort":"high"},"input":[{"type":"configuration_update","reasoning":{"effort":"low"}}]}`,
+			wantEffort: "low", wantLevel: thinking.LevelLow, wantMode: thinking.ModeLevel, wantBaseline: thinking.LevelHigh,
 		},
 	}
 	for _, tc := range tests {
@@ -417,8 +419,12 @@ func TestApplyThinkingLogsNativeResponsesEffectiveEffort(t *testing.T) {
 					if err != nil {
 						t.Fatalf("ApplyThinking() error = %v", err)
 					}
-					if !bytes.Equal(applied, body) {
-						t.Fatalf("native Responses body changed: got %s, want %s", applied, body)
+					wantBody := body
+					if tc.wantBody != "" {
+						wantBody = []byte(tc.wantBody)
+					}
+					if !bytes.Equal(applied, wantBody) {
+						t.Fatalf("native Responses body = %s, want %s", applied, wantBody)
 					}
 					if got := thinking.ExtractTranslatedReasoningEffort(applied, "codex"); got != tc.wantEffort {
 						t.Errorf("effective effort = %q, want %q", got, tc.wantEffort)
