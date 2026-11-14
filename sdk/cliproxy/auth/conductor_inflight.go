@@ -200,7 +200,9 @@ func wrapInFlightStreamResult(result *cliproxyexecutor.StreamResult, scope *inFl
 		}
 		close(out)
 	}()
-	return &cliproxyexecutor.StreamResult{Headers: result.Headers, Chunks: out}
+	wrapped := *result
+	wrapped.Chunks = out
+	return &wrapped
 }
 
 // inFlightScopeContextKey carries the request in-flight scope to inner
