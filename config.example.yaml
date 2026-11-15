@@ -1269,6 +1269,7 @@ oauth:
       #   enabled: false             # whether to enable connection pooling (default: false)
       #   idle-conn-timeout: "30s"    # idle keep-alive timeout (default: 30s, capped at 210s)
       #   max-idle-conns-per-host: 2  # max idle connections per host per credential (default: 2)
+      # tos-pause-window: "0"         # default off; set a positive duration (e.g. "6h") to enable pool-wide TOS pause
       # Use credits as a last resort after free-tier Claude quota is exhausted.
       antigravity-credits: true
 
