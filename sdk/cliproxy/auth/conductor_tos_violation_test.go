@@ -227,7 +227,7 @@ func TestMarkResult_TOSViolation_PersistsOnlyAffectedCredential(t *testing.T) {
 	store := newMemoryAuthTestStore()
 	manager := NewManager(store, nil, nil)
 	for _, id := range []string{"tos-persisted", "tos-sibling"} {
-		if _, err := manager.Register(ctx, &Auth{ID: id, Provider: "antigravity", Status: StatusActive}); err != nil {
+		if _, err := manager.Register(ctx, &Auth{ID: id, Provider: "antigravity", Status: StatusActive, Metadata: map[string]any{"type": "antigravity"}}); err != nil {
 			t.Fatal(err)
 		}
 	}
