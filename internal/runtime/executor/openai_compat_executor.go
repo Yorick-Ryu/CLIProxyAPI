@@ -1275,14 +1275,15 @@ func openAICompatStreamDataError(payload []byte, eventName string) (statusErr, b
 }
 
 type statusErr struct {
-	code             int
-	msg              string
-	retryAfter       *time.Duration
-	credentialScoped bool
-	streamTruncated  bool
-	tosViolation     bool
-	tosAppealURL     string
-	tosAppealURLText string
+	code               int
+	msg                string
+	retryAfter         *time.Duration
+	credentialScoped   bool
+	streamTruncated    bool
+	transientTransport bool
+	tosViolation       bool
+	tosAppealURL       string
+	tosAppealURLText   string
 	// diagnostic is a content-free detail for logs only; it never reaches clients.
 	diagnostic string
 }
@@ -1323,12 +1324,39 @@ func (e statusErr) TOSAppealMetadata() map[string]string {
 }
 
 // ErrorCode exposes the machine-readable classification for terminal TOS
-// violations so MarkResult can route them to the disabled credential path.
+// violations or transient non-credential failures so MarkResult routes them
+// to the appropriate credential state handler.
 func (e statusErr) ErrorCode() string {
 	if e.tosViolation {
 		return "tos_violation"
 	}
+	if e.transientTransport {
+		return cliproxyauth.ErrorCodeTransientTransport
+	}
 	return ""
+}
+
+// newGeminiZeroOutputStatusErr builds a 502 error tagged with
+// ErrorCodeTransientTransport so Gemini-family zero-output failures allow
+// per-request rotation and failover without cooling healthy credentials.
+func newGeminiZeroOutputStatusErr(msg string) statusErr {
+	return statusErr{
+		code:               http.StatusBadGateway,
+		msg:                msg,
+		transientTransport: true,
+	}
+}
+
+// newGeminiTranslatedClaudeErrorStatusErr preserves ErrorCodeTransientTransport
+// when a translated Claude error payload originates from zero-output
+// MALFORMED_FUNCTION_CALL (for instance when groundingChunks bypassed the
+// executor zero-output guard), while leaving all other errors coolable.
+func newGeminiTranslatedClaudeErrorStatusErr(msg string) statusErr {
+	if strings.EqualFold(strings.TrimSpace(ojson.Get(msg, "type").String()), "error") &&
+		strings.Contains(ojson.Get(msg, "error.message").String(), "MALFORMED_FUNCTION_CALL") {
+		return newGeminiZeroOutputStatusErr(msg)
+	}
+	return statusErr{code: http.StatusBadGateway, msg: msg}
 }
 
 const openAICompatTPMFallbackRetryAfter = time.Minute

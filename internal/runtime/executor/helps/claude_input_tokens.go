@@ -128,6 +128,7 @@ func collectClaudeInputTokenSegments(payload []byte) ([]string, error) {
 	collectClaudeMessageTokenSegments(root.Get("messages"), &segments)
 	collectClaudeToolTokenSegments(root.Get("tools"), &segments)
 	collectClaudeToolChoiceTokenSegments(root.Get("tool_choice"), &segments)
+	collectClaudeOutputConfigTokenSegments(root.Get("output_config"), &segments)
 	return segments, nil
 }
 
@@ -257,6 +258,18 @@ func collectClaudeToolChoiceTokenSegments(toolChoice ojson.Result, segments *[]s
 	}
 	appendClaudeTokenString(segments, toolChoice.Get("type").String())
 	appendClaudeTokenString(segments, toolChoice.Get("name").String())
+}
+
+func collectClaudeOutputConfigTokenSegments(outputConfig ojson.Result, segments *[]string) {
+	if !outputConfig.IsObject() {
+		return
+	}
+	format := outputConfig.Get("format")
+	if !format.IsObject() {
+		return
+	}
+	appendClaudeTokenString(segments, format.Get("type").String())
+	appendClaudeTokenJSON(segments, format.Get("schema"))
 }
 
 func appendClaudeTokenString(segments *[]string, value string) {
