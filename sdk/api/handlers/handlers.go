@@ -646,6 +646,15 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
 				parentCtx = logging.WithDeferredAPICapture(parentCtx, capture)
 			}
 		}
+		if logging.DeferredAPICaptureFromContext(parentCtx) == nil {
+			if cfg := h.CurrentConfig(); cfg != nil && !cfg.RequestLog {
+				// Embedded handlers can use a logging middleware with a different
+				// policy. Snapshot a holder before producers outlive the pooled context.
+				capture := logging.NewDeferredAPICapture()
+				c.Set(logging.DeferredAPIResponseContextKey, capture)
+				parentCtx = logging.WithDeferredAPICapture(parentCtx, capture)
+			}
+		}
 	}
 	if requestCtx != nil && logging.GetRequestID(parentCtx) == "" {
 		if requestID := logging.GetRequestID(requestCtx); requestID != "" {
