@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"math/rand"
 	"reflect"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/MoeForge/moego/json"
 )
 
 const (

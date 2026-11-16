@@ -1,12 +1,12 @@
 package config
 
 import (
-	"github.com/MoeForge/moego/json"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/json"
 	"gopkg.in/yaml.v3"
 )
 

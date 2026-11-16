@@ -2,10 +2,11 @@ package pluginstore
 
 import (
 	"bytes"
-	"github.com/MoeForge/moego/json"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MoeForge/moego/json"
 )
 
 func TestPluginSyncResponseValidatesAndClearsResolvedAuth(t *testing.T) {

@@ -3,7 +3,6 @@ package config
 import (
 	"bytes"
 	"errors"
-	"github.com/MoeForge/moego/json"
 	"io"
 	"math"
 	"os"
@@ -11,6 +10,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/MoeForge/moego/json"
 )
 
 func TestLoadConfigOptionalMissingFallbackAppliesCredentialInFlightDefaults(t *testing.T) {

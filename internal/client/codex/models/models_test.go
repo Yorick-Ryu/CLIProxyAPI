@@ -3,9 +3,9 @@ package models
 import (
 	"bytes"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"testing"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 )
 

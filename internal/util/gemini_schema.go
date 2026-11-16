@@ -4,12 +4,12 @@ package util
 import (
 	"bytes"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moego/ojson"
 )
 

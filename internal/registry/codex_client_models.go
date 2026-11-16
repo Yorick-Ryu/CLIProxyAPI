@@ -4,11 +4,11 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"math"
 	"strings"
 	"sync"
 
+	"github.com/MoeForge/moego/json"
 	log "github.com/sirupsen/logrus"
 )
 

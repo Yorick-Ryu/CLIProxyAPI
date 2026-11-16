@@ -3,11 +3,11 @@ package cliproxy
 import (
 	"context"
 	"errors"
-	"github.com/MoeForge/moego/json"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executionregistry"
 )

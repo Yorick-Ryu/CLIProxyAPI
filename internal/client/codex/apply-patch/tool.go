@@ -2,10 +2,10 @@ package applypatch
 
 import (
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"io"
 	"strings"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moego/ojson"
 )
 

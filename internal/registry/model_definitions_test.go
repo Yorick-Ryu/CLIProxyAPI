@@ -1,10 +1,11 @@
 package registry
 
 import (
-	"github.com/MoeForge/moego/json"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/MoeForge/moego/json"
 )
 
 func TestCodexConfigurationUpdateCapability(t *testing.T) {

@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"strings"
 	"time"
+
+	"github.com/MoeForge/moego/json"
 )
 
 type claudeStreamBuilder struct {

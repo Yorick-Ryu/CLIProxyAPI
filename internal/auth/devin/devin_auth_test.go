@@ -3,13 +3,14 @@ package devin
 import (
 	"context"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MoeForge/moego/json"
 )
 
 func TestPKCEGeneration(t *testing.T) {

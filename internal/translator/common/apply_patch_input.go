@@ -3,11 +3,11 @@ package common
 import (
 	"errors"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/MoeForge/moego/json"
 	applypatch "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/apply-patch"
 )
 

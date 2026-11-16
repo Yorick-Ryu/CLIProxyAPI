@@ -1,10 +1,11 @@
 package claude
 
 import (
-	"github.com/MoeForge/moego/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/MoeForge/moego/json"
 )
 
 func TestSaveTokenToFile_PreservesCustomMetadata(t *testing.T) {

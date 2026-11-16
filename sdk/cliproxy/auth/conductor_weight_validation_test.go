@@ -2,8 +2,9 @@ package auth
 
 import (
 	"context"
-	"github.com/MoeForge/moego/json"
 	"testing"
+
+	"github.com/MoeForge/moego/json"
 )
 
 type weightValidationStore struct {

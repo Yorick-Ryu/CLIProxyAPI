@@ -2,11 +2,11 @@ package auth
 
 import (
 	"context"
-	"github.com/MoeForge/moego/json"
 	"net/http"
 	"sync/atomic"
 	"testing"
 
+	"github.com/MoeForge/moego/json"
 	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executionregistry"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"

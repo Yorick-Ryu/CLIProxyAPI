@@ -1,10 +1,11 @@
 package handlers
 
 import (
-	"github.com/MoeForge/moego/json"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/MoeForge/moego/json"
 )
 
 func TestBuildOpenAIResponsesStreamErrorChunk(t *testing.T) {

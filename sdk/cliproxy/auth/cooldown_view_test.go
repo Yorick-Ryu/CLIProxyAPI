@@ -1,11 +1,12 @@
 package auth
 
 import (
-	"github.com/MoeForge/moego/json"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MoeForge/moego/json"
 )
 
 func TestCooldownSnapshotForAuthScopes(t *testing.T) {

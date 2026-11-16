@@ -2,13 +2,13 @@ package watcher
 
 import (
 	"context"
-	"github.com/MoeForge/moego/json"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
 	"testing"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/fsnotify/fsnotify"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher/synthesizer"

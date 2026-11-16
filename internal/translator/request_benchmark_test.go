@@ -3,10 +3,10 @@ package translator
 import (
 	"bytes"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moego/ojson"
 	translatorapi "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/translator"
 )

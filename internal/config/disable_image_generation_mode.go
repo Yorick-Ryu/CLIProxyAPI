@@ -3,9 +3,9 @@ package config
 import (
 	"bytes"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"strings"
 
+	"github.com/MoeForge/moego/json"
 	"gopkg.in/yaml.v3"
 )
 

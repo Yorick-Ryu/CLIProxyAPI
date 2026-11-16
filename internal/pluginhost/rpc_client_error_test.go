@@ -3,13 +3,13 @@ package pluginhost
 import (
 	"context"
 	"errors"
-	"github.com/MoeForge/moego/json"
 	"net/http"
 	"slices"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/redisqueue"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"

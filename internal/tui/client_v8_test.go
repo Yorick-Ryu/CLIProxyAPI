@@ -2,13 +2,14 @@ package tui
 
 import (
 	"errors"
-	"github.com/MoeForge/moego/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/MoeForge/moego/json"
 )
 
 // v8OnlyManagementServer is a test server that only implements the

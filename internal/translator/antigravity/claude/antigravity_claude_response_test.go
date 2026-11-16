@@ -3,11 +3,11 @@ package claude
 import (
 	"bytes"
 	"context"
-	"github.com/MoeForge/moego/json"
 	"strings"
 	"testing"
 
 	"github.com/MoeForge/moego/base64"
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/cache"
 	sigcompat "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"

@@ -5,10 +5,10 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"os"
 	"strings"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/vertex"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"

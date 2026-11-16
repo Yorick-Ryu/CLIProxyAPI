@@ -1,11 +1,11 @@
 package responses
 
 import (
-	"github.com/MoeForge/moego/json"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moego/ojson"
 )
 

@@ -1,10 +1,10 @@
 package config
 
 import (
-	"github.com/MoeForge/moego/json"
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/json"
 	"gopkg.in/yaml.v3"
 )
 

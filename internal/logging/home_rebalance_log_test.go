@@ -3,10 +3,10 @@ package logging
 import (
 	"bytes"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/json"
 	log "github.com/sirupsen/logrus"
 )
 

@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"io"
 	"net/http"
 	"net/url"
@@ -10,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/MoeForge/moego/json"
 )
 
 // Client wraps HTTP calls to the management API.

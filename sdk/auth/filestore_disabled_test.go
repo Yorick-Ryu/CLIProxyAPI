@@ -2,11 +2,11 @@ package auth
 
 import (
 	"context"
-	"github.com/MoeForge/moego/json"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/MoeForge/moego/json"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 

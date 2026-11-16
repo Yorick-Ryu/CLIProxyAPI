@@ -2,10 +2,10 @@ package responses
 
 import (
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"reflect"
 	"testing"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moego/ojson"
 )
 

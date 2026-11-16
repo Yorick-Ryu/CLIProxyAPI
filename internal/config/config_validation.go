@@ -2,8 +2,8 @@ package config
 
 import (
 	"bytes"
-	"github.com/MoeForge/moego/json"
 
+	"github.com/MoeForge/moego/json"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
 )

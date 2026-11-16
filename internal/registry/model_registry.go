@@ -6,13 +6,13 @@ package registry
 import (
 	"context"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/MoeForge/moego/json"
 	misc "github.com/router-for-me/CLIProxyAPI/v8/internal/misc"
 	log "github.com/sirupsen/logrus"
 )

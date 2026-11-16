@@ -11,10 +11,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"strconv"
 	"strings"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/MoeForge/moego/regexp"
 	sigcompat "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"

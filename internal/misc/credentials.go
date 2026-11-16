@@ -2,10 +2,10 @@ package misc
 
 import (
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"path/filepath"
 	"strings"
 
+	"github.com/MoeForge/moego/json"
 	log "github.com/sirupsen/logrus"
 )
 

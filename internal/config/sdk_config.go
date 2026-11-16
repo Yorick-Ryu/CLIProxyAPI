@@ -7,12 +7,12 @@ package config
 import (
 	"bytes"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"math"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/MoeForge/moego/json"
 	"gopkg.in/yaml.v3"
 )
 

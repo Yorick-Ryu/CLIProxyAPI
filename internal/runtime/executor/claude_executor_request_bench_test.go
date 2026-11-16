@@ -2,9 +2,10 @@ package executor
 
 import (
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"strings"
 	"testing"
+
+	"github.com/MoeForge/moego/json"
 )
 
 type claudeOAuthRemapBenchmarkBody struct {

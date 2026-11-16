@@ -2,9 +2,10 @@ package htmlsanitize
 
 import (
 	"bytes"
-	"github.com/MoeForge/moego/json"
 	"html"
 	"testing"
+
+	"github.com/MoeForge/moego/json"
 )
 
 func TestJSONBodyEscapesStringValues(t *testing.T) {

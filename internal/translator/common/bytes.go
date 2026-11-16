@@ -2,9 +2,9 @@ package common
 
 import (
 	"bytes"
-	"github.com/MoeForge/moego/json"
 	"strconv"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moego/ojson"
 )
 

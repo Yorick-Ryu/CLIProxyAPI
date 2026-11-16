@@ -3,10 +3,10 @@ package auth
 import (
 	"context"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"os"
 	"strings"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
 )
 

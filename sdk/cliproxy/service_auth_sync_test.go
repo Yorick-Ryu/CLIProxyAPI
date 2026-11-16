@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/json"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"

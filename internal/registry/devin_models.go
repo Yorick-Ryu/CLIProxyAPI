@@ -4,12 +4,12 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 
+	"github.com/MoeForge/moego/json"
 	log "github.com/sirupsen/logrus"
 )
 

@@ -2,10 +2,10 @@ package claude
 
 import (
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"strings"
 	"time"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 )

@@ -2,12 +2,12 @@ package openai
 
 import (
 	"bytes"
-	"github.com/MoeForge/moego/json"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )

@@ -5,10 +5,10 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"github.com/MoeForge/moego/json"
 	"strings"
 
 	"github.com/MoeForge/moego/base64"
+	"github.com/MoeForge/moego/json"
 )
 
 // NormalizeServiceAccountJSON normalizes the given JSON-encoded service account payload.

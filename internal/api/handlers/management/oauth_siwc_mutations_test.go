@@ -2,12 +2,12 @@ package management
 
 import (
 	"context"
-	"github.com/MoeForge/moego/json"
 	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/MoeForge/moego/json"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
