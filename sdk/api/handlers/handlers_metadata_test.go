@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
@@ -436,5 +437,40 @@ func TestHomeUpdatedAPIKeyOverridesParentWithAPIKeyAfterCapture(t *testing.T) {
 	}
 	if got := coreusage.APIKeyFromContext(cliCtx); got != "home-dispatched-key-b" {
 		t.Fatalf("coreusage.APIKeyFromContext = %q, want %q", got, "home-dispatched-key-b")
+	}
+}
+
+func TestGetContextWithCancelKeepsDeferredStreamCaptureAfterGinReuse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ginCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ginCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	handler := &BaseAPIHandler{Cfg: &config.SDKConfig{}}
+	ctx, cancel := handler.GetContextWithCancel(nil, ginCtx, context.Background())
+	defer cancel()
+	capture := logging.DeferredAPICaptureFromContext(ctx)
+	if capture == nil {
+		t.Fatal("stream has no request-owned capture before asynchronous work")
+	}
+	cfg := &internalconfig.Config{}
+	helps.RecordAPIRequest(ctx, cfg, helps.UpstreamRequestLog{Provider: "synthetic", Body: []byte(`{"input":"first"}`)})
+	replacement := logging.NewDeferredAPICapture()
+	// Gin resets Keys without taking its Get/Set lock when a pooled context is reused.
+	// A producer finishing the old request must never consult that map again.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 100; i++ {
+			ginCtx.Keys = map[string]any{logging.DeferredAPIResponseContextKey: replacement}
+		}
+	}()
+	for i := 0; i < 100; i++ {
+		helps.AppendAPIResponseChunk(ctx, cfg, []byte("old-stream\n"))
+	}
+	<-done
+	if !strings.Contains(string(capture.RenderAPIResponse()), "old-stream") {
+		t.Fatal("old stream lost its own capture")
+	}
+	if replacement.HasPayload() || replacement.HasRequests() {
+		t.Fatal("old stream contaminated the next request capture")
 	}
 }

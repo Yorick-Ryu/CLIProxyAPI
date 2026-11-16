@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executionregistry"
 )
 
@@ -303,7 +303,7 @@ func SafeResponseHeaders(err error) http.Header {
 	}
 	var modelCooldown *modelCooldownError
 	if errors.As(err, &modelCooldown) && modelCooldown != nil {
-		return modelCooldown.Headers()
+		return modelCooldown.SafeResponseHeaders()
 	}
 	var unavailable *authUnavailableError
 	if errors.As(err, &unavailable) && unavailable != nil {

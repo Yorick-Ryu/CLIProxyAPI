@@ -5,7 +5,6 @@ package handlers
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -311,6 +311,9 @@ func requestExecutionMetadata(ctx context.Context) map[string]any {
 	}
 	if pinnedAuthID := pinnedAuthIDFromContext(ctx); pinnedAuthID != "" {
 		meta[coreexecutor.PinnedAuthMetadataKey] = pinnedAuthID
+	}
+	if excludedAuthIDs := excludedAuthIDsFromContext(ctx); len(excludedAuthIDs) > 0 {
+		meta[coreexecutor.ExcludedAuthIDsMetadataKey] = excludedAuthIDs
 	}
 	if selectedCallback := selectedAuthIDCallbackFromContext(ctx); selectedCallback != nil {
 		meta[coreexecutor.SelectedAuthCallbackMetadataKey] = selectedCallback
@@ -635,6 +638,23 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
 
 	if requestCtx != nil {
 		parentCtx = httptransport.InheritDecorator(parentCtx, requestCtx)
+		parentCtx = logging.InheritDeferredCapture(parentCtx, requestCtx)
+	}
+	if c != nil && logging.DeferredAPICaptureFromContext(parentCtx) == nil && !logging.DeferredAPIRequestCaptureDisabled(parentCtx) {
+		if value, exists := c.Get(logging.DeferredAPIResponseContextKey); exists {
+			if capture, ok := value.(*logging.DeferredAPICapture); ok && capture != nil {
+				parentCtx = logging.WithDeferredAPICapture(parentCtx, capture)
+			}
+		}
+		if logging.DeferredAPICaptureFromContext(parentCtx) == nil {
+			if cfg := h.CurrentConfig(); cfg != nil && !cfg.RequestLog {
+				// Embedded handlers can use a logging middleware with a different
+				// policy. Snapshot a holder before producers outlive the pooled context.
+				capture := logging.NewDeferredAPICapture()
+				c.Set(logging.DeferredAPIResponseContextKey, capture)
+				parentCtx = logging.WithDeferredAPICapture(parentCtx, capture)
+			}
+		}
 	}
 	if requestCtx != nil && logging.GetRequestID(parentCtx) == "" {
 		if requestID := logging.GetRequestID(requestCtx); requestID != "" {
