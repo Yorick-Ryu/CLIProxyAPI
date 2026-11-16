@@ -1,8 +1,8 @@
 package executor
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"runtime"
 	"strings"
 	"testing"

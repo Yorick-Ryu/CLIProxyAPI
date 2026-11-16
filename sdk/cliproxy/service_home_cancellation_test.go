@@ -2,8 +2,8 @@ package cliproxy
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/MoeForge/moego/json"
 	"sync"
 	"testing"
 	"time"

@@ -2,8 +2,8 @@ package executor
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"net/url"
 	"sort"
 	"strings"

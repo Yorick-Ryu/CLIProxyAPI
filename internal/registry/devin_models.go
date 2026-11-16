@@ -3,8 +3,8 @@ package registry
 import (
 	"bytes"
 	_ "embed"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"slices"
 	"sort"
 	"strings"

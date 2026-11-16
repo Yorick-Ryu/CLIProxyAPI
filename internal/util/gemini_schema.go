@@ -3,8 +3,8 @@ package util
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"reflect"
 	"sort"
 	"strconv"

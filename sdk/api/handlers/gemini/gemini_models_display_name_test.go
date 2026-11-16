@@ -1,7 +1,7 @@
 package gemini
 
 import (
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"net/http/httptest"
 	"testing"
 

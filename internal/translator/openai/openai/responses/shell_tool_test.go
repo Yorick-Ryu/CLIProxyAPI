@@ -2,7 +2,7 @@ package responses
 
 import (
 	"context"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"reflect"
 	"strings"
 	"testing"

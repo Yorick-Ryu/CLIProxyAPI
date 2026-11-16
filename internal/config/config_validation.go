@@ -2,7 +2,7 @@ package config
 
 import (
 	"bytes"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"

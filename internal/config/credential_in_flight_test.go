@@ -2,8 +2,8 @@ package config
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
+	"github.com/MoeForge/moego/json"
 	"io"
 	"math"
 	"os"

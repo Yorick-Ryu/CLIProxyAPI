@@ -3,7 +3,7 @@ package signature
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"os"
 	"path/filepath"
 	"runtime"

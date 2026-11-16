@@ -2,8 +2,8 @@ package pluginhost
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/MoeForge/moego/json"
 	"testing"
 
 	"github.com/MoeForge/moego/ojson"

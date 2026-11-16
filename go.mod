@@ -122,3 +122,5 @@ require (
 )
 
 replace github.com/gorilla/websocket => ./third_party/gorilla-websocket
+
+replace github.com/MoeForge/moego v0.1.0-alpha.3 => github.com/router-for-me/moego v0.1.3

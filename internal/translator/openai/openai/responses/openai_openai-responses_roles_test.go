@@ -1,8 +1,8 @@
 package responses
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"testing"
 
 	"github.com/MoeForge/moego/ojson"

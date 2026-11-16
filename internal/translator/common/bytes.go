@@ -2,7 +2,7 @@ package common
 
 import (
 	"bytes"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"strconv"
 
 	"github.com/MoeForge/moego/ojson"

@@ -1,7 +1,7 @@
 package signature
 
 import (
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"testing"
 
 	"github.com/MoeForge/moego/base64"

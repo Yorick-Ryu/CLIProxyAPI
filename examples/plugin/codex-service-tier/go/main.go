@@ -34,7 +34,7 @@ extern void cliproxyPluginShutdown(void);
 import "C"
 
 import (
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"strings"
 	"sync/atomic"
 	"unsafe"

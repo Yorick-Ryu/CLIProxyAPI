@@ -3,8 +3,8 @@ package executor
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"io"
 	"math/rand"
 	"net/http"

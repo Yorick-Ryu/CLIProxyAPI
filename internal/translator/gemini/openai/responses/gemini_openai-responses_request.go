@@ -1,7 +1,7 @@
 package responses
 
 import (
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"net/url"
 	"path/filepath"
 	"strings"

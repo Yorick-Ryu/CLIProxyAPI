@@ -1,8 +1,8 @@
 package management
 
 import (
-	"encoding/json"
 	"errors"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"strconv"
 	"strings"

@@ -57,8 +57,8 @@ import "C"
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"strings"
 	"sync/atomic"

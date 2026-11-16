@@ -9,8 +9,8 @@ package openai
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"strings"
 	"sync"

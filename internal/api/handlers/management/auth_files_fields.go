@@ -3,9 +3,9 @@ package management
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"os"
 	"path/filepath"

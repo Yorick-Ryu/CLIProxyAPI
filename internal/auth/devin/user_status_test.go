@@ -3,7 +3,7 @@ package devin
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"

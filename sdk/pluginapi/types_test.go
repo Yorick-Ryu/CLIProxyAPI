@@ -2,7 +2,7 @@ package pluginapi
 
 import (
 	"context"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"net/url"
 	"slices"

@@ -2,7 +2,7 @@ package helps
 
 import (
 	cryptorand "crypto/rand"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"math"
 	"math/big"
 	"net/http"

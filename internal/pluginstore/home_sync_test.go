@@ -2,7 +2,7 @@ package pluginstore
 
 import (
 	"bytes"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"strings"
 	"testing"
 	"time"

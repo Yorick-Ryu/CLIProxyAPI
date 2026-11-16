@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"strings"
 )

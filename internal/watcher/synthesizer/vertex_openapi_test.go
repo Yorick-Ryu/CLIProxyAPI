@@ -1,7 +1,7 @@
 package synthesizer
 
 import (
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"strconv"
 	"testing"
 	"time"

@@ -2,8 +2,8 @@ package devin
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"

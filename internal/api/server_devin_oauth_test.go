@@ -1,7 +1,7 @@
 package api
 
 import (
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"net/http/httptest"
 	"os"

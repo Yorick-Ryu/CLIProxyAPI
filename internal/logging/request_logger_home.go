@@ -3,7 +3,7 @@ package logging
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"strings"
 	"time"
 

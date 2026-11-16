@@ -2,7 +2,7 @@ package chat_completions
 
 import (
 	"context"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"strings"
 	"testing"
 

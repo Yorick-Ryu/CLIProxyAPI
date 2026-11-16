@@ -3,8 +3,8 @@ package openai
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"io"
 	"mime/multipart"
 	"net/http"

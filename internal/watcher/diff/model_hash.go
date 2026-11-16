@@ -3,7 +3,7 @@ package diff
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"sort"
 	"strings"
 

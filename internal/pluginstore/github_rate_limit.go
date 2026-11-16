@@ -1,8 +1,8 @@
 package pluginstore
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"net/url"
 	"strconv"

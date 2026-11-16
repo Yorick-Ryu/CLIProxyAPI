@@ -2,8 +2,8 @@ package translator
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"strings"
 	"testing"
 

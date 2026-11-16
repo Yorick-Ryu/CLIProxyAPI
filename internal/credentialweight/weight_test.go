@@ -1,7 +1,7 @@
 package credentialweight
 
 import (
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"testing"
 )
 

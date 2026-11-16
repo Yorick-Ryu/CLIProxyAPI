@@ -1,8 +1,8 @@
 package tui
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"

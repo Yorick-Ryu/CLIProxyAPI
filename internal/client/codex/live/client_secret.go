@@ -2,9 +2,9 @@ package live
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"io"
 	"net/http"
 	"strings"

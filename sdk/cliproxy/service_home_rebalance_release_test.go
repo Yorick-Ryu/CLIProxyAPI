@@ -2,9 +2,9 @@ package cliproxy
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"runtime"
 	"sync"
 	"sync/atomic"

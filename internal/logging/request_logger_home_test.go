@@ -3,8 +3,8 @@ package logging
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"os"
 	"path/filepath"

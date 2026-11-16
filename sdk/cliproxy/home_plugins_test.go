@@ -3,8 +3,8 @@ package cliproxy
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/MoeForge/moego/json"
 	"io"
 	"net"
 	"os"

@@ -3,7 +3,7 @@ package models
 
 import (
 	"bytes"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"sort"
 	"strconv"
 	"strings"

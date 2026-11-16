@@ -1,9 +1,9 @@
 package common
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"strings"
 	"testing"
 

@@ -2,7 +2,7 @@ package helps
 
 import (
 	"bytes"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"os"
 	"strings"
 	"testing"

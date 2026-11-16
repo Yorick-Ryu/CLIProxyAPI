@@ -2,8 +2,8 @@ package claude
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"

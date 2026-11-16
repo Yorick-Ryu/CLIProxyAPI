@@ -2,7 +2,7 @@ package management
 
 import (
 	"bytes"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"

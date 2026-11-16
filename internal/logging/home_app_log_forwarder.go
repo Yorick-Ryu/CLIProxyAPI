@@ -2,8 +2,8 @@ package logging
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/MoeForge/moego/json"
 	"strings"
 	"sync"
 	"sync/atomic"

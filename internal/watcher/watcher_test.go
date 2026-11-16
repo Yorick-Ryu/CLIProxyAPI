@@ -3,8 +3,8 @@ package watcher
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"os"
 	"path/filepath"
 	"strings"

@@ -2,7 +2,7 @@ package common_test
 
 import (
 	"context"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"reflect"
 	"testing"
 

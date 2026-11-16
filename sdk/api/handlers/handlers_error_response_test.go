@@ -3,8 +3,8 @@ package handlers
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"

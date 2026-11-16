@@ -1,7 +1,7 @@
 package auth
 
 import (
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"strings"
 
 	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"

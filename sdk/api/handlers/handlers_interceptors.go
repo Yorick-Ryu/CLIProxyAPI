@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"maps"
 	"net/http"
 	"strings"

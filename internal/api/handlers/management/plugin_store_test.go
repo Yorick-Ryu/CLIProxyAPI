@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"html"
 	"io"
 	"net/http"

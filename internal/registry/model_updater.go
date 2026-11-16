@@ -3,8 +3,8 @@ package registry
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"reflect"
 	"strings"
 	"sync"

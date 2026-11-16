@@ -3,9 +3,9 @@ package openai
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"maps"
 	"net/http"
 	"net/http/httptest"

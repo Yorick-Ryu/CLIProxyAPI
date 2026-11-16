@@ -1,7 +1,7 @@
 package signature
 
 import (
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"math/rand"
 	"os"
 	"path/filepath"

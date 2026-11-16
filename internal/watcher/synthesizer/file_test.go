@@ -2,8 +2,8 @@ package synthesizer
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/MoeForge/moego/json"
 	"io/fs"
 	"os"
 	"path/filepath"

@@ -12,8 +12,8 @@ package executor
 
 import (
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"strings"
 
 	"github.com/MoeForge/moego/ojson"

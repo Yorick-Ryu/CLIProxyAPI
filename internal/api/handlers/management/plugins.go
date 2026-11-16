@@ -1,9 +1,9 @@
 package management
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"os"
 	"sort"

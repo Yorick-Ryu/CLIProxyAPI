@@ -1,8 +1,8 @@
 package misc
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"path/filepath"
 	"strings"
 

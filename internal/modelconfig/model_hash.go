@@ -3,8 +3,8 @@ package modelconfig
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"strings"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"

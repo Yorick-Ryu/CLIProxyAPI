@@ -3,8 +3,8 @@ package cliproxy
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"

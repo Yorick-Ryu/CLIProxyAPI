@@ -1,8 +1,8 @@
 package applypatch
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"io"
 	"strings"
 

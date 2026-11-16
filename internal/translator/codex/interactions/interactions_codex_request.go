@@ -1,8 +1,8 @@
 package interactions
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"strings"
 
 	"github.com/MoeForge/moego/ojson"

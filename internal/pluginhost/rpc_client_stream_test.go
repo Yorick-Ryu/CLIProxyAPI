@@ -2,8 +2,8 @@ package pluginhost
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"testing"
 	"time"

@@ -2,8 +2,8 @@ package config
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"strings"
 
 	"gopkg.in/yaml.v3"

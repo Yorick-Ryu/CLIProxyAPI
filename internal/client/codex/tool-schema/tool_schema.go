@@ -2,9 +2,9 @@ package toolschema
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"io"
 	"math/big"
 	"net/http"

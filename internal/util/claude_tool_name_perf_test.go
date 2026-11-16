@@ -1,7 +1,7 @@
 package util
 
 import (
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"math/rand"
 	"strings"
 	"testing"

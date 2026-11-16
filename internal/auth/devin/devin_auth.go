@@ -3,9 +3,9 @@ package devin
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"html"
 	"io"
 	"net"

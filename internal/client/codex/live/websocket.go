@@ -2,7 +2,7 @@ package live
 
 import (
 	"context"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"net/url"
 	"strings"

@@ -3,8 +3,8 @@ package auth
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/MoeForge/moego/json"
 	"io"
 	"net/http"
 	"net/http/httptest"

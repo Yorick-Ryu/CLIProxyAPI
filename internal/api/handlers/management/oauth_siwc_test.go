@@ -2,8 +2,8 @@ package management
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/MoeForge/moego/json"
 	"net"
 	"net/http"
 	"net/http/httptest"

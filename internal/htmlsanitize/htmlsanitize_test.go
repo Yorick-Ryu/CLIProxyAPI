@@ -2,7 +2,7 @@ package htmlsanitize
 
 import (
 	"bytes"
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"html"
 	"testing"
 )

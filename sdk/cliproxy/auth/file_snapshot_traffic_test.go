@@ -2,8 +2,8 @@ package auth_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/MoeForge/moego/json"
 	"maps"
 	"os"
 	"path/filepath"

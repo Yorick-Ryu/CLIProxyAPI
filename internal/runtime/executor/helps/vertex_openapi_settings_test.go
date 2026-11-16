@@ -1,7 +1,7 @@
 package helps
 
 import (
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"strconv"
 	"testing"
 

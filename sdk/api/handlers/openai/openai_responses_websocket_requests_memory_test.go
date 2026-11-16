@@ -2,9 +2,9 @@ package openai
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"math/rand"
 	"reflect"
 	"runtime"

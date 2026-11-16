@@ -5,8 +5,8 @@ package executor
 // Do not refactor these helpers to call the production implementations.
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"strings"
 
 	"github.com/MoeForge/moego/ojson"

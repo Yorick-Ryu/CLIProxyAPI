@@ -1,7 +1,7 @@
 package registry
 
 import (
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"reflect"
 	"strings"
 	"testing"

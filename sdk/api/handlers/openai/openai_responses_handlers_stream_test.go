@@ -2,8 +2,8 @@ package openai
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"

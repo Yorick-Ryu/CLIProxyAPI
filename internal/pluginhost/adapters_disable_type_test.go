@@ -1,7 +1,7 @@
 package pluginhost
 
 import (
-	"encoding/json"
+	"github.com/MoeForge/moego/json"
 	"testing"
 
 	"github.com/MoeForge/moego/ojson"

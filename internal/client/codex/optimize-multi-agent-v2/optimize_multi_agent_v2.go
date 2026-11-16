@@ -3,8 +3,8 @@ package multiagentv2
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	"github.com/MoeForge/moego/json"
 	"net/http"
 	"net/url"
 	"sort"
