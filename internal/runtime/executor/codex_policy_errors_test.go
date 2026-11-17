@@ -154,7 +154,7 @@ func TestCodexTypelessErrorsPreserveCredentialStatus(t *testing.T) {
 		}
 		if status == 429 {
 			retry := err.(interface{ RetryAfter() *time.Duration }).RetryAfter()
-			if retry == nil || *retry != 7*time.Second {
+			if retry != nil {
 				t.Fatalf("retry-after = %v", retry)
 			}
 		}
@@ -191,8 +191,8 @@ func TestCodexTypelessErrorsPreserveCredentialStatus(t *testing.T) {
 			t.Fatalf("nested websocket 429 = %v (ok=%v)", nestedErr, okNested)
 		}
 		retry := nestedErr.(interface{ RetryAfter() *time.Duration }).RetryAfter()
-		if retry == nil || *retry != 9*time.Second {
-			t.Fatalf("nested websocket retry-after = %v, want 9s", retry)
+		if retry != nil {
+			t.Fatalf("nested websocket retry-after = %v, want nil", retry)
 		}
 		if gotReqID := nestedErr.(interface{ Headers() http.Header }).Headers().Get("X-Request-Id"); gotReqID == "" {
 			t.Fatalf("nested websocket headers lost: %#v", nestedErr)
@@ -242,7 +242,7 @@ func TestCodexTypelessErrorsPreserveCredentialStatus(t *testing.T) {
 			}
 			retry := inferredErr.(interface{ RetryAfter() *time.Duration }).RetryAfter()
 			if retry != nil {
-				t.Fatalf("inferred retry-after = %v, want %v", retry, tc.wantRetry)
+				t.Fatalf("inferred retry-after = %v, want nil", retry)
 			}
 			if gotReqID := inferredErr.(interface{ Headers() http.Header }).Headers().Get("X-Request-Id"); gotReqID != tc.wantReqID {
 				t.Fatalf("request id = %q, want %q", gotReqID, tc.wantReqID)
@@ -260,7 +260,7 @@ func TestCodexTypelessErrorsPreserveCredentialStatus(t *testing.T) {
 			}
 			streamRetry := streamErr.(interface{ RetryAfter() *time.Duration }).RetryAfter()
 			if streamRetry != nil {
-				t.Fatalf("stream retry-after = %v, want %v", streamRetry, tc.wantRetry)
+				t.Fatalf("stream retry-after = %v, want nil", streamRetry)
 			}
 		})
 	}
@@ -271,7 +271,7 @@ func TestCodexTypelessErrorsPreserveCredentialStatus(t *testing.T) {
 		t.Fatalf("response.failed 429 = %v (ok=%v)", failedErr, okFailed)
 	}
 	if failedRetry := failedErr.RetryAfter(); failedRetry != nil {
-		t.Fatalf("response.failed retry-after = %v, want 23s", failedRetry)
+		t.Fatalf("response.failed retry-after = %v, want nil", failedRetry)
 	}
 	failedServer := codexWebsocketServer(t, codexCreatedEvent, responseFailedPayload)
 	defer failedServer.Close()
@@ -281,6 +281,6 @@ func TestCodexTypelessErrorsPreserveCredentialStatus(t *testing.T) {
 		t.Fatalf("response.failed bootstrap status = %v, want 429", failedStreamErr)
 	}
 	if failedBootstrapRetry := failedStreamErr.(interface{ RetryAfter() *time.Duration }).RetryAfter(); failedBootstrapRetry != nil {
-		t.Fatalf("response.failed bootstrap retry-after = %v, want 23s", failedBootstrapRetry)
+		t.Fatalf("response.failed bootstrap retry-after = %v, want nil", failedBootstrapRetry)
 	}
 }

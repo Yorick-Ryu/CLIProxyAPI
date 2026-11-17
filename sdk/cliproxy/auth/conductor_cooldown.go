@@ -4139,14 +4139,7 @@ func applyAuthFailureState(auth *Auth, resultErr *Error, retryAfter *time.Durati
 		auth.NextRetryAfter = now.Add(transientErrorCooldown)
 		auth.Unavailable = true
 	}
-	ownAuthRetryDeadline := auth.NextRetryAfter
-	if isForceAuth && ownAuthForceDeadline.After(ownAuthRetryDeadline) {
-		ownAuthRetryDeadline = ownAuthForceDeadline
-	}
 	if !isQuotaCooldownResultError(resultErr) {
-		if !ownAuthNonQuotaDeadline.IsZero() {
-			ownAuthRetryDeadline = ownAuthNonQuotaDeadline
-		}
 		if ownAuthNonQuotaDeadline.IsZero() {
 			ownAuthNonQuotaDeadline = auth.NextRetryAfter
 		}
