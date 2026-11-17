@@ -465,6 +465,9 @@ func (m *Manager) restoreCooldownRecordLocked(record CooldownStateRecord, now ti
 		if authForce.After(now) && authForce.After(auth.forceCooldownUntil) {
 			auth.forceCooldownUntil = authForce
 		}
+		if record.QuotaForceCooldownUntil.After(now) && record.QuotaForceCooldownUntil.After(auth.quotaForceCooldownUntil) {
+			auth.quotaForceCooldownUntil = record.QuotaForceCooldownUntil
+		}
 		if record.NonQuotaCooldownUntil.After(now) && record.NonQuotaCooldownUntil.After(auth.nonQuotaCooldownUntil) {
 			auth.nonQuotaCooldownUntil = record.NonQuotaCooldownUntil
 		}

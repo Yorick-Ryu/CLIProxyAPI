@@ -197,21 +197,6 @@ func isCodexWebsocketConnectionLimitError(payload []byte) bool {
 	return false
 }
 
-func shouldParseCodexRetryAfterHeader(statusCode int) bool {
-	switch statusCode {
-	case http.StatusTooManyRequests,
-		http.StatusRequestTimeout,
-		http.StatusInternalServerError,
-		http.StatusBadGateway,
-		http.StatusServiceUnavailable,
-		http.StatusGatewayTimeout,
-		520, 521, 522, 523, 524, 525, 526:
-		return true
-	default:
-		return false
-	}
-}
-
 func parseCodexWebsocketErrorHeaders(payload []byte) http.Header {
 	if len(payload) == 0 {
 		return nil

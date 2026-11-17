@@ -388,7 +388,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 				// value nor a final field (including a built-in empty or payload default).
 				// Inspect final presence only; never inherit the configured text.
 				if instructions == "" && initial != nil &&
-					(parentSettings == nil || !ojson.GetBytesNoCopy(parentSettings.clientBody, "instructions").Exists()) {
+					(parentSettings == nil || !ojson.GetBytesNoCopy(parentSettings.upstreamBody, "instructions").Exists()) {
 					instructions = initial.unconfiguredInstructions
 				}
 				if instructions != "" {

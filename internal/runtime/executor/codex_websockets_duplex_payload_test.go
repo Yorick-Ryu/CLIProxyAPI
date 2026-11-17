@@ -474,11 +474,12 @@ func TestCodexWebsocketUnconfiguredInstructionsSnapshot(t *testing.T) {
 			if errPrepare != nil {
 				t.Fatal(errPrepare)
 			}
-			if ojson.GetBytes(prepared.clientBody, "instructions").String() != "configured" {
-				t.Fatalf("payload not applied: %s", prepared.clientBody)
+			if ojson.GetBytes(prepared.upstreamBody, "instructions").String() != "configured" {
+				t.Fatalf("payload not applied: %s", prepared.upstreamBody)
 			}
 			clear(req.Payload)
 			clear(prepared.clientBody)
+			clear(prepared.upstreamBody)
 			if prepared.unconfiguredInstructions != tc.want {
 				t.Fatalf("snapshot=%s want=%s", prepared.unconfiguredInstructions, tc.want)
 			}
