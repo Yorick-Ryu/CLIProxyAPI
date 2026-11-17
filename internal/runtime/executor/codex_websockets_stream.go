@@ -900,6 +900,7 @@ type codexWebsocketPrepared struct {
 	// Immutable pre-payload JSON value for duplex inheritance; never rebuild from clientBody.
 	// An empty Go string means absent, not an explicitly empty JSON string.
 	unconfiguredInstructions string
+	finalInstructionsPresent bool
 }
 
 func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*codexWebsocketPrepared, error) {
@@ -1036,5 +1037,6 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
 		multiAgentV2Conflict: multiAgentV2Conflict,
 
 		unconfiguredInstructions: unconfiguredInstructions,
+		finalInstructionsPresent: ojson.GetBytes(upstreamBody, "instructions").Exists(),
 	}, nil
 }

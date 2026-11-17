@@ -388,7 +388,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 				// value nor a final field (including a built-in empty or payload default).
 				// Inspect final presence only; never inherit the configured text.
 				if instructions == "" && initial != nil &&
-					(parentSettings == nil || !ojson.GetBytesNoCopy(parentSettings.upstreamBody, "instructions").Exists()) {
+					(parentSettings == nil || !parentSettings.finalInstructionsPresent) {
 					instructions = initial.unconfiguredInstructions
 				}
 				if instructions != "" {
@@ -469,6 +469,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 					to:                       sdktranslator.FromString("codex"),
 					clientBody:               snapshotDoc.Bytes(),
 					unconfiguredInstructions: strings.Clone(snapshotDoc.Get("instructions").Raw),
+					finalInstructionsPresent: snapshotDoc.Get("instructions").Exists(),
 				}
 				metadataMu.Lock()
 				localCompactionDeliveredAny = false

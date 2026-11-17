@@ -277,8 +277,8 @@ func TestCodexTypelessErrorsPreserveCredentialStatus(t *testing.T) {
 	defer failedServer.Close()
 	req, opts := codexWebsocketRequest()
 	_, failedStreamErr := NewCodexWebsocketsExecutor(codexBufferingConfig(true)).ExecuteStream(context.Background(), codexTestAuth(failedServer.URL), req, opts)
-	if statusCodeFromTestError(t, failedStreamErr) != http.StatusTooManyRequests {
-		t.Fatalf("response.failed bootstrap status = %v, want 429", failedStreamErr)
+	if statusCodeFromTestError(t, failedStreamErr) != http.StatusServiceUnavailable {
+		t.Fatalf("response.failed bootstrap status = %v, want 503 (maintained overload bootstrap mapping)", failedStreamErr)
 	}
 	if failedBootstrapRetry := failedStreamErr.(interface{ RetryAfter() *time.Duration }).RetryAfter(); failedBootstrapRetry != nil {
 		t.Fatalf("response.failed bootstrap retry-after = %v, want nil", failedBootstrapRetry)
