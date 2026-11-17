@@ -156,8 +156,7 @@ func codexTerminalStreamErrWithCooling(eventData []byte, modelLevelCooling bool)
 	if !ok || !codexTerminalStreamErrShouldHandle(body) {
 		return statusErr{}, nil, false
 	}
-	headers := parseCodexWebsocketErrorHeaders(eventData)
-	return newCodexStatusErrWithHeadersAndCooling(http.StatusBadRequest, headers, body, modelLevelCooling), body, true
+	return newCodexStatusErrWithCooling(http.StatusBadRequest, body, modelLevelCooling), body, true
 }
 
 func codexTerminalFailureErr(eventData []byte) (statusErr, []byte, bool) {
@@ -172,8 +171,7 @@ func codexTerminalFailureErrWithCooling(eventData []byte, modelLevelCooling bool
 	if !ok {
 		return statusErr{}, nil, false
 	}
-	headers := parseCodexWebsocketErrorHeaders(eventData)
-	return newCodexStatusErrWithHeadersAndCooling(codexTerminalFailureStatus(body), headers, body, modelLevelCooling), body, true
+	return newCodexStatusErrWithCooling(codexTerminalFailureStatus(body), body, modelLevelCooling), body, true
 }
 
 func codexTerminalFailureStatus(body []byte) int {
@@ -644,7 +642,7 @@ func observeCodexTokenEvent(reporter *helps.UsageReporter, payload []byte) {
 // change would alter cooldown classification and retry-after parsing for everyone. Keeping 503
 // scoped to this path means disabling the feature restores the previous behaviour exactly.
 func newCodexBootstrapOverloadErr(body []byte) statusErr {
-	return newCodexStatusErrWithHeaders(http.StatusServiceUnavailable, parseCodexWebsocketErrorHeaders(body), body)
+	return newCodexStatusErr(http.StatusServiceUnavailable, body)
 }
 
 func newCodexBootstrapOverloadErrWithRetryAfter(body []byte, preferredRetryAfter *time.Duration) statusErr {

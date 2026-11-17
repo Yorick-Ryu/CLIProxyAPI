@@ -66,7 +66,7 @@ func inferCodexWebsocketErrorStatus(payload []byte) int {
 	if !ok {
 		return 0
 	}
-	if isCodexUsageLimitError(body) || isCodexTransientCapacityError(body) {
+	if isCodexUsageLimitError(body) || isCodexModelCapacityError(body) {
 		return http.StatusTooManyRequests
 	}
 	if codexTerminalErrorIsContextLength(body) {
