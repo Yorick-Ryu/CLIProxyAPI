@@ -109,7 +109,7 @@ func TestClaudeCooldownLeavesOrdinary429MessageUnchanged(t *testing.T) {
 	}
 }
 
-func TestClaudeCooldownPreservesPassthroughHeaderAndLocalMessage(t *testing.T) {
+func TestClaudeCooldownTrustedRetryAfterWinsOverPassthrough(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -120,9 +120,8 @@ func TestClaudeCooldownPreservesPassthroughHeaderAndLocalMessage(t *testing.T) {
 		Error:      coreauth.NewModelCooldownError("claude-model", "claude", 60*time.Second+100*time.Millisecond),
 		Addon:      http.Header{"Retry-After": {"300"}},
 	})
-	// The maintained branch preserves upstream header passthrough priority.
-	if got := recorder.Header().Get("Retry-After"); got != "300" {
-		t.Fatalf("Retry-After = %q, want passed-through 300", got)
+	if got := recorder.Header().Get("Retry-After"); got != "61" {
+		t.Fatalf("Retry-After = %q, want trusted 61", got)
 	}
 	if got := ojson.GetBytesNoCopy(recorder.Body.Bytes(), "error.message").String(); !strings.Contains(got, "reset after 1m1s") {
 		t.Fatalf("error.message = %q, want trusted retry delay", got)

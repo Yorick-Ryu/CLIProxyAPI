@@ -46,7 +46,7 @@ func (m *Manager) executeHome(ctx context.Context, providers []string, req clipr
 		retryRoundPending = false
 		retryRoundWaited = false
 		if isRequestTerminatedError(errExecute) || isRequestStopError(errExecute) {
-			return cliproxyexecutor.Response{}, unwrapExecutionBoundaryError(errExecute)
+			return cliproxyexecutor.Response{}, errExecute
 		}
 		wait, shouldRetry := m.shouldRetryAfterErrorWithHomeRetryLimit(ctx, opts, errExecute, attempt, providers, retryModel, maxWait, homeRetryLimit, defaultRequestRetry)
 		if !shouldRetry {
@@ -281,9 +281,13 @@ func (m *Manager) executeHomeOnce(ctx context.Context, providers []string, req c
 			action, okAction := matchRequestScopedErrorAction(preparedAuth, errExecute, m.requestScopedErrorConfig(execCtx))
 			applyRequestScopedActionToResult(action, okAction, &result)
 			m.reportHomeResult(execCtx, result, preparedAuth)
+			roundTiming.Observe(errExecute)
 			lastErr = errExecute
 			if okAction {
 				if isRequestScopedStop(action, okAction) {
+					errExecute = annotateTrustedRetryAfterByHint(errExecute)
+					syncPreferredUpstreamError(&upstreamErr, errExecute)
+					lastErr = errExecute
 					releaseAttempt()
 					selection.End("request_stopped")
 					return cliproxyexecutor.Response{}, wrapRequestStopError(errExecute)
