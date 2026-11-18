@@ -173,6 +173,21 @@ func StoreDeviceIDPool(metadata *map[string]any, deviceIDs []string) {
 	(*metadata)[ClaudeDeviceIDsMetadataKey] = append([]string(nil), deviceIDs...)
 }
 
+// HasSetupTokenFlag reads setup-token flags under the same lock as metadata updates.
+func HasSetupTokenFlag(metadata *map[string]any) bool {
+	if metadata == nil {
+		return false
+	}
+	claudeDevicePoolMu.Lock()
+	defer claudeDevicePoolMu.Unlock()
+	for _, key := range []string{"skip_account_profile", "is_setup_token", "setup_token"} {
+		if enabled, _ := (*metadata)[key].(bool); enabled {
+			return true
+		}
+	}
+	return false
+}
+
 // ReadMetadataString reads a string-valued metadata entry under the metadata
 // lock, so it cannot observe a map being concurrently written by another path.
 func ReadMetadataString(metadata *map[string]any, key string) string {
