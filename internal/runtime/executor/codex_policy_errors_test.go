@@ -154,7 +154,7 @@ func TestCodexTypelessErrorsPreserveCredentialStatus(t *testing.T) {
 		}
 		if status == 429 {
 			retry := err.(interface{ RetryAfter() *time.Duration }).RetryAfter()
-			if retry != nil {
+			if retry == nil || *retry != 7*time.Second {
 				t.Fatalf("retry-after = %v", retry)
 			}
 		}
@@ -191,8 +191,8 @@ func TestCodexTypelessErrorsPreserveCredentialStatus(t *testing.T) {
 			t.Fatalf("nested websocket 429 = %v (ok=%v)", nestedErr, okNested)
 		}
 		retry := nestedErr.(interface{ RetryAfter() *time.Duration }).RetryAfter()
-		if retry != nil {
-			t.Fatalf("nested websocket retry-after = %v, want nil", retry)
+		if retry == nil || *retry != 9*time.Second {
+			t.Fatalf("nested websocket retry-after = %v, want 9s", retry)
 		}
 		if gotReqID := nestedErr.(interface{ Headers() http.Header }).Headers().Get("X-Request-Id"); gotReqID == "" {
 			t.Fatalf("nested websocket headers lost: %#v", nestedErr)
@@ -241,13 +241,13 @@ func TestCodexTypelessErrorsPreserveCredentialStatus(t *testing.T) {
 				t.Fatalf("inferred 429 became a request fault: %v", inferredErr)
 			}
 			retry := inferredErr.(interface{ RetryAfter() *time.Duration }).RetryAfter()
-			if retry != nil {
-				t.Fatalf("inferred retry-after = %v, want nil", retry)
+			if retry == nil || *retry != tc.wantRetry {
+				t.Fatalf("inferred retry-after = %v, want %v", retry, tc.wantRetry)
 			}
 			if gotReqID := inferredErr.(interface{ Headers() http.Header }).Headers().Get("X-Request-Id"); gotReqID != tc.wantReqID {
 				t.Fatalf("request id = %q, want %q", gotReqID, tc.wantReqID)
 			}
-			if transient, okTrans := inferredErr.(interface{ IsTransientRateLimit() bool }); okTrans && transient.IsTransientRateLimit() {
+			if transient, okTrans := inferredErr.(interface{ IsTransientRateLimit() bool }); !okTrans || transient.IsTransientRateLimit() != tc.wantTrans {
 				t.Fatalf("transient = %v (ok=%v), want %v", transient, okTrans, tc.wantTrans)
 			}
 
@@ -259,8 +259,8 @@ func TestCodexTypelessErrorsPreserveCredentialStatus(t *testing.T) {
 				t.Fatalf("stream status = %v, want 429", streamErr)
 			}
 			streamRetry := streamErr.(interface{ RetryAfter() *time.Duration }).RetryAfter()
-			if streamRetry != nil {
-				t.Fatalf("stream retry-after = %v, want nil", streamRetry)
+			if streamRetry == nil || *streamRetry != tc.wantRetry {
+				t.Fatalf("stream retry-after = %v, want %v", streamRetry, tc.wantRetry)
 			}
 		})
 	}
@@ -270,17 +270,17 @@ func TestCodexTypelessErrorsPreserveCredentialStatus(t *testing.T) {
 	if !okFailed || statusCodeFromTestError(t, failedErr) != http.StatusTooManyRequests {
 		t.Fatalf("response.failed 429 = %v (ok=%v)", failedErr, okFailed)
 	}
-	if failedRetry := failedErr.RetryAfter(); failedRetry != nil {
-		t.Fatalf("response.failed retry-after = %v, want nil", failedRetry)
+	if failedRetry := failedErr.RetryAfter(); failedRetry == nil || *failedRetry != 23*time.Second {
+		t.Fatalf("response.failed retry-after = %v, want 23s", failedRetry)
 	}
 	failedServer := codexWebsocketServer(t, codexCreatedEvent, responseFailedPayload)
 	defer failedServer.Close()
 	req, opts := codexWebsocketRequest()
 	_, failedStreamErr := NewCodexWebsocketsExecutor(codexBufferingConfig(true)).ExecuteStream(context.Background(), codexTestAuth(failedServer.URL), req, opts)
-	if statusCodeFromTestError(t, failedStreamErr) != http.StatusServiceUnavailable {
-		t.Fatalf("response.failed bootstrap status = %v, want 503 (maintained overload bootstrap mapping)", failedStreamErr)
+	if statusCodeFromTestError(t, failedStreamErr) != http.StatusTooManyRequests {
+		t.Fatalf("response.failed bootstrap status = %v, want 429", failedStreamErr)
 	}
-	if failedBootstrapRetry := failedStreamErr.(interface{ RetryAfter() *time.Duration }).RetryAfter(); failedBootstrapRetry != nil {
-		t.Fatalf("response.failed bootstrap retry-after = %v, want nil", failedBootstrapRetry)
+	if failedBootstrapRetry := failedStreamErr.(interface{ RetryAfter() *time.Duration }).RetryAfter(); failedBootstrapRetry == nil || *failedBootstrapRetry != 23*time.Second {
+		t.Fatalf("response.failed bootstrap retry-after = %v, want 23s", failedBootstrapRetry)
 	}
 }

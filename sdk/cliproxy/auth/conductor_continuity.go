@@ -425,6 +425,9 @@ func isPositiveQuotaRejectionError(err error) bool {
 		IsTerminalAuthError(err) {
 		return false
 	}
+	if isTransientRateLimitError(err) {
+		return false
+	}
 	if statusCodeFromError(err) != http.StatusTooManyRequests {
 		return false
 	}
@@ -771,6 +774,7 @@ func isQuotaCooldownResultError(err *Error) bool {
 		return false
 	}
 	if isCloudflareChallengeResultError(err) ||
+		isTransientRateLimitResultError(err) ||
 		isInvalidGrantResultError(err) ||
 		isCreditBalanceTooLowResultError(err) ||
 		isTOSViolationResultError(err) {
@@ -900,6 +904,9 @@ func (m *Manager) evaluatePreOutputStreamQuotaGate(
 
 func isQuotaCooldownBlock(auth *Auth, checkModel string, now time.Time) bool {
 	if auth == nil {
+		return false
+	}
+	if !auth.credentialRetryAfter.IsZero() && auth.credentialRetryAfter.After(now) {
 		return false
 	}
 	if auth.nonQuotaCooldownUntil.After(now) {

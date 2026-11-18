@@ -87,11 +87,18 @@ func shouldRewriteClaudeThreadOwnerUnavailable(err error) bool {
 	if errors.As(err, &homeBusy) && homeBusy != nil {
 		return false
 	}
+	if isTransientRateLimitError(err) {
+		return false
+	}
 	if isRequestInvalidError(err) {
 		return false
 	}
 	var cooldownErr *modelCooldownError
 	if errors.As(err, &cooldownErr) && cooldownErr != nil {
+		return true
+	}
+	var poolCooldownErr *poolCooldownTerminalError
+	if errors.As(err, &poolCooldownErr) && poolCooldownErr != nil {
 		return true
 	}
 	code := strings.ToLower(errorCodeFromError(err))

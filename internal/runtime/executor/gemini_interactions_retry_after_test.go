@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -168,14 +169,10 @@ func TestGeminiInteractions429HonorsRetryAfterCooldown_Issue7565(t *testing.T) {
 					t.Fatal("auth still blocked after 38m, want recovered")
 				}
 
-				// Keep the provider hint for internal cooldown scheduling. The fork
-				// deliberately excludes the terminal pool-cooldown response wrapper.
-				var retryProvider interface{ RetryAfter() *time.Duration }
-				if !errors.As(firstErr, &retryProvider) || retryProvider.RetryAfter() == nil || *retryProvider.RetryAfter() < variant.wantMinDur {
-					t.Fatalf("first error lost its internal retry hint: %v", firstErr)
-				}
-				if got := cliproxyauth.SafeResponseHeaders(firstErr).Get("Retry-After"); got != "" {
-					t.Fatalf("terminal response unexpectedly acquired a pool Retry-After header: %q", got)
+				safeRetryHdr := cliproxyauth.SafeResponseHeaders(firstErr).Get("Retry-After")
+				secs, errParseHdr := strconv.Atoi(safeRetryHdr)
+				if errParseHdr != nil || time.Duration(secs)*time.Second < variant.wantMinDur {
+					t.Fatalf("SafeResponseHeaders Retry-After = %q, want integer seconds >= %v", safeRetryHdr, variant.wantMinDur)
 				}
 
 				// Subsequent dispatch before cooldown expiry must not hit the upstream server again.

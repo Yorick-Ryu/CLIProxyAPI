@@ -53,6 +53,9 @@ type CooldownStateRecord struct {
 	// ForceCooldownEvaluated marks records produced by provenance-aware versions so
 	// a zero ForceCooldownUntil means "explicitly ordinary" rather than legacy unknown.
 	ForceCooldownEvaluated bool `json:"force_cooldown_evaluated,omitempty"`
+	// CredentialRetryAfter persists a non-429 credential-wide retry deadline so
+	// restart recovery blocks all models even when ModelStates also exist.
+	CredentialRetryAfter time.Time `json:"credential_retry_after,omitempty"`
 	// QuotaForceCooldownUntil persists the deadline of any active quota (429)
 	// ErrorCodeForceCooldown layer so a subsequent expired non-quota LastError
 	// does not misclassify the remaining quota force window across restarts.

@@ -66,7 +66,7 @@ func inferCodexWebsocketErrorStatus(payload []byte) int {
 	if !ok {
 		return 0
 	}
-	if isCodexUsageLimitError(body) || isCodexModelCapacityError(body) {
+	if isCodexUsageLimitError(body) || isCodexTransientCapacityError(body) {
 		return http.StatusTooManyRequests
 	}
 	if codexTerminalErrorIsContextLength(body) {
@@ -101,16 +101,24 @@ func parseCodexWebsocketErrorWithCooling(payload []byte, modelLevelCooling bool)
 
 	out := buildCodexWebsocketErrorPayload(payload, status)
 	isUsageLimit := isCodexUsageLimitError(out)
+	transientCapacity := !isUsageLimit && isCodexTransientCapacityError(out)
 	statusError := statusErr{
-		code:             status,
-		msg:              string(out),
-		credentialScoped: isUsageLimit && !modelLevelCooling,
+		code:               status,
+		msg:                string(out),
+		credentialScoped:   isUsageLimit && !modelLevelCooling,
+		transientRateLimit: transientCapacity && status == http.StatusTooManyRequests,
 	}
+	// Hint precedence: the quota body reset wins, then the connection-limit
+	// immediate-retry contract, then the generic Retry-After header.
 	if retryAfter := parseCodexRetryAfter(status, out, time.Now()); retryAfter != nil {
 		statusError.retryAfter = retryAfter
 	} else if isCodexWebsocketConnectionLimitError(payload) {
 		retryAfter := time.Duration(0)
 		statusError.retryAfter = &retryAfter
+	} else if shouldParseCodexRetryAfterHeader(status) {
+		if retryAfter := parseRetryAfterHeader(headers, time.Now()); retryAfter != nil {
+			statusError.retryAfter = retryAfter
+		}
 	}
 	return statusErrWithHeaders{
 		statusErr: statusError,
@@ -195,6 +203,21 @@ func isCodexWebsocketConnectionLimitError(payload []byte) bool {
 		}
 	}
 	return false
+}
+
+func shouldParseCodexRetryAfterHeader(statusCode int) bool {
+	switch statusCode {
+	case http.StatusTooManyRequests,
+		http.StatusRequestTimeout,
+		http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout,
+		520, 521, 522, 523, 524, 525, 526:
+		return true
+	default:
+		return false
+	}
 }
 
 func parseCodexWebsocketErrorHeaders(payload []byte) http.Header {

@@ -158,6 +158,7 @@ type Auth struct {
 	forceCooldownUntil      time.Time `json:"-"`
 	quotaForceCooldownUntil time.Time `json:"-"`
 	credQuotaForceUntil     time.Time `json:"-"`
+	credentialRetryAfter    time.Time `json:"-"`
 	nonQuotaCooldownUntil   time.Time `json:"-"`
 	forceCooldownSeeded     bool      `json:"-"`
 

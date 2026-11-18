@@ -182,10 +182,11 @@ func TestClaudeThreadOwnerUnavailableReturnsThreadNotFound(t *testing.T) {
 			wantNotFound: false,
 		},
 		{
-			name:         "execute/capacity_owner_unavailable_requires_replay",
-			ownerErr:     claudeThreadTransientRateLimitErr{claudeThreadStatusErr: claudeThreadStatusErr{status: http.StatusTooManyRequests, msg: "turn_rate_limit_exceeded", header: http.Header{"Retry-After": []string{"5"}}}, retryAfter: 5 * time.Second},
-			wantStatus:   http.StatusNotFound,
-			wantNotFound: true,
+			name:           "execute/transient_rate_limit_preserved",
+			ownerErr:       claudeThreadTransientRateLimitErr{claudeThreadStatusErr: claudeThreadStatusErr{status: http.StatusTooManyRequests, msg: "turn_rate_limit_exceeded", header: http.Header{"Retry-After": []string{"5"}}}, retryAfter: 5 * time.Second},
+			wantStatus:     http.StatusTooManyRequests,
+			wantNotFound:   false,
+			wantRetryAfter: "5",
 		},
 		{
 			name:           "execute/home_concurrency_busy_preserved",

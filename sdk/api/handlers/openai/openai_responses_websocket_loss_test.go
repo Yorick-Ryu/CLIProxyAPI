@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	runtimeexecutor "github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
@@ -892,9 +893,8 @@ func TestResponsesWebsocketEarly429RetriesAnotherCredentialWithoutClosingDownstr
 				if got := int(ojson.GetBytesNoCopy(frame4, "error.resets_in_seconds").Int()); got != 600 {
 					t.Fatalf("frame4 error.resets_in_seconds = %d, want 600: %s", got, frame4)
 				}
-				// The maintained branch does not synthesize Retry-After from reset hints.
-				if got := ojson.GetBytesNoCopy(frame4, "headers.Retry-After").String(); got != "" {
-					t.Fatalf("frame4 synthesized unexpected Retry-After: %s", frame4)
+				if got := ojson.GetBytesNoCopy(frame4, "headers.Retry-After").String(); got == "" {
+					t.Fatalf("frame4 headers.Retry-After is empty: %s", frame4)
 				}
 				if _, extraFrame, errAfter := conn3.ReadMessage(); errAfter == nil {
 					t.Fatalf("expected socket close after terminal 429 error frame, got frame: %s", extraFrame)
@@ -1486,6 +1486,110 @@ func (h *rejectingLossInterceptor) InterceptRequestBeforeAuth(_ context.Context,
 }
 func (*rejectingLossInterceptor) InterceptRequestAfterAuth(context.Context, pluginapi.RequestInterceptRequest) pluginapi.RequestInterceptResponse {
 	return pluginapi.RequestInterceptResponse{}
+}
+
+type websocketHintTestError struct {
+	status int
+	msg    string
+	hint   *time.Duration
+}
+
+func (e websocketHintTestError) Error() string              { return e.msg }
+func (e websocketHintTestError) StatusCode() int            { return e.status }
+func (e websocketHintTestError) RetryAfter() *time.Duration { return e.hint }
+
+type websocketTwoAuthHomeDispatcher struct {
+	mu      sync.Mutex
+	authIDs []string
+}
+
+func (*websocketTwoAuthHomeDispatcher) HeartbeatOK() bool       { return true }
+func (*websocketTwoAuthHomeDispatcher) AbortAmbiguousDispatch() {}
+
+func (d *websocketTwoAuthHomeDispatcher) RPopAuth(ctx context.Context, model string, sessionID string, headers http.Header, count int) ([]byte, error) {
+	return d.RPopAuthWithConstraints(ctx, model, sessionID, headers, count, nil, "")
+}
+
+func (d *websocketTwoAuthHomeDispatcher) RPopAuthWithConstraints(_ context.Context, _ string, _ string, _ http.Header, _ int, excludedAuthIDs []string, _ string) ([]byte, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	excluded := make(map[string]struct{}, len(excludedAuthIDs))
+	for _, id := range excludedAuthIDs {
+		excluded[id] = struct{}{}
+	}
+	for _, id := range d.authIDs {
+		if _, skip := excluded[id]; skip {
+			continue
+		}
+		return json.Marshal(coreauth.Auth{
+			ID:       id,
+			Provider: "codex",
+			Status:   coreauth.StatusActive,
+		})
+	}
+	return []byte(`{"error":{"code":"request_retry_exceeded","message":"no more auths"}}`), nil
+}
+
+func TestBuildResponsesWebsocketErrorPayloadSuppressesStaleRetryAfterWhenTrustedDeadlineHasNoHeader(t *testing.T) {
+	zero := time.Duration(0)
+	positive := 256 * time.Second
+	dispatcher := &websocketTwoAuthHomeDispatcher{authIDs: []string{"home-a", "home-b"}}
+	executor := &homeCallbackStreamExecutor{
+		provider: "codex",
+		streamFn: func(_ context.Context, auth *coreauth.Auth, _ coreexecutor.Request, _ coreexecutor.Options) (*coreexecutor.StreamResult, error) {
+			hint := &positive
+			if auth != nil && auth.ID == "home-a" {
+				hint = &zero
+			}
+			chunks := make(chan coreexecutor.StreamChunk, 1)
+			chunks <- coreexecutor.StreamChunk{Err: websocketHintTestError{
+				status: http.StatusTooManyRequests,
+				msg:    `{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached"}}`,
+				hint:   hint,
+			}}
+			close(chunks)
+			return &coreexecutor.StreamResult{
+				Headers: http.Header{"Retry-After": {"30"}, "X-Request-Id": {"req-1"}},
+				Chunks:  chunks,
+			}, nil
+		},
+	}
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	manager.SetConfig(&config.Config{Home: config.HomeConfig{Enabled: true}})
+	manager.SetRetryConfig(0, time.Second, 2)
+	manager.PublishHomeDispatch(dispatcher, executionregistry.New(), 1)
+	manager.RegisterExecutor(executor)
+
+	result, errExec := manager.ExecuteStream(context.Background(), []string{"codex"}, coreexecutor.Request{Model: "gpt-5.4"}, coreexecutor.Options{Stream: true})
+	if errExec != nil {
+		t.Fatalf("ExecuteStream() error = %v", errExec)
+	}
+	chunk, ok := <-result.Chunks
+	if !ok || chunk.Err == nil {
+		t.Fatalf("stream chunk = %#v, %t; want error", chunk, ok)
+	}
+	if !coreauth.HasTrustedRetryDeadline(chunk.Err) {
+		t.Fatal("expected HasTrustedRetryDeadline(chunk.Err) = true")
+	}
+	if got := coreauth.SafeResponseHeaders(chunk.Err).Get("Retry-After"); got != "" {
+		t.Fatalf("expected empty SafeResponseHeaders Retry-After, got %q", got)
+	}
+
+	payload, errBuild := buildResponsesWebsocketErrorPayload(&interfaces.ErrorMessage{
+		StatusCode: http.StatusTooManyRequests,
+		Error:      chunk.Err,
+		Addon:      http.Header{"Retry-After": {"30"}, "X-Request-Id": {"req-1"}},
+	})
+	if errBuild != nil {
+		t.Fatalf("buildResponsesWebsocketErrorPayload() error = %v", errBuild)
+	}
+	if got := ojson.GetBytesNoCopy(payload, "headers.Retry-After").String(); got != "" {
+		t.Fatalf("stale Addon Retry-After leaked into websocket error payload: %q (%s)", got, payload)
+	}
+	if got := ojson.GetBytesNoCopy(payload, "headers.X-Request-Id").String(); got != "req-1" {
+		t.Fatalf("headers.X-Request-Id = %q, want req-1 (%s)", got, payload)
+	}
 }
 
 func TestResponsesWebsocketSameSessionLaterCreate429FailoverToAlternativeCredential(t *testing.T) {
