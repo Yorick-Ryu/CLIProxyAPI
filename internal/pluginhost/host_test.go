@@ -1610,6 +1610,7 @@ func TestHostApplyConfigWaitsForBlockedQuiesceBeforeCanceledRollbackAndReplay(t 
 	quiesceStarted := make(chan struct{})
 	releaseQuiesce := make(chan struct{})
 	reconfigureStarted := make(chan struct{})
+	var reconfigureOnce sync.Once
 	var releaseQuiesceOnce sync.Once
 	t.Cleanup(func() {
 		releaseQuiesceOnce.Do(func() { close(releaseQuiesce) })
@@ -1633,13 +1634,7 @@ func TestHostApplyConfigWaitsForBlockedQuiesceBeforeCanceledRollbackAndReplay(t 
 			events.add("old.quiesce.finish")
 			return marshalRPCResult(rpcEmptyResponse{})
 		case pluginabi.MethodPluginReconfigure:
-			var reconfigureOnce sync.Once
-			_ = reconfigureOnce
-			select {
-			case <-reconfigureStarted:
-			default:
-				close(reconfigureStarted)
-			}
+			reconfigureOnce.Do(func() { close(reconfigureStarted) })
 			oldQuiesced.Store(false)
 			events.add("old." + method)
 			return lifecycleRegistrationResult(validTestPlugin("alpha"))
