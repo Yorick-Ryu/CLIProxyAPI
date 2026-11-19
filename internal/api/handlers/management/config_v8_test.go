@@ -1097,10 +1097,10 @@ auth-dir: ./repro-auth
 remote-management:
   secret-key: local-repro-only
   disable-control-panel: true
+retired-test-section:
+  identity-confuse: false
 codex:
   identity-confuse: false
-retired-test-section:
-  enabled: false
 `
 	if errWrite := os.WriteFile(path, []byte(raw), 0o600); errWrite != nil {
 		t.Fatal(errWrite)
@@ -1202,15 +1202,15 @@ retired-test-section:
 	if replaceRec.Code != http.StatusOK {
 		t.Fatalf("PUT /v8/management/config.yaml: status=%d body=%s", replaceRec.Code, replaceRec.Body.String())
 	}
-	if replaceDisk, errReplaceDisk := os.ReadFile(replacePath); errReplaceDisk != nil || strings.Contains(string(replaceDisk), "# codex:") {
-		t.Fatalf("expected whole-document PUT to discard # codex: comment on disk, err=%v content=%s", errReplaceDisk, string(replaceDisk))
+	if replaceDisk, errReplaceDisk := os.ReadFile(replacePath); errReplaceDisk != nil || strings.Contains(string(replaceDisk), "# retired-test-section:") {
+		t.Fatalf("expected whole-document PUT to discard # retired-test-section: comment on disk, err=%v content=%s", errReplaceDisk, string(replaceDisk))
 	}
 	if warningsAfterPut := migrationWarnings(); len(warningsAfterPut) != 0 {
 		t.Fatalf("expected no migration warnings when whole-document PUT discards legacy sections, got %v", warningsAfterPut)
 	}
 
 	// Whole-document PUT that sends back the projected GET YAML (retaining the
-	// archived # codex: comment) persists the commented-out migration and must warn once.
+	// archived # retired-test-section: comment) persists the commented-out migration and must warn once.
 	roundTripPath := filepath.Join(t.TempDir(), "roundtrip-config.yaml")
 	if errWriteRT := os.WriteFile(roundTripPath, []byte(raw), 0o600); errWriteRT != nil {
 		t.Fatal(errWriteRT)
@@ -1239,8 +1239,8 @@ retired-test-section:
 		t.Fatalf("round-trip PUT /v8/management/config.yaml: status=%d body=%s", rtPut.Code, rtPut.Body.String())
 	}
 	rtDisk, errRTDisk := os.ReadFile(roundTripPath)
-	if errRTDisk != nil || !strings.Contains(string(rtDisk), "# codex:") {
-		t.Fatalf("expected archived # codex: comment on disk after round-trip PUT, err=%v content=%s", errRTDisk, string(rtDisk))
+	if errRTDisk != nil || !strings.Contains(string(rtDisk), "# retired-test-section:") {
+		t.Fatalf("expected archived # retired-test-section: comment on disk after round-trip PUT, err=%v content=%s", errRTDisk, string(rtDisk))
 	}
 	if warningsAfterRTPut := migrationWarnings(); len(warningsAfterRTPut) != 1 || !strings.Contains(warningsAfterRTPut[0], `"retired-test-section"`) {
 		t.Fatalf("expected one migration warning for \"retired-test-section\" on round-trip PUT, got %d: %v", len(warningsAfterRTPut), warningsAfterRTPut)
@@ -1256,9 +1256,9 @@ retired-test-section:
 		t.Fatalf("expected no migration warnings when WriteConfig fails on I/O, got %v", warningsAfterWriteErr)
 	}
 
-	// Quoted YAML section key ("codex":) must still emit a warning on persisted PATCH.
+	// Quoted YAML section key ("retired-test-section":) must still emit a warning on persisted PATCH.
 	quotedPath := filepath.Join(t.TempDir(), "quoted-config.yaml")
-	quotedRaw := "port: 18317\n\"codex\":\n  identity-confuse: false\n"
+	quotedRaw := "port: 18317\n\"retired-test-section\":\n  identity-confuse: false\n"
 	if errWriteQuoted := os.WriteFile(quotedPath, []byte(quotedRaw), 0o600); errWriteQuoted != nil {
 		t.Fatal(errWriteQuoted)
 	}
@@ -1276,10 +1276,10 @@ retired-test-section:
 		t.Fatalf("PATCH quoted key config: status=%d body=%s", quotedRec.Code, quotedRec.Body.String())
 	}
 	if warningsQuoted := migrationWarnings(); len(warningsQuoted) != 1 || !strings.Contains(warningsQuoted[0], `"retired-test-section"`) {
-		t.Fatalf("expected one migration warning for quoted \"codex\" key on PATCH, got %d: %v", len(warningsQuoted), warningsQuoted)
+		t.Fatalf("expected one migration warning for quoted \"retired-test-section\" key on PATCH, got %d: %v", len(warningsQuoted), warningsQuoted)
 	}
 
-	// Whole-document PUT discarding codex while adding an unrelated "# codex: ..."
+	// Whole-document PUT discarding retired-test-section while adding an unrelated "# retired-test-section: ..."
 	// comment must not falsely trigger a migration warning.
 	notePath := filepath.Join(t.TempDir(), "note-config.yaml")
 	if errWriteNote := os.WriteFile(notePath, []byte(raw), 0o600); errWriteNote != nil {
@@ -1294,19 +1294,19 @@ retired-test-section:
 	noteRouter.PUT("/v8/management/config.yaml", noteHandler.ConfigV8)
 	hook.Reset()
 	noteRec := httptest.NewRecorder()
-	noteRouter.ServeHTTP(noteRec, httptest.NewRequest(http.MethodPut, "/v8/management/config.yaml", strings.NewReader("server:\n  port: 18322\n# codex: see provider documentation\n")))
+	noteRouter.ServeHTTP(noteRec, httptest.NewRequest(http.MethodPut, "/v8/management/config.yaml", strings.NewReader("server:\n  port: 18322\n# retired-test-section: see provider documentation\n")))
 	if noteRec.Code != http.StatusOK {
 		t.Fatalf("PUT note config.yaml: status=%d body=%s", noteRec.Code, noteRec.Body.String())
 	}
 	if warningsNote := migrationWarnings(); len(warningsNote) != 0 {
-		t.Fatalf("expected no migration warnings when whole-document PUT only has unrelated # codex: comment, got %v", warningsNote)
+		t.Fatalf("expected no migration warnings when whole-document PUT only has unrelated # retired-test-section: comment, got %v", warningsNote)
 	}
 
 	// Trailing whitespace (including Unicode spaces such as U+00A0) on an inline
 	// comment inside an unknown section is trimmed when archiving FootComment;
 	// PATCH must still emit one migration warning.
 	trailingPath := filepath.Join(t.TempDir(), "trailing-ws-config.yaml")
-	trailingRaw := "port: 18317\ncodex:\n  identity-confuse: false # note  \u00a0\n"
+	trailingRaw := "port: 18317\nretired-test-section:\n  identity-confuse: false # note  \u00a0\n"
 	if errWriteTrailing := os.WriteFile(trailingPath, []byte(trailingRaw), 0o600); errWriteTrailing != nil {
 		t.Fatal(errWriteTrailing)
 	}
