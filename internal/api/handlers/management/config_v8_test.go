@@ -1099,6 +1099,8 @@ remote-management:
   disable-control-panel: true
 codex:
   identity-confuse: false
+retired-test-section:
+  enabled: false
 `
 	if errWrite := os.WriteFile(path, []byte(raw), 0o600); errWrite != nil {
 		t.Fatal(errWrite)
@@ -1170,8 +1172,8 @@ codex:
 	// A persisted migration logs the warning once.
 	doReq(http.MethodPatch, "/v8/management/config", `{"server":{"port":18318}}`, firstYAML.Header().Get("ETag"), http.StatusOK)
 	warnings := migrationWarnings()
-	if len(warnings) != 1 || !strings.Contains(warnings[0], `"codex"`) {
-		t.Fatalf("expected exactly one migration warning for \"codex\" on persisted write, got %d: %v", len(warnings), warnings)
+	if len(warnings) != 1 || !strings.Contains(warnings[0], `"retired-test-section"`) {
+		t.Fatalf("expected exactly one migration warning for \"retired-test-section\" on persisted write, got %d: %v", len(warnings), warnings)
 	}
 
 	hook.Reset()
@@ -1240,8 +1242,8 @@ codex:
 	if errRTDisk != nil || !strings.Contains(string(rtDisk), "# codex:") {
 		t.Fatalf("expected archived # codex: comment on disk after round-trip PUT, err=%v content=%s", errRTDisk, string(rtDisk))
 	}
-	if warningsAfterRTPut := migrationWarnings(); len(warningsAfterRTPut) != 1 || !strings.Contains(warningsAfterRTPut[0], `"codex"`) {
-		t.Fatalf("expected one migration warning for \"codex\" on round-trip PUT, got %d: %v", len(warningsAfterRTPut), warningsAfterRTPut)
+	if warningsAfterRTPut := migrationWarnings(); len(warningsAfterRTPut) != 1 || !strings.Contains(warningsAfterRTPut[0], `"retired-test-section"`) {
+		t.Fatalf("expected one migration warning for \"retired-test-section\" on round-trip PUT, got %d: %v", len(warningsAfterRTPut), warningsAfterRTPut)
 	}
 
 	// WriteConfig failing on disk I/O must not log migration warnings.
@@ -1273,7 +1275,7 @@ codex:
 	if quotedRec.Code != http.StatusOK {
 		t.Fatalf("PATCH quoted key config: status=%d body=%s", quotedRec.Code, quotedRec.Body.String())
 	}
-	if warningsQuoted := migrationWarnings(); len(warningsQuoted) != 1 || !strings.Contains(warningsQuoted[0], `"codex"`) {
+	if warningsQuoted := migrationWarnings(); len(warningsQuoted) != 1 || !strings.Contains(warningsQuoted[0], `"retired-test-section"`) {
 		t.Fatalf("expected one migration warning for quoted \"codex\" key on PATCH, got %d: %v", len(warningsQuoted), warningsQuoted)
 	}
 
@@ -1321,8 +1323,8 @@ codex:
 	if trailingRec.Code != http.StatusOK {
 		t.Fatalf("PATCH trailing whitespace config: status=%d body=%s", trailingRec.Code, trailingRec.Body.String())
 	}
-	if warningsTrailing := migrationWarnings(); len(warningsTrailing) != 1 || !strings.Contains(warningsTrailing[0], `"codex"`) {
-		t.Fatalf("expected one migration warning for \"codex\" with trailing whitespace on PATCH, got %d: %v", len(warningsTrailing), warningsTrailing)
+	if warningsTrailing := migrationWarnings(); len(warningsTrailing) != 1 || !strings.Contains(warningsTrailing[0], `"retired-test-section"`) {
+		t.Fatalf("expected one migration warning for \"retired-test-section\" with trailing whitespace on PATCH, got %d: %v", len(warningsTrailing), warningsTrailing)
 	}
 
 	// Whole-document PUT discarding a null-valued unknown key ("retired-option:")
