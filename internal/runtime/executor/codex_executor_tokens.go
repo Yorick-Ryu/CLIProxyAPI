@@ -44,6 +44,9 @@ func (e *CodexExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.Auth
 	body = helps.SetBoolIfDifferent(body, "stream", false)
 	body = normalizeCodexInstructions(body, helps.PreserveCodexInstructions(req.Payload, opts))
 
+	doc := ojson.NewDoc(body)
+	helps.StripCodexSessionInstructionMarker(doc, from)
+	body = doc.Bytes()
 	body = helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslatedForPayload, req, opts)(body)
 	enc, err := tokenizerForCodexModel(baseModel)
 	if err != nil {

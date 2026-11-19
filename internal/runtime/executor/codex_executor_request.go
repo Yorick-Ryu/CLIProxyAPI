@@ -383,6 +383,9 @@ func (e *CodexExecutor) prepareCachedRequest(ctx context.Context, from sdktransl
 	}
 	rawJSON = helps.GuardCodexTurnStateBody(ctx, rawJSON)
 	rawJSON = helps.FinalizePayload(ctx, rawJSON)
+	if errMarker := helps.ValidateCodexSessionInstructionMarker(rawJSON, from); errMarker != nil {
+		return nil, nil, codexIdentityConfuseState{}, errMarker
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
 	if err != nil {
 		return nil, nil, codexIdentityConfuseState{}, err
