@@ -1890,7 +1890,7 @@ func (m *Manager) tryAntigravityCreditsExecute(ctx context.Context, req cliproxy
 	if errCandidates != nil {
 		return cliproxyexecutor.Response{}, false, errCandidates
 	}
-	maxRetryCredentials := m.MaxRetryCredentials()
+	_, maxRetryCredentials, _ := m.retrySettings()
 	refusedAuths := requestRefusedAuthsFromContext(ctx)
 	attempted := make(map[string]struct{})
 	for _, c := range candidates {
@@ -2000,7 +2000,7 @@ func (m *Manager) tryAntigravityCreditsExecuteStream(ctx context.Context, req cl
 	if errCandidates != nil {
 		return nil, false, errCandidates
 	}
-	maxRetryCredentials := m.MaxRetryCredentials()
+	_, maxRetryCredentials, _ := m.retrySettings()
 	refusedAuths := requestRefusedAuthsFromContext(ctx)
 	attempted := make(map[string]struct{})
 	for _, c := range candidates {
