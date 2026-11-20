@@ -177,9 +177,6 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 	if oldCfg.Codex.WebsocketMaxMessageBytes != newCfg.Codex.WebsocketMaxMessageBytes {
 		changes = append(changes, fmt.Sprintf("codex.websocket-max-message-bytes: %d -> %d", oldCfg.Codex.WebsocketMaxMessageBytes, newCfg.Codex.WebsocketMaxMessageBytes))
 	}
-	if oldCfg.Codex.IdentityConfuse != newCfg.Codex.IdentityConfuse {
-		changes = append(changes, fmt.Sprintf("codex.identity-confuse: %t -> %t", oldCfg.Codex.IdentityConfuse, newCfg.Codex.IdentityConfuse))
-	}
 	if oldCfg.Codex.IdentityConvergence != newCfg.Codex.IdentityConvergence {
 		changes = append(changes, fmt.Sprintf("codex.identity-convergence: %t -> %t", oldCfg.Codex.IdentityConvergence, newCfg.Codex.IdentityConvergence))
 	}

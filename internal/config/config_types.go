@@ -330,7 +330,6 @@ type CodexConfig struct {
 	// WebsocketMaxMessageBytes limits complete uncompressed upstream WS messages.
 	// Omitted or non-positive values disable the local limit.
 	WebsocketMaxMessageBytes int64 `yaml:"websocket-max-message-bytes,omitempty" json:"websocket-max-message-bytes,omitempty"`
-	IdentityConfuse          bool  `yaml:"identity-confuse" json:"identity-confuse"`
 	// IdentityConvergence is the provider-wide default for Codex OAuth fingerprint convergence.
 	// It converges only the device identity so independent client sessions remain distinct.
 	// An auth metadata field named codex_fingerprint_mode can explicitly select off/device/session/full.

@@ -43,7 +43,6 @@ func TestLoadConfigOptional_CodexOptions(t *testing.T) {
 	configPath := filepath.Join(dir, "config.yaml")
 	configYAML := []byte(`
 codex:
-  identity-confuse: true
   identity-convergence: true
   disable-codex-cloaking: true
   optimize-multi-agent-v2: true
@@ -60,9 +59,6 @@ codex:
 		t.Fatalf("LoadConfigOptional() error = %v", err)
 	}
 
-	if !cfg.Codex.IdentityConfuse {
-		t.Fatalf("IdentityConfuse = false, want true")
-	}
 	if !cfg.Codex.IdentityConvergence {
 		t.Fatalf("IdentityConvergence = false, want true")
 	}

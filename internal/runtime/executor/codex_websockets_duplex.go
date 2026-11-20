@@ -1053,7 +1053,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 					return
 				}
 			}
-			payload = applyCodexIdentityConfuseResponsePayload(payload, eventPrepared.identityState)
+
 			restoreMultiAgent := !eventPrepared.multiAgentV2Conflict && (eventPrepared.optimizeMultiAgentV2 || sess.isMultiAgentV2Optimized(conn))
 			payload = helps.RestoreCodexMultiAgentV2Response(payload, restoreMultiAgent)
 			// Parse and invalidate replay for every rejected request, using the
@@ -1131,7 +1131,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 					e.duplexStateObserver("terminal_pending", false)
 				}
 			}
-			payload = applyCodexIdentityExposeResponsePayload(payload, eventPrepared.identityState)
+
 			if !send(cliproxyexecutor.StreamChunk{Payload: helps.EnsureResponsesUsageDetails(payload), Incomplete: eventType == "response.incomplete"}) {
 				return
 			}

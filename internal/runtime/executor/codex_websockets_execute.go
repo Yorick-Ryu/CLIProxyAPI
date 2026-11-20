@@ -152,10 +152,11 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 	}
 	body = doc.Bytes()
 	clientBody := body
-	upstreamBody, accountIdentityState := applyCodexAccountIdentityBodyForConfig(ctx, e.cfg, auth, body)
-	var identityState codexIdentityConfuseState
-	upstreamBody, identityState = applyCodexIdentityConfuseBody(e.cfg, auth, originalPayloadSource, upstreamBody)
-	identityState.accountIdentity = accountIdentityState
+	upstreamBody, accountIdentityState := applyCodexAccountIdentityBody(ctx, auth, body)
+	identityState := codexRequestIdentity{
+		canonicalMetadata: auth != nil && !codexAuthUsesAPIKey(auth),
+		accountIdentity:   accountIdentityState,
+	}
 	convergenceSourcePayload := originalPayloadSource
 	if accountIdentityState.enabled {
 		convergenceSourcePayload = upstreamBody
@@ -180,7 +181,7 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, nativeRequest, opts.Headers)
 	applyCodexRoutingHint(ctx, wsHeaders, auth, upstreamModel, upstreamBody, opts.Headers)
 	applyModelHeaderOverrides(wsHeaders, upstreamModel)
-	applyCodexIdentityConfuseHeaders(wsHeaders, &identityState)
+	applyCodexRequestIdentityHeaders(wsHeaders, &identityState)
 	if errValidate := helps.ValidateCodexHostedImageGenerationDoc(ojson.NewDoc(upstreamBody), wsHeaders, e.cfg, !useSIWC && !codexAuthUsesAPIKey(auth)); errValidate != nil {
 		return resp, errValidate
 	}
@@ -388,7 +389,7 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 			continue
 		}
 		observeCodexTokenEvent(reporter, payload)
-		payload = applyCodexIdentityConfuseResponsePayload(payload, identityState)
+
 		helps.AppendCodexAPIWebsocketResponse(ctx, e.cfg, payload)
 		helps.EmitWebSocketResponseEvent(ctx, opts, auth, e.Identifier(), req.Model, payload)
 		payload = helps.RestoreCodexMultiAgentV2Response(payload, restoreMultiAgentV2)
@@ -445,8 +446,7 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 			}
 			publishCodexImageToolUsageWithOutputItems(ctx, reporter, body, payload, outputItemsByIndex, outputItemsFallback)
 			var param any
-			clientPayload := applyCodexIdentityExposeResponsePayload(payload, identityState)
-			out := sdktranslator.TranslateNonStream(ctx, to, responseFormat, req.Model, originalPayload, clientBody, clientPayload, &param)
+			out := sdktranslator.TranslateNonStream(ctx, to, responseFormat, req.Model, originalPayload, clientBody, payload, &param)
 			if responseFormat == sdktranslator.FormatOpenAIResponse {
 				out = helps.EnsureResponsesUsageDetails(out)
 			}

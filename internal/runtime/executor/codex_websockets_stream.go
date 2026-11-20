@@ -106,7 +106,6 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 	originalPayload := prepared.originalPayload
 	clientBody := prepared.clientBody
 	upstreamBody := prepared.upstreamBody
-	identityState := prepared.identityState
 	wsURL := prepared.wsURL
 	wsHeaders := prepared.wsHeaders
 	useSIWC := prepared.useSIWC
@@ -445,7 +444,6 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 				continue
 			}
 			observeCodexTokenEvent(reporter, payload)
-			payload = applyCodexIdentityConfuseResponsePayload(payload, identityState)
 			helps.AppendCodexAPIWebsocketResponse(ctx, e.cfg, payload)
 			helps.EmitWebSocketResponseEvent(ctx, opts, auth, e.Identifier(), req.Model, payload)
 			payload = helps.RestoreCodexMultiAgentV2Response(payload, restoreMultiAgentV2)
@@ -584,16 +582,14 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 				if eventType == "response.completed" || eventType == "response.done" || eventType == "response.incomplete" {
 					payload = completedPayload
 				}
-				clientPayload := applyCodexIdentityExposeResponsePayload(payload, identityState)
-				downstreamPayload := helps.EnsureResponsesUsageDetails(clientPayload)
+				downstreamPayload := helps.EnsureResponsesUsageDetails(payload)
 				currentChunks = [][]byte{downstreamPayload}
 			} else {
 				payload = normalizeCodexWebsocketCompletion(payload)
 				if eventType == "response.completed" || eventType == "response.done" || eventType == "response.incomplete" {
 					payload = completedPayload
 				}
-				clientPayload := applyCodexIdentityExposeResponsePayload(payload, identityState)
-				line := encodeCodexWebsocketAsSSE(clientPayload)
+				line := encodeCodexWebsocketAsSSE(payload)
 				currentChunks = helps.TranslateStreamWithClaudeInputTokens(ctx, to, responseFormat, req.Model, originalPayload, clientBody, line, &param, claudeInputTokens)
 			}
 
@@ -742,7 +738,6 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 				continue
 			}
 			observeCodexTokenEvent(reporter, payload)
-			payload = applyCodexIdentityConfuseResponsePayload(payload, identityState)
 			helps.AppendCodexAPIWebsocketResponse(ctx, e.cfg, payload)
 			helps.EmitWebSocketResponseEvent(ctx, opts, auth, e.Identifier(), req.Model, payload)
 			payload = helps.RestoreCodexMultiAgentV2Response(payload, restoreMultiAgentV2)
@@ -846,12 +841,11 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 				publishCodexImageToolUsageWithOutputItems(ctx, reporter, clientBody, completedPayload, outputItemsByIndex, outputItemsFallback)
 			}
 
-			clientPayload := applyCodexIdentityExposeResponsePayload(payload, identityState)
 			if cliproxyexecutor.DownstreamWebsocket(ctx) {
 				if eventType == "response.completed" || eventType == "response.done" || eventType == "response.incomplete" {
-					clientPayload = applyCodexIdentityExposeResponsePayload(completedPayload, identityState)
+					payload = completedPayload
 				}
-				downstreamPayload := helps.EnsureResponsesUsageDetails(clientPayload)
+				downstreamPayload := helps.EnsureResponsesUsageDetails(payload)
 				if !send(cliproxyexecutor.StreamChunk{Payload: downstreamPayload, Incomplete: eventType == "response.incomplete"}) {
 					terminateReason = "context_done"
 					terminateErr = ctx.Err()
@@ -870,8 +864,7 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 			}
 			eventType = ojson.GetBytes(payload, "type").String()
 			isIncomplete := eventType == "response.incomplete"
-			clientPayload = applyCodexIdentityExposeResponsePayload(payload, identityState)
-			line := encodeCodexWebsocketAsSSE(clientPayload)
+			line := encodeCodexWebsocketAsSSE(payload)
 			chunks := helps.TranslateStreamWithClaudeInputTokens(ctx, to, responseFormat, req.Model, originalPayload, clientBody, line, &param, claudeInputTokens)
 			for i := range chunks {
 				if !send(cliproxyexecutor.StreamChunk{Payload: chunks[i], Incomplete: isIncomplete}) {
@@ -910,7 +903,6 @@ type codexWebsocketPrepared struct {
 	upstreamModel        string
 	wsURL                string
 	wsHeaders            http.Header
-	identityState        codexIdentityConfuseState
 	useSIWC              bool
 	replayScope          codexReasoningReplayScope
 	optimizeMultiAgentV2 bool
@@ -1017,10 +1009,11 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
 		body = applyCodexSIWCWebsocketBodyRules(body, hasExplicitInstructions, cliproxyexecutor.Options{KeepTopLevelEffort: thinking.HasThinkingSuffix(req.Model)})
 	}
 	clientBody := body
-	upstreamBody, accountIdentityState := applyCodexAccountIdentityBodyForConfig(ctx, e.cfg, auth, body)
-	var identityState codexIdentityConfuseState
-	upstreamBody, identityState = applyCodexIdentityConfuseBody(e.cfg, auth, originalPayloadSource, upstreamBody)
-	identityState.accountIdentity = accountIdentityState
+	upstreamBody, accountIdentityState := applyCodexAccountIdentityBody(ctx, auth, body)
+	identityState := codexRequestIdentity{
+		canonicalMetadata: auth != nil && !codexAuthUsesAPIKey(auth),
+		accountIdentity:   accountIdentityState,
+	}
 	convergenceSourcePayload := originalPayloadSource
 	if accountIdentityState.enabled {
 		convergenceSourcePayload = upstreamBody
@@ -1051,7 +1044,7 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
 	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, preserveNativeOutput, opts.Headers)
 	applyCodexRoutingHint(ctx, wsHeaders, auth, upstreamModel, upstreamBody, opts.Headers)
 	applyModelHeaderOverrides(wsHeaders, upstreamModel)
-	applyCodexIdentityConfuseHeaders(wsHeaders, &identityState)
+	applyCodexRequestIdentityHeaders(wsHeaders, &identityState)
 	if errValidate := helps.ValidateCodexHostedImageGenerationDoc(ojson.NewDoc(upstreamBody), wsHeaders, e.cfg, !useSIWC && !codexAuthUsesAPIKey(auth)); errValidate != nil {
 		return nil, errValidate
 	}
@@ -1067,7 +1060,6 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
 		upstreamModel:        upstreamModel,
 		wsURL:                wsURL,
 		wsHeaders:            wsHeaders,
-		identityState:        identityState,
 		useSIWC:              useSIWC,
 		replayScope:          replayScope,
 		optimizeMultiAgentV2: optimizeMultiAgentV2,
