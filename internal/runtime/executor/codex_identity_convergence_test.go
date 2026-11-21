@@ -14,17 +14,11 @@ import (
 
 func TestCodexIdentityConvergenceUsesStableAccountDeviceAndSession(t *testing.T) {
 	cfg := &config.Config{Codex: config.CodexConfig{
-		IdentityConfuse:     true,
 		IdentityConvergence: true,
 	}}
 	auth := &cliproxyauth.Auth{ID: "oauth-auth-a", Provider: "codex"}
 	auth.Metadata = map[string]any{codexIdentityConvergenceModeKey: "session"}
 	firstClientBody := []byte(`{"prompt_cache_key":"client-session-a","client_metadata":{"session_id":"client-session-a","x-codex-installation-id":"client-install-a","x-codex-window-id":"client-session-a:0","x-codex-turn-metadata":"{\"installation_id\":\"client-install-a\",\"session_id\":\"client-session-a\",\"thread_id\":\"client-session-a\",\"turn_id\":\"client-turn-a\",\"window_id\":\"client-session-a:0\"}"}}`)
-
-	confusedBody, confusedState := applyCodexIdentityConfuseBody(cfg, auth, firstClientBody, firstClientBody)
-	if confusedState.enabled || !bytes.Equal(confusedBody, firstClientBody) {
-		t.Fatal("identity convergence must take precedence over identity confusion for Codex OAuth")
-	}
 
 	firstBody, first := applyCodexIdentityConvergenceBody(cfg, auth, firstClientBody, firstClientBody, http.Header{"Session-Id": []string{"client-session-a"}})
 	if !first.enabled {

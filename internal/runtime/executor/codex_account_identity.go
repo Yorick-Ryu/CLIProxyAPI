@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/MoeForge/moego/ojson"
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
@@ -243,16 +242,6 @@ func applyCodexAccountIdentityBody(ctx context.Context, auth *cliproxyauth.Auth,
 	}
 	rawJSON, _ = helps.ReplaceJSONValues(rawJSON, edits)
 	return rawJSON, state
-}
-
-func applyCodexAccountIdentityBodyForConfig(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, rawJSON []byte) ([]byte, codexAccountIdentityState) {
-	// Legacy identity-confuse has reversible response mappings. Preserve that
-	// contract when it is the active policy; convergence takes precedence over
-	// identity-confuse and can safely compose with account scoping.
-	if codexIdentityConfuseEnabled(cfg) && !codexIdentityConvergenceEnabled(cfg, auth) {
-		return rawJSON, codexAccountIdentityState{}
-	}
-	return applyCodexAccountIdentityBody(ctx, auth, rawJSON)
 }
 
 func codexAccountIdentitySessionValue(state codexAccountIdentityState, raw string) string {

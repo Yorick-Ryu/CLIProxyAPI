@@ -17,7 +17,6 @@ func TestV8MigrationPreservesForkCodexPolicies(t *testing.T) {
   websockets-default: false
   websocket-max-message-bytes: 17416099
   identity-convergence: true
-  identity-confuse: true
   request-compression:
     enabled: true
     min-bytes: 65536

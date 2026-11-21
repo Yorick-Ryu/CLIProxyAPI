@@ -136,6 +136,16 @@ type ClaudeConfig struct {
 	// KV) is active, session date pins are persisted permanently and
 	// session-date-pin-days is ignored.
 	SessionDatePinDays *int `yaml:"session-date-pin-days" json:"session-date-pin-days"`
+	// OAuthIncludeCreateAPIKey controls whether new Claude OAuth authorization
+	// URLs request the org:create_api_key scope in addition to ClaudeOAuthScope.
+	// Nil defaults to true to match native Claude Code.
+	OAuthIncludeCreateAPIKey *bool `yaml:"oauth-include-create-api-key,omitempty" json:"oauth-include-create-api-key,omitempty"`
+}
+
+// OAuthIncludeCreateAPIKeyEnabled reports whether Claude OAuth authorization
+// requests should include the org:create_api_key scope.
+func (c *ClaudeConfig) OAuthIncludeCreateAPIKeyEnabled() bool {
+	return c == nil || c.OAuthIncludeCreateAPIKey == nil || *c.OAuthIncludeCreateAPIKey
 }
 
 // DefaultClaudeSessionDatePinDays is the session date pin retention applied
@@ -320,7 +330,6 @@ type CodexConfig struct {
 	// WebsocketMaxMessageBytes limits complete uncompressed upstream WS messages.
 	// Omitted or non-positive values disable the local limit.
 	WebsocketMaxMessageBytes int64 `yaml:"websocket-max-message-bytes,omitempty" json:"websocket-max-message-bytes,omitempty"`
-	IdentityConfuse          bool  `yaml:"identity-confuse" json:"identity-confuse"`
 	// IdentityConvergence is the provider-wide default for Codex OAuth fingerprint convergence.
 	// It converges only the device identity so independent client sessions remain distinct.
 	// An auth metadata field named codex_fingerprint_mode can explicitly select off/device/session/full.

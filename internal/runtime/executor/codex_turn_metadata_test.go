@@ -247,20 +247,18 @@ func TestCodexDuplexTurnMetadataSerialization(t *testing.T) {
 func TestCodexTurnMetadataFormattingAuthScope(t *testing.T) {
 	const metadata = `{"z":"keep","agent_name":"agent"}`
 	const canonical = `{"agent_name":"agent","z":"keep"}`
-	cfg := &config.Config{Codex: config.CodexConfig{IdentityConfuse: true}}
-	cfg.Routing.Strategy = "fill-first"
-	body := []byte(`{"client_metadata":{"x-codex-turn-metadata":` + fmt.Sprintf("%q", metadata) + `}}`)
+	executor := &CodexExecutor{cfg: &config.Config{}}
 	for _, apiKey := range []bool{false, true} {
 		auth := &cliproxyauth.Auth{ID: "scope-fixture", Provider: "codex", Attributes: map[string]string{}}
 		if apiKey {
 			auth.Attributes["api_key"] = "synthetic-key"
 		}
-		_, state := applyCodexIdentityConfuseBody(cfg, auth, body, body)
-		if !state.enabled {
-			t.Fatal("fixture must cover the legacy identity-confuse path")
+		_, _, state, err := executor.prepareCachedRequest(t.Context(), sdktranslator.FormatOpenAIResponse, "https://example.com/responses", auth, cliproxyexecutor.Request{}, nil, []byte("{}"))
+		if err != nil {
+			t.Fatal(err)
 		}
 		headers := http.Header{"X-Codex-Turn-Metadata": {metadata}}
-		applyCodexIdentityConfuseHeaders(headers, &state)
+		applyCodexRequestIdentityHeaders(headers, &state)
 		want := canonical
 		if apiKey {
 			want = metadata

@@ -117,7 +117,7 @@ func (e *CodexExecutor) executeOpenAIImage(ctx context.Context, auth *cliproxyau
 	}
 	reporter.SetTranslatedReasoningEffort(body, "codex")
 	applyCodexHeaders(httpReq, auth, apiKey, true, e.cfg, opts.Headers)
-	applyCodexIdentityConfuseHeaders(httpReq.Header, &identityState)
+	applyCodexRequestIdentityHeaders(httpReq.Header, &identityState)
 	applyModelHeaderOverrides(httpReq.Header, mainModel)
 	recordCodexOpenAIImageRequest(ctx, e.cfg, e.Identifier(), auth, url, httpReq.Header.Clone(), body)
 
@@ -224,7 +224,7 @@ func (e *CodexExecutor) executeOpenAIImageStream(ctx context.Context, auth *clip
 	}
 	reporter.SetTranslatedReasoningEffort(body, "codex")
 	applyCodexHeaders(httpReq, auth, apiKey, true, e.cfg, opts.Headers)
-	applyCodexIdentityConfuseHeaders(httpReq.Header, &identityState)
+	applyCodexRequestIdentityHeaders(httpReq.Header, &identityState)
 	applyModelHeaderOverrides(httpReq.Header, mainModel)
 	recordCodexOpenAIImageRequest(ctx, e.cfg, e.Identifier(), auth, url, httpReq.Header.Clone(), body)
 
@@ -366,7 +366,7 @@ func (e *CodexExecutor) executeDirectOpenAIImage(ctx context.Context, auth *clip
 		return resp, errPrepare
 	}
 	applyCodexDirectImageHeaders(httpReq, auth, apiKey, false, e.cfg, opts.Headers)
-	applyCodexIdentityConfuseHeaders(httpReq.Header, &identityState)
+	applyCodexRequestIdentityHeaders(httpReq.Header, &identityState)
 	applyCodexImageCompatibilityHeaders(httpReq, auth, e.cfg, &identityState, opts.Headers)
 	applyModelHeaderOverrides(httpReq.Header, model)
 	if contentType != "" {
@@ -436,7 +436,7 @@ func (e *CodexExecutor) executeDirectOpenAIImageStream(ctx context.Context, auth
 		return nil, errPrepare
 	}
 	applyCodexDirectImageHeaders(httpReq, auth, apiKey, true, e.cfg, opts.Headers)
-	applyCodexIdentityConfuseHeaders(httpReq.Header, &identityState)
+	applyCodexRequestIdentityHeaders(httpReq.Header, &identityState)
 	applyCodexImageCompatibilityHeaders(httpReq, auth, e.cfg, &identityState, opts.Headers)
 	applyModelHeaderOverrides(httpReq.Header, model)
 	if contentType != "" {

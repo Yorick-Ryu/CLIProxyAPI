@@ -1218,6 +1218,12 @@ oauth:
       # When true, enable authentication for the WebSocket API (/v1/ws).
       ws-auth: true
 
+    # Claude OAuth login behavior.
+    # claude:
+    #   # Include the org:create_api_key scope during new Claude OAuth logins (default: true).
+    #   # Set to false to request only the five user:* scopes (note: claude.ai may require org:create_api_key).
+    #   oauth-include-create-api-key: true
+
     # Codex provider behavior.
     codex:
       # Shared request location for Codex time context and Web Search.
@@ -1241,7 +1247,6 @@ oauth:
       # Separate from WS; chrome preserves the existing HTTP behavior.
       http-tls-profile: "chrome" # chrome | linux
       identity-convergence: false
-      identity-confuse: false
       # Compress eligible Codex OAuth HTTP bodies with zstd.
       # min-bytes: 0 matches native Codex (all Responses sizes); a positive
       # value is a proxy override. API-key, SIWC and compact requests are excluded.
