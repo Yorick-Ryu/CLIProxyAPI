@@ -1253,7 +1253,7 @@ func isAuthBlockedForModelForRequest(ctx context.Context, auth *Auth, model stri
 		if model != "" && len(auth.ModelStates) > 0 {
 			modelKey := canonicalModelLookupKey(model)
 			for stateModel, state := range auth.ModelStates {
-				if state == nil || canonicalModelLookupKey(stateModel) != modelKey {
+				if state == nil || modelStateLookupKey(auth, stateModel) != modelKey {
 					continue
 				}
 				if state.Status == StatusDisabled {
@@ -1272,7 +1272,7 @@ func isAuthBlockedForModelForRequest(ctx context.Context, auth *Auth, model stri
 		if model != "" && len(auth.ModelStates) > 0 {
 			modelKey := canonicalModelLookupKey(model)
 			for stateModel, state := range auth.ModelStates {
-				if state == nil || canonicalModelLookupKey(stateModel) != modelKey {
+				if state == nil || modelStateLookupKey(auth, stateModel) != modelKey {
 					continue
 				}
 				if state.Status == StatusDisabled {
@@ -1291,7 +1291,7 @@ func isAuthBlockedForModelForRequest(ctx context.Context, auth *Auth, model stri
 		if model != "" && len(auth.ModelStates) > 0 {
 			modelKey := canonicalModelLookupKey(model)
 			for stateModel, state := range auth.ModelStates {
-				if state == nil || canonicalModelLookupKey(stateModel) != modelKey {
+				if state == nil || modelStateLookupKey(auth, stateModel) != modelKey {
 					continue
 				}
 				if state.Status == StatusDisabled {
@@ -1314,7 +1314,7 @@ func isAuthBlockedForModelForRequest(ctx context.Context, auth *Auth, model stri
 			blockedReason := blockReasonNone
 			nextRetry := time.Time{}
 			for stateModel, state := range auth.ModelStates {
-				if state == nil || canonicalModelLookupKey(stateModel) != modelKey {
+				if state == nil || modelStateLookupKey(auth, stateModel) != modelKey {
 					continue
 				}
 				matched = true
@@ -1471,7 +1471,7 @@ func isAuthBlockedByQuotaOrAuthForModelForRequest(ctx context.Context, auth *Aut
 	if model != "" && len(auth.ModelStates) > 0 {
 		modelKey := canonicalModelLookupKey(model)
 		for stateModel, state := range auth.ModelStates {
-			if state == nil || canonicalModelLookupKey(stateModel) != modelKey {
+			if state == nil || modelStateLookupKey(auth, stateModel) != modelKey {
 				continue
 			}
 			if state.Status == StatusDisabled {
