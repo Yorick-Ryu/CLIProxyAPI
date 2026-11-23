@@ -9,6 +9,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
@@ -45,12 +46,11 @@ func (h *OpenAIResponsesAPIHandler) responsesWebsocketAvailableAuthsForModel(ctx
 		return nil, modelKey
 	}
 
-	registryRef := registry.GetGlobalRegistry()
 	now := time.Now()
 	auths := h.AuthManager.List()
 	available := make([]*coreauth.Auth, 0, len(auths))
 	for _, auth := range auths {
-		if !responsesWebsocketAuthMatchesModel(ctx, auth, providerSet, modelKey, registryRef, now) {
+		if !h.responsesWebsocketAuthMatchesModel(ctx, auth, providerSet, resolvedModelName, modelKey, now) {
 			continue
 		}
 		available = append(available, auth)
@@ -109,25 +109,24 @@ func responsesWebsocketAuthSupportsIncrementalInput(auth *coreauth.Auth) bool {
 	return auth.EffectiveWebsocketsEnabled()
 }
 
-func responsesWebsocketPinnedAuthMatchesModel(ctx context.Context, auth *coreauth.Auth, modelName string, pinnedModelKey string, homeRuntime bool) bool {
+func (h *OpenAIResponsesAPIHandler) responsesWebsocketPinnedAuthMatchesModel(ctx context.Context, auth *coreauth.Auth, modelName string, pinnedModelKey string, homeRuntime bool) bool {
 	if auth == nil {
 		return false
 	}
-	providerSet, modelKey := responsesWebsocketProviderSetForModel(responsesWebsocketResolvedModelName(modelName))
+	resolvedModelName := responsesWebsocketResolvedModelName(modelName)
+	providerSet, modelKey := responsesWebsocketProviderSetForModel(resolvedModelName)
+	now := time.Now()
+	if !homeRuntime {
+		return h.responsesWebsocketAuthMatchesModel(ctx, auth, providerSet, resolvedModelName, modelKey, now)
+	}
 	providerKey := strings.ToLower(strings.TrimSpace(auth.Provider))
-	if !homeRuntime || len(providerSet) > 0 {
+	if len(providerSet) > 0 {
 		if _, ok := providerSet[providerKey]; !ok {
 			return false
 		}
 	}
-	if !responsesWebsocketAuthAvailableForModel(ctx, auth, modelKey, time.Now()) {
-		return false
-	}
-
-	if homeRuntime {
-		return strings.EqualFold(strings.TrimSpace(pinnedModelKey), strings.TrimSpace(modelKey))
-	}
-	return registry.GetGlobalRegistry().ClientSupportsModel(auth.ID, modelKey)
+	return strings.EqualFold(strings.TrimSpace(pinnedModelKey), strings.TrimSpace(modelKey)) &&
+		responsesWebsocketAuthAvailableForModel(ctx, auth, modelKey, now)
 }
 
 func responsesWebsocketResolvedModelName(modelName string) string {
@@ -145,10 +144,7 @@ func responsesWebsocketResolvedModelName(modelName string) string {
 func responsesWebsocketProviderSetForModel(resolvedModelName string) (map[string]struct{}, string) {
 	parsed := thinking.ParseSuffix(resolvedModelName)
 	baseModel := strings.TrimSpace(parsed.ModelName)
-	providers := util.GetProviderName(baseModel)
-	if len(providers) == 0 && baseModel != resolvedModelName {
-		providers = util.GetProviderName(resolvedModelName)
-	}
+	providers := handlers.RegisteredModelProviders(resolvedModelName, baseModel)
 	providerSet := make(map[string]struct{}, len(providers))
 	for _, provider := range providers {
 		providerKey := strings.TrimSpace(strings.ToLower(provider))
@@ -164,7 +160,7 @@ func responsesWebsocketProviderSetForModel(resolvedModelName string) (map[string
 	return providerSet, modelKey
 }
 
-func responsesWebsocketAuthMatchesModel(ctx context.Context, auth *coreauth.Auth, providerSet map[string]struct{}, modelKey string, registryRef *registry.ModelRegistry, now time.Time) bool {
+func (h *OpenAIResponsesAPIHandler) responsesWebsocketAuthMatchesModel(ctx context.Context, auth *coreauth.Auth, providerSet map[string]struct{}, resolvedModelName, modelKey string, now time.Time) bool {
 	if auth == nil {
 		return false
 	}
@@ -172,7 +168,11 @@ func responsesWebsocketAuthMatchesModel(ctx context.Context, auth *coreauth.Auth
 	if _, ok := providerSet[providerKey]; !ok {
 		return false
 	}
-	if modelKey != "" && registryRef != nil && !registryRef.ClientSupportsModel(auth.ID, modelKey) {
+	if (providerKey == "copilot" || providerKey == "devin") && h.AuthManager != nil && !h.AuthManager.HomeEnabled() {
+		source := h.AuthManager.ResolveExecutionModel(auth, resolvedModelName)
+		return source != "" && responsesWebsocketAuthAvailableForModel(ctx, auth, source, now)
+	}
+	if modelKey != "" && !registry.GetGlobalRegistry().ClientSupportsModel(auth.ID, modelKey) {
 		return false
 	}
 	return responsesWebsocketAuthAvailableForModel(ctx, auth, modelKey, now)

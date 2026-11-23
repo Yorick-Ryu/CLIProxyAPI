@@ -74,6 +74,10 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 		return resp, err
 	}
 	originalTranslated = helps.SetStringIfDifferent(originalTranslated, "model", baseModel)
+	if shouldPreserveFullCodexOpenAIInclude(ctx, auth, baseURL, opts.Headers) {
+		originalTranslated = helps.PreserveCodexOpenAIResponsesInclude(originalTranslated, originalPayload, from)
+		body = helps.PreserveCodexOpenAIResponsesInclude(body, req.Payload, from)
+	}
 	body = normalizeCodexOutputBudget(body)
 	body = helps.SetStringIfDifferent(body, "model", baseModel)
 

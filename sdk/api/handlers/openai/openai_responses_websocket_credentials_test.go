@@ -63,7 +63,7 @@ func TestResponsesWebsocketAvailabilityUsesRequestCredentials(t *testing.T) {
 			if got := h.responsesWebsocketUsesUpstreamWebsocketPassthrough(ctx, model); got != tc.want {
 				t.Errorf("passthrough = %v, want %v", got, tc.want)
 			}
-			if got := responsesWebsocketPinnedAuthMatchesModel(ctx, auth, model, model, false); got != tc.want {
+			if got := h.responsesWebsocketPinnedAuthMatchesModel(ctx, auth, model, model, false); got != tc.want {
 				t.Errorf("pinned match = %v, want %v", got, tc.want)
 			}
 			if got := h.websocketUpstreamSupportsIncrementalInputForModel(ctx, model); got != tc.want {
