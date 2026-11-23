@@ -185,6 +185,7 @@ func (e *CodexWebsocketsExecutor) InterruptExecutionSession(ctx context.Context,
 	}
 	sess.connMu.Lock()
 	conn := sess.conn
+	closer := sess.connCloser
 	authID := sess.authID
 	sess.connMu.Unlock()
 	if conn == nil {
@@ -247,7 +248,7 @@ func (e *CodexWebsocketsExecutor) InterruptExecutionSession(ctx context.Context,
 			return errMarker
 		}
 	}
-	if errWrite := writeCodexWebsocketMessage(e.cfg, sess, conn, payload); errWrite != nil {
+	if errWrite := writeCodexWebsocketMessage(e.cfg, sess, conn, closer, payload); errWrite != nil {
 		return errWrite
 	}
 	log.WithField("outcome", "forwarded").Debug("codex websockets: response.interrupt handled")

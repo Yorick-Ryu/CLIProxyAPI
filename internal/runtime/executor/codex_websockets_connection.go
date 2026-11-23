@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -26,6 +27,8 @@ import (
 
 const (
 	codexResponsesWebsocketBetaHeaderValue = "responses_websockets=2026-02-06"
+	codexWebsocketFragmentSize             = 1024 * 1024
+	codexWebsocketMaxMessageBytesHeader    = "X-Codex-Websocket-Max-Message-Bytes"
 	codexResponsesWebsocketIdleTimeout     = 15 * time.Minute
 	codexResponsesWebsocketHandshakeTO     = 30 * time.Second
 )
@@ -53,6 +56,11 @@ func (e *CodexWebsocketsExecutor) dialCodexWebsocket(ctx context.Context, auth *
 	}
 	closer := newWebsocketConnectionCloser(conn)
 	if conn != nil {
+		if resp != nil {
+			if limit, errLimit := strconv.ParseUint(strings.TrimPrefix(resp.Header.Get(codexWebsocketMaxMessageBytesHeader), "+"), 10, 64); errLimit == nil {
+				closer.messageLimit = &limit
+			}
+		}
 		// Compress requests when the upstream negotiates permessage-deflate.
 		// Peers that decline the extension continue to receive plain messages.
 		// Match the Codex client's DEFLATE level; 6 is always valid.
@@ -76,7 +84,9 @@ func writeWebsocketPayloadMessage(provider string, sess *codexWebsocketSession, 
 	start := time.Now()
 	log.Debugf("%s websockets: write payload started session=%s session_object=%s bytes=%d", provider, sessionID, sessionKind, payloadBytes)
 	var errSend error
-	if sess != nil {
+	if provider == "codex" && conn != nil {
+		errSend = writeCodexWebsocketFrames(sess, conn, payload)
+	} else if sess != nil {
 		errSend = sess.writeMessage(conn, websocket.TextMessage, payload)
 	} else if conn == nil {
 		errSend = fmt.Errorf("%s websockets executor: websocket conn is nil", provider)
@@ -91,26 +101,52 @@ func writeWebsocketPayloadMessage(provider string, sess *codexWebsocketSession, 
 	return errSend
 }
 
-func writeCodexWebsocketMessage(cfg *config.Config, sess *codexWebsocketSession, conn *websocket.Conn, payload []byte) error {
-	if err := validateCodexWebsocketPayloadSize(cfg, payload); err != nil {
+func writeCodexWebsocketFrames(sess *codexWebsocketSession, conn *websocket.Conn, payload []byte) error {
+	if sess != nil {
+		sess.writeMu.Lock()
+		defer sess.writeMu.Unlock()
+		if testWebsocketWritePayloadHook != nil {
+			testWebsocketWritePayloadHook(conn)
+		}
+	}
+	var beforeFragment func(int)
+	if hook := testWebsocketWriteChunkHook; hook != nil {
+		total := max(1, (len(payload)+codexWebsocketFragmentSize-1)/codexWebsocketFragmentSize)
+		beforeFragment = func(index int) { hook(index, total) }
+	}
+	return conn.WriteMessageFragments(websocket.TextMessage, payload, codexWebsocketFragmentSize, beforeFragment)
+}
+
+func writeCodexWebsocketMessage(cfg *config.Config, sess *codexWebsocketSession, conn *websocket.Conn, closer *websocketConnectionCloser, payload []byte) error {
+	if err := validateCodexWebsocketPayloadSizeForConnection(cfg, closer, payload); err != nil {
 		return err
 	}
 	return writeWebsocketPayloadMessage("codex", sess, conn, payload)
 }
 
 func validateCodexWebsocketPayloadSize(cfg *config.Config, payload []byte) error {
-	if cfg == nil || cfg.Codex.WebsocketMaxMessageBytes <= 0 {
+	return validateCodexWebsocketPayloadSizeForConnection(cfg, nil, payload)
+}
+
+func validateCodexWebsocketPayloadSizeForConnection(cfg *config.Config, closer *websocketConnectionCloser, payload []byte) error {
+	var limit uint64
+	var source string
+	if cfg != nil && cfg.Codex.WebsocketMaxMessageBytes > 0 {
+		limit = uint64(cfg.Codex.WebsocketMaxMessageBytes)
+		source = "local"
+	}
+	if closer != nil && closer.messageLimit != nil && (source == "" || *closer.messageLimit < limit) {
+		limit = *closer.messageLimit
+		source = "upstream"
+	}
+	if source == "" || uint64(len(payload)) <= limit {
 		return nil
 	}
-	limit := cfg.Codex.WebsocketMaxMessageBytes
-	if int64(len(payload)) > limit {
-		return codexWebsocketMessageTooBigError{statusErr: statusErr{
-			code: http.StatusRequestEntityTooLarge,
-			msg: fmt.Sprintf(`{"error":{"message":"Codex WebSocket message exceeds the local uncompressed size limit: %d bytes > %d bytes","type":"invalid_request_error","code":"message_too_big","actual_bytes":%d,"limit_bytes":%d}}`,
-				len(payload), limit, len(payload), limit),
-		}}
-	}
-	return nil
+	return codexWebsocketMessageTooBigError{statusErr: statusErr{
+		code: http.StatusRequestEntityTooLarge,
+		msg: fmt.Sprintf(`{"error":{"message":"Codex WebSocket message exceeds the %s uncompressed size limit: %d bytes > %d bytes","type":"invalid_request_error","code":"message_too_big","actual_bytes":%d,"limit_bytes":%d}}`,
+			source, len(payload), limit, len(payload), limit),
+	}}
 }
 
 func mapCodexWebsocketWriteError(sess *codexWebsocketSession, conn *websocket.Conn, err error) error {

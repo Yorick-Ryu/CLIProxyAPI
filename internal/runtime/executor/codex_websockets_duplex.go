@@ -38,7 +38,7 @@ func (e *codexDuplexConnectionError) IsRequestScoped() bool { return true }
 // in this path. Only the upstream can take ownership of a steering submission.
 func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 	ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options,
-	sess *codexWebsocketSession, conn *websocket.Conn, readCh chan codexWebsocketRead,
+	sess *codexWebsocketSession, conn *websocket.Conn, closer *websocketConnectionCloser, readCh chan codexWebsocketRead,
 	input <-chan cliproxyexecutor.WebsocketInput, initial *codexWebsocketPrepared,
 	initialReporter *helps.UsageReporter, headers http.Header, unlock func(),
 ) *cliproxyexecutor.StreamResult {
@@ -573,6 +573,10 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 				return false
 			}
 			payload = frameCodexWebsocketRequestBody(prepared.upstreamBody)
+			if errSize := validateCodexWebsocketPayloadSizeForConnection(e.cfg, closer, payload); errSize != nil {
+				consumedPayload = nil
+				return emitDuplexError(http.StatusRequestEntityTooLarge, "invalid_request_error", "message_too_big", "", ojson.Get(errSize.Error(), "error.message").String(), eventID)
+			}
 			metadataMu.Lock()
 			if len(pending) >= 16 {
 				metadataMu.Unlock()
@@ -593,7 +597,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 			helps.RecordAPIWebsocketRequest(streamCtx, e.cfg, helps.UpstreamRequestLog{
 				URL: initial.wsURL, Method: "WEBSOCKET", Body: prepared.sessionInstructions.LogBody(payload), Provider: e.Identifier(), AuthID: auth.ID,
 			})
-			if errWrite := writeCodexWebsocketMessage(e.cfg, sess, conn, payload); errWrite != nil {
+			if errWrite := writeCodexWebsocketMessage(e.cfg, sess, conn, closer, payload); errWrite != nil {
 				fail(mapCodexWebsocketWriteError(sess, conn, errWrite))
 				return false
 			}
@@ -717,6 +721,13 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 						}
 						continue
 					}
+					if errSize := validateCodexWebsocketPayloadSizeForConnection(e.cfg, closer, payload); errSize != nil {
+						consumedPayload = nil
+						if !emitDuplexError(http.StatusRequestEntityTooLarge, "invalid_request_error", "message_too_big", "", ojson.Get(errSize.Error(), "error.message").String(), ojson.GetBytes(payload, "event_id").String()) {
+							return
+						}
+						continue
+					}
 					metadataMu.Lock()
 					unacknowledgedSteers = append(unacknowledgedSteers, codexSteerSubmission{parent: parent, eventID: ojson.GetBytes(payload, "event_id").String()})
 					consumedPayload = nil
@@ -734,7 +745,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 					helps.RecordAPIWebsocketRequest(streamCtx, e.cfg, helps.UpstreamRequestLog{
 						URL: initial.wsURL, Method: "WEBSOCKET", Body: payload, Provider: e.Identifier(), AuthID: auth.ID,
 					})
-					if errWrite := writeCodexWebsocketMessage(e.cfg, sess, conn, payload); errWrite != nil {
+					if errWrite := writeCodexWebsocketMessage(e.cfg, sess, conn, closer, payload); errWrite != nil {
 						fail(mapCodexWebsocketWriteError(sess, conn, errWrite))
 						return
 					}

@@ -3202,8 +3202,8 @@ func TestCodexWebsockets_ChunkedWriteAllowsPongInterleaving(t *testing.T) {
 	}
 	defer func() { testWebsocketWriteChunkHook = nil }()
 
-	// Large message that spans multiple 32KB chunks (128KB total).
-	largeContent := strings.Repeat("A", 128*1024)
+	// Large message that spans multiple 1 MiB fragments.
+	largeContent := strings.Repeat("A", 2*codexWebsocketFragmentSize)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -3279,7 +3279,7 @@ func TestCodexWebsockets_ChunkedWriteAllowsPongInterleaving(t *testing.T) {
 			return
 		}
 
-		if len(totalMsg) < 128*1024 {
+		if len(totalMsg) < 2*codexWebsocketFragmentSize {
 			t.Errorf("total received payload too short: %d bytes", len(totalMsg))
 			return
 		}
@@ -3303,9 +3303,9 @@ func TestCodexWebsockets_ChunkedWriteAllowsPongInterleaving(t *testing.T) {
 	exec := NewCodexWebsocketsExecutor(&config.Config{})
 	go exec.readUpstreamLoop(sess, clientConn)
 
-	// Write 128KB message through production sess.writeMessage path:
+	// Write two fragments through the production Codex writer.
 	payload := []byte(largeContent)
-	errWrite := sess.writeMessage(clientConn, websocket.TextMessage, payload)
+	errWrite := writeCodexWebsocketMessage(exec.cfg, sess, clientConn, nil, payload)
 	if errWrite != nil {
 		t.Fatalf("writeMessage failed: %v", errWrite)
 	}

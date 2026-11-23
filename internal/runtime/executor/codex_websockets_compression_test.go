@@ -3,6 +3,7 @@ package executor
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -98,7 +99,7 @@ func TestCodexWebsocketRequestCompression(t *testing.T) {
 				// A compressible oversized message must be rejected before any frame
 				// is sent, without preventing the next valid message on this socket.
 				oversized := bytes.Repeat([]byte("x"), codexWebsocketMaxPayloadBytes+1)
-				err = writeCodexWebsocketMessage(executor.cfg, session, conn, oversized)
+				err = writeCodexWebsocketMessage(executor.cfg, session, conn, closer, oversized)
 				var status interface{ StatusCode() int }
 				if !errors.As(err, &status) || status.StatusCode() != http.StatusRequestEntityTooLarge {
 					t.Fatalf("oversized message status: %v", err)
@@ -125,6 +126,8 @@ func TestCodexWebsocketRequestCompression(t *testing.T) {
 				}
 				for _, payload := range [][]byte{
 					[]byte(`{"type":"response.create","model":"test-model","input":"hello"}`),
+					bytes.Repeat([]byte("b"), codexWebsocketFragmentSize),
+					bytes.Repeat([]byte("c"), codexWebsocketFragmentSize+1),
 					[]byte(`{"type":"response.create","model":"test-model","input":"` + strings.Repeat("context ", 128*1024) + `"}`),
 					[]byte(`{"type":"response.create","model":"test-model","previous_response_id":"resp-1","input":"continue"}`),
 					bytes.Repeat([]byte("x"), codexWebsocketMaxPayloadBytes-1),
@@ -132,7 +135,7 @@ func TestCodexWebsocketRequestCompression(t *testing.T) {
 				} {
 					recorded.received.Reset()
 					written := make(chan error, 1)
-					go func() { written <- writeCodexWebsocketMessage(executor.cfg, session, conn, payload) }()
+					go func() { written <- writeCodexWebsocketMessage(executor.cfg, session, conn, closer, payload) }()
 					messageType, received, err := peer.ReadMessage()
 					if err != nil {
 						t.Fatalf("read upstream request: %v", err)
@@ -144,15 +147,7 @@ func TestCodexWebsocketRequestCompression(t *testing.T) {
 						t.Fatal("upstream request type or contents changed")
 					}
 					wire := recorded.received.Bytes()
-					if len(wire) < 2 {
-						t.Fatal("missing wire frame")
-					}
-					if got := wire[0]&0x40 != 0; got != negotiated {
-						t.Fatalf("request RSV1 = %t, want %t", got, negotiated)
-					}
-					if wire[1]&0x80 == 0 {
-						t.Fatal("upstream request frames must remain masked")
-					}
+					assertCodexWebsocketFrames(t, wire, len(payload), negotiated)
 					if negotiated && len(payload) > 1024 && len(wire) >= len(payload)/10 {
 						t.Fatalf("repetitive request did not shrink: %d wire bytes, %d input bytes", len(wire), len(payload))
 					}
@@ -173,7 +168,7 @@ func TestCodexWebsocketRequestCompression(t *testing.T) {
 				// Removing the setting must also disable the send-path guard on
 				// an existing connection, even for messages above the old limit.
 				written := make(chan error, 1)
-				go func() { written <- writeCodexWebsocketMessage(&config.Config{}, session, conn, oversized) }()
+				go func() { written <- writeCodexWebsocketMessage(&config.Config{}, session, conn, closer, oversized) }()
 				_, received, err := peer.ReadMessage()
 				if err != nil {
 					t.Fatal(err)
@@ -186,5 +181,130 @@ func TestCodexWebsocketRequestCompression(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// assertCodexWebsocketFrames checks wire headers independently of Gorilla's
+// reassembly. Intermediate DEFLATE fragments retain the sync-flush trailer.
+func assertCodexWebsocketFrames(t *testing.T, wire []byte, payloadSize int, compressed bool) {
+	t.Helper()
+	fragmentCount := max(1, (payloadSize+codexWebsocketFragmentSize-1)/codexWebsocketFragmentSize)
+	for index := range fragmentCount {
+		if len(wire) < 6 {
+			t.Fatalf("missing wire frame %d of %d", index+1, fragmentCount)
+		}
+		var wantHeader byte
+		if index == 0 {
+			wantHeader = websocket.TextMessage
+			if compressed {
+				wantHeader |= 0x40
+			}
+		}
+		final := index == fragmentCount-1
+		if final {
+			wantHeader |= 0x80
+		}
+		if wire[0] != wantHeader || wire[1]&0x80 == 0 {
+			t.Fatalf("frame %d header = %02x %02x, want %02x with client mask", index+1, wire[0], wire[1], wantHeader)
+		}
+		size := uint64(wire[1] & 0x7f)
+		offset := 2
+		switch size {
+		case 126:
+			size = uint64(binary.BigEndian.Uint16(wire[2:4]))
+			offset += 2
+		case 127:
+			if len(wire) < 14 {
+				t.Fatal("short frame header")
+			}
+			size = binary.BigEndian.Uint64(wire[2:10])
+			offset += 8
+		}
+		if len(wire) < offset+4 || size > uint64(len(wire)-offset-4) {
+			t.Fatalf("truncated frame %d", index+1)
+		}
+		mask := wire[offset : offset+4]
+		data := wire[offset+4 : offset+4+int(size)]
+		wire = wire[offset+4+int(size):]
+		if !compressed {
+			want := min(codexWebsocketFragmentSize, payloadSize-index*codexWebsocketFragmentSize)
+			if len(data) != want {
+				t.Fatalf("frame %d size = %d, want %d", index+1, len(data), want)
+			}
+		} else if !final {
+			if len(data) < 4 {
+				t.Fatal("missing DEFLATE sync-flush trailer")
+			}
+			for i, expected := range []byte{0, 0, 0xff, 0xff} {
+				pos := len(data) - 4 + i
+				if data[pos]^mask[pos%4] != expected {
+					t.Fatalf("frame %d did not retain the DEFLATE sync-flush trailer", index+1)
+				}
+			}
+		}
+	}
+	if len(wire) != 0 {
+		t.Fatalf("unexpected bytes after final frame: %d", len(wire))
+	}
+}
+
+func TestCodexWebsocketUpstreamMessageLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		header      string
+		local       int64
+		first       string
+		second      string
+		limitSource string
+	}{
+		{"upstream only", "8", 0, "123456789", "12345678", "upstream"},
+		{"zero", "0", 20, "1", "", "upstream"},
+		{"malformed header", "invalid", 0, "", "123456789", ""},
+		{"tighter local", "8", 6, "1234567", "123456", "local"},
+		{"tighter upstream", "6", 8, "1234567", "123456", "upstream"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			peers := make(chan *websocket.Conn, 1)
+			upgrader := websocket.Upgrader{EnableCompression: true}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				conn, errUpgrade := upgrader.Upgrade(w, r, http.Header{codexWebsocketMaxMessageBytesHeader: {tc.header}})
+				if errUpgrade != nil {
+					t.Error(errUpgrade)
+					return
+				}
+				peers <- conn
+			}))
+			defer server.Close()
+			executor := NewCodexWebsocketsExecutor(&config.Config{Codex: config.CodexConfig{WebsocketMaxMessageBytes: tc.local}})
+			conn, closer, _, errDial := executor.dialCodexWebsocket(context.Background(), nil, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+			if errDial != nil {
+				t.Fatal(errDial)
+			}
+			defer closer.Close()
+			peer := <-peers
+			defer peer.Close()
+			sess := &codexWebsocketSession{}
+			if tc.first != "" {
+				errSize := writeCodexWebsocketMessage(executor.cfg, sess, conn, closer, []byte(tc.first))
+				var scoped codexWebsocketMessageTooBigError
+				if !errors.As(errSize, &scoped) || scoped.StatusCode() != http.StatusRequestEntityTooLarge || !strings.Contains(scoped.Error(), tc.limitSource+" uncompressed size limit") {
+					t.Fatalf("upstream limit error: %v", errSize)
+				}
+			}
+			written := make(chan error, 1)
+			go func() {
+				written <- writeCodexWebsocketMessage(executor.cfg, sess, conn, closer, []byte(tc.second))
+			}()
+			_, payload, errRead := peer.ReadMessage()
+			if errRead != nil {
+				t.Fatal(errRead)
+			}
+			if errWrite := <-written; errWrite != nil {
+				t.Fatal(errWrite)
+			}
+			if string(payload) != tc.second {
+				t.Fatalf("wire message = %q, want %q", payload, tc.second)
+			}
+		})
 	}
 }

@@ -89,6 +89,19 @@ func (w *truncWriter) Write(p []byte) (int, error) {
 	return n + nn, err
 }
 
+// flushDeflateFragment retains the sync-flush trailer between fragments.
+func flushDeflateFragment(compressor flushWriter, sink *truncWriter) error {
+	if err := compressor.Flush(); err != nil {
+		return err
+	}
+	if sink.n != len(sink.p) || sink.p != [4]byte{0, 0, 0xff, 0xff} {
+		return errors.New("websocket: invalid compression flush trailer")
+	}
+	_, err := sink.w.Write(sink.p[:])
+	sink.n = 0
+	return err
+}
+
 type flateWriteWrapper struct {
 	fw *flate.Writer
 	tw *truncWriter
@@ -100,6 +113,10 @@ func (w *flateWriteWrapper) Write(p []byte) (int, error) {
 		return 0, errWriteClosed
 	}
 	return w.fw.Write(p)
+}
+
+func (w *flateWriteWrapper) flushFragment() error {
+	return flushDeflateFragment(w.fw, w.tw)
 }
 
 func (w *flateWriteWrapper) Close() error {

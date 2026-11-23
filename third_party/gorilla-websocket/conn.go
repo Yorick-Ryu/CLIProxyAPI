@@ -256,10 +256,11 @@ type Conn struct {
 	writeErrMu sync.Mutex
 	writeErr   error
 
-	enableWriteCompression bool
-	compressionLevel       int
-	newCompressionWriter   func(io.WriteCloser, int) io.WriteCloser
-	contextTakeover        bool
+	enableWriteCompression   bool
+	compressionLevel         int
+	newCompressionWriter     func(io.WriteCloser, int) io.WriteCloser
+	releaseCompressionWriter func()
+	contextTakeover          bool
 
 	// Read fields
 	reader  io.ReadCloser // the current reader returned to the application
@@ -343,7 +344,11 @@ func (c *Conn) Subprotocol() string {
 // Close closes the underlying network connection without sending or waiting
 // for a close message.
 func (c *Conn) Close() error {
-	return c.conn.Close()
+	err := c.conn.Close()
+	if c.releaseCompressionWriter != nil {
+		c.releaseCompressionWriter()
+	}
+	return err
 }
 
 // LocalAddr returns the local network address.
@@ -531,11 +536,12 @@ func (c *Conn) NextWriter(messageType int) (io.WriteCloser, error) {
 }
 
 type messageWriter struct {
-	c         *Conn
-	compress  bool // whether next call to flushFrame should set RSV1
-	pos       int  // end of data in writeBuf.
-	frameType int  // type of the current frame.
-	err       error
+	c             *Conn
+	compress      bool   // whether next call to flushFrame should set RSV1
+	pos           int    // end of data in the frame buffer.
+	frameType     int    // type of the current frame.
+	explicitFrame []byte // non-nil when the caller controls frame boundaries
+	err           error
 }
 
 func (w *messageWriter) endMessage(err error) error {
@@ -544,6 +550,7 @@ func (w *messageWriter) endMessage(err error) error {
 	}
 	c := w.c
 	w.err = err
+	w.explicitFrame = nil
 	c.writer = nil
 	if c.writePool != nil {
 		c.writePool.Put(writePoolData{buf: c.writeBuf})
@@ -556,6 +563,10 @@ func (w *messageWriter) endMessage(err error) error {
 // final argument indicates that this is the last frame in the message.
 func (w *messageWriter) flushFrame(final bool, extra []byte) error {
 	c := w.c
+	buf := c.writeBuf
+	if w.explicitFrame != nil {
+		buf = w.explicitFrame
+	}
 	length := w.pos - maxFrameHeaderSize + len(extra)
 
 	// Check for invalid control frames.
@@ -587,24 +598,24 @@ func (w *messageWriter) flushFrame(final bool, extra []byte) error {
 
 	switch {
 	case length >= 65536:
-		c.writeBuf[framePos] = b0
-		c.writeBuf[framePos+1] = b1 | 127
-		binary.BigEndian.PutUint64(c.writeBuf[framePos+2:], uint64(length))
+		buf[framePos] = b0
+		buf[framePos+1] = b1 | 127
+		binary.BigEndian.PutUint64(buf[framePos+2:], uint64(length))
 	case length > 125:
 		framePos += 6
-		c.writeBuf[framePos] = b0
-		c.writeBuf[framePos+1] = b1 | 126
-		binary.BigEndian.PutUint16(c.writeBuf[framePos+2:], uint16(length))
+		buf[framePos] = b0
+		buf[framePos+1] = b1 | 126
+		binary.BigEndian.PutUint16(buf[framePos+2:], uint16(length))
 	default:
 		framePos += 8
-		c.writeBuf[framePos] = b0
-		c.writeBuf[framePos+1] = b1 | byte(length)
+		buf[framePos] = b0
+		buf[framePos+1] = b1 | byte(length)
 	}
 
 	if !c.isServer {
 		key := newMaskKey()
-		copy(c.writeBuf[maxFrameHeaderSize-4:], key[:])
-		maskBytes(key, 0, c.writeBuf[maxFrameHeaderSize:w.pos])
+		copy(buf[maxFrameHeaderSize-4:], key[:])
+		maskBytes(key, 0, buf[maxFrameHeaderSize:w.pos])
 		if len(extra) > 0 {
 			return w.endMessage(c.writeFatal(errors.New("websocket: internal error, extra used in client mode")))
 		}
@@ -619,7 +630,7 @@ func (w *messageWriter) flushFrame(final bool, extra []byte) error {
 	}
 	c.isWriting = true
 
-	err := c.write(w.frameType, c.writeDeadline, c.writeBuf[framePos:w.pos], extra)
+	err := c.write(w.frameType, c.writeDeadline, buf[framePos:w.pos], extra)
 
 	if !c.isWriting {
 		panic("concurrent write to websocket connection")
@@ -658,6 +669,12 @@ func (w *messageWriter) ncopy(max int) (int, error) {
 func (w *messageWriter) Write(p []byte) (int, error) {
 	if w.err != nil {
 		return 0, w.err
+	}
+
+	if w.explicitFrame != nil {
+		w.explicitFrame = append(w.explicitFrame[:w.pos], p...)
+		w.pos = len(w.explicitFrame)
+		return len(p), nil
 	}
 
 	if len(p) > 2*len(w.c.writeBuf) && w.c.isServer {

@@ -250,6 +250,14 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 		}
 		return resp, errDial
 	}
+	if errSize := validateCodexWebsocketPayloadSizeForConnection(e.cfg, closer, wsReqBody); errSize != nil {
+		if isEphemeralSession {
+			closeCodexWebsocketSession(sess, "size_limit")
+		} else if sess == nil {
+			_ = closer.Close()
+		}
+		return resp, errSize
+	}
 	if errConn := sessionInstructions.OnConnection(conn); errConn != nil {
 		return resp, errConn
 	}
@@ -281,7 +289,7 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 
 	sessionReceipt := sess.sessionInstructions.Sent(conn, sessionInstructions)
 	cliproxyexecutor.MarkUpstreamAttempt(ctx)
-	if errSend := writeCodexWebsocketMessage(e.cfg, sess, conn, wsReqBody); errSend != nil {
+	if errSend := writeCodexWebsocketMessage(e.cfg, sess, conn, closer, wsReqBody); errSend != nil {
 		errSend = mapCodexWebsocketWriteError(sess, conn, errSend)
 		if sess != nil && !isEphemeralSession {
 			if cliproxyexecutor.RequiredUpstreamWebsocket(ctx) {
@@ -319,6 +327,9 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 				readCh = sess.activate(conn)
 				restoreMultiAgentV2 = !multiAgentV2Conflict && (optimizeMultiAgentV2 || sess.isMultiAgentV2Optimized(conn))
 				wsReqBodyRetry := frameCodexWebsocketRequestBody(upstreamBody)
+				if errSize := validateCodexWebsocketPayloadSizeForConnection(e.cfg, closer, wsReqBodyRetry); errSize != nil {
+					return resp, errSize
+				}
 				helps.RecordAPIWebsocketRequest(ctx, e.cfg, helps.UpstreamRequestLog{
 					URL:       wsURL,
 					Method:    "WEBSOCKET",
@@ -334,7 +345,7 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 				reporter.StartResponseTTFT()
 				sessionReceipt = sess.sessionInstructions.Sent(conn, sessionInstructions)
 				cliproxyexecutor.MarkUpstreamAttempt(ctx)
-				if errSendRetry := writeCodexWebsocketMessage(e.cfg, sess, conn, wsReqBodyRetry); errSendRetry == nil {
+				if errSendRetry := writeCodexWebsocketMessage(e.cfg, sess, conn, closer, wsReqBodyRetry); errSendRetry == nil {
 					wsReqBody = wsReqBodyRetry
 				} else {
 					errSendRetry = mapCodexWebsocketWriteError(sess, connRetry, errSendRetry)

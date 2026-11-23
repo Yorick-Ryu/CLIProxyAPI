@@ -28,9 +28,10 @@ var globalCodexWebsocketSessionStore = &codexWebsocketSessionStore{
 }
 
 type websocketConnectionCloser struct {
-	conn *websocket.Conn
-	once sync.Once
-	err  error
+	conn         *websocket.Conn
+	once         sync.Once
+	err          error
+	messageLimit *uint64
 }
 
 func newWebsocketConnectionCloser(conn *websocket.Conn) *websocketConnectionCloser {
@@ -256,15 +257,10 @@ func (s *codexWebsocketSession) writeMessage(conn *websocket.Conn, msgType int, 
 	if errNext != nil {
 		return errNext
 	}
-	totalChunks := (len(payload) + codexWebsocketWriteChunkSize - 1) / codexWebsocketWriteChunkSize
 	for i := 0; i < len(payload); i += codexWebsocketWriteChunkSize {
 		end := i + codexWebsocketWriteChunkSize
 		if end > len(payload) {
 			end = len(payload)
-		}
-		chunkIdx := i / codexWebsocketWriteChunkSize
-		if testWebsocketWriteChunkHook != nil {
-			testWebsocketWriteChunkHook(chunkIdx, totalChunks)
 		}
 		if _, errWrite := w.Write(payload[i:end]); errWrite != nil {
 			_ = w.Close()

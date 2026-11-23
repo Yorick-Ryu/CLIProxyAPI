@@ -65,7 +65,7 @@ func (c *Conn) negotiateContextTakeover(headers http.Header) error {
 	_, clientReset := params["client_no_context_takeover"]
 	_, serverReset := params["server_no_context_takeover"]
 	c.contextTakeover = true
-	c.newCompressionWriter = contextCompressionWriter(bits, !clientReset)
+	c.newCompressionWriter, c.releaseCompressionWriter = contextCompressionWriter(bits, !clientReset)
 	// A 32 KiB decoder also accepts streams produced with smaller windows.
 	c.newDecompressionReader = contextDecompressionReader(!serverReset)
 	return nil
@@ -76,23 +76,28 @@ type flushWriter interface {
 	Flush() error
 }
 
-func contextCompressionWriter(bits int, retain bool) func(io.WriteCloser, int) io.WriteCloser {
+func contextCompressionWriter(bits int, retain bool) (func(io.WriteCloser, int) io.WriteCloser, func()) {
 	var compressor flushWriter
 	var sink truncWriter
 	lastLevel := 0
+	encoder, release := newNativeDeflateEncoder(bits)
 	return func(w io.WriteCloser, level int) io.WriteCloser {
 		sink = truncWriter{w: w}
 		if compressor == nil || !retain || lastLevel != level {
-			if bits == 15 {
+			compressor = nil
+			if encoder != nil {
+				compressor = encoder(&sink, level)
+			}
+			if compressor == nil && bits == 15 {
 				compressor, _ = flate.NewWriter(&sink, level)
-			} else {
+			} else if compressor == nil {
 				// A negotiated small window must also limit encoded distances.
 				compressor, _ = windowflate.NewWriterWindow(&sink, 1<<uint(bits))
 			}
 			lastLevel = level
 		}
 		return &contextWriteWrapper{compressor: compressor, sink: &sink}
-	}
+	}, release
 }
 
 type contextWriteWrapper struct {
@@ -106,6 +111,10 @@ func (w *contextWriteWrapper) Write(p []byte) (int, error) {
 		return 0, errWriteClosed
 	}
 	return w.compressor.Write(p)
+}
+
+func (w *contextWriteWrapper) flushFragment() error {
+	return flushDeflateFragment(w.compressor, w.sink)
 }
 
 func (w *contextWriteWrapper) Close() error {

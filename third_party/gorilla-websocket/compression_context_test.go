@@ -19,7 +19,10 @@ func (*compressionBuffer) Close() error { return nil }
 func TestContextCompressionRetainsHistory(t *testing.T) {
 	payload := make([]byte, 12000)
 	_, _ = rand.New(rand.NewSource(42)).Read(payload)
-	encode := contextCompressionWriter(15, true)
+	encode, release := contextCompressionWriter(15, true)
+	if release != nil {
+		defer release()
+	}
 	decode := contextDecompressionReader(true)
 	var firstSize int
 	for turn := 0; turn < 6; turn++ {
@@ -62,7 +65,10 @@ func TestContextCompressionWindowAndResetModes(t *testing.T) {
 	for bits := 8; bits <= 15; bits++ {
 		for _, retain := range []bool{false, true} {
 			t.Run(fmt.Sprintf("bits%d/retain%v", bits, retain), func(t *testing.T) {
-				encode := contextCompressionWriter(bits, retain)
+				encode, release := contextCompressionWriter(bits, retain)
+				if release != nil {
+					defer release()
+				}
 				var history []byte
 				for turn := 0; turn < 5; turn++ {
 					payload := bytes.Repeat([]byte("window-limited-compression-data-"), 3000)
@@ -193,9 +199,10 @@ func TestContextDialOfferAndRoundTrips(t *testing.T) {
 				_, _ = fmt.Fprint(rw, "\r\n")
 				_ = rw.Flush()
 				conn := newConn(nc, true, 1024, 1024, nil, rw.Reader, nil)
+				defer conn.Close()
 				if extension != "" {
 					retain := !strings.Contains(extension, "no_context_takeover")
-					conn.newCompressionWriter = contextCompressionWriter(15, retain)
+					conn.newCompressionWriter, conn.releaseCompressionWriter = contextCompressionWriter(15, retain)
 					conn.newDecompressionReader = contextDecompressionReader(retain)
 				}
 				for i := 0; i < 6; i++ {
