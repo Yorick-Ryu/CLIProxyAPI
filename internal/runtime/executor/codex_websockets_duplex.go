@@ -1011,9 +1011,9 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 			metadataMu.Unlock()
 			if !isInitialResponse && (eventType == "error" || eventType == "response.failed") {
 				var credentialErr error
-				if wsErr, ok := parseCodexWebsocketErrorWithCooling(payload, e.modelLevelCooling()); ok {
+				if wsErr, ok := e.errorPolicy().websocketError(payload); ok {
 					credentialErr = wsErr
-				} else if streamErr, _, ok := codexTerminalFailureErrWithCooling(payload, e.modelLevelCooling()); ok {
+				} else if streamErr, _, ok := e.errorPolicy().terminalFailureError(payload); ok {
 					credentialErr = streamErr
 				}
 				var status interface{ StatusCode() int }
@@ -1071,10 +1071,10 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 			// metadata that belongs to this event. Only the first rejection can
 			// enter conductor bootstrap retry; later failures stay on this socket.
 			var terminalErr, replayErr error
-			if wsErr, ok := parseCodexWebsocketErrorWithCooling(payload, e.modelLevelCooling()); ok {
+			if wsErr, ok := e.errorPolicy().websocketError(payload); ok {
 				terminalErr = wsErr
-				replayErr = clearCodexReasoningReplayOnWebsocketError(ctx, eventPrepared.replayScope, payload)
-			} else if streamErr, body, ok := codexTerminalFailureErrWithCooling(payload, e.modelLevelCooling()); ok {
+				replayErr = e.errorPolicy().clearReasoningReplayOnWebsocketError(ctx, eventPrepared.replayScope, payload)
+			} else if streamErr, body, ok := e.errorPolicy().terminalFailureError(payload); ok {
 				terminalErr = streamErr
 				replayErr = clearCodexReasoningReplayOnInvalidSignature(ctx, eventPrepared.replayScope, streamErr.StatusCode(), body)
 			}

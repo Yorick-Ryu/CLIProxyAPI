@@ -101,26 +101,18 @@ func providerCoolingOverrideForAuth(auth *Auth, cfg *internalconfig.Config) (boo
 	return *entry.DisableCooling, true
 }
 
-func nextTransientErrorRetryAfter(now time.Time) time.Time {
-	return recoverableFailureRetryAfterWithHint(now, nil, false)
-}
-
-func recoverableFailureRetryAfter(now time.Time, disableCooling bool) time.Time {
-	return recoverableFailureRetryAfterWithHint(now, nil, disableCooling)
-}
-
 // transientRateLimitRetryAfter resolves the model-scoped cooldown for a
 // transient capacity 429. An explicit zero retry hint means the upstream
 // accepts an immediate retry and suppresses the default transient cooldown;
 // only a missing hint falls back to that default.
-func transientRateLimitRetryAfter(now time.Time, retryAfter *time.Duration, disableCooling bool) time.Time {
+func transientRateLimitRetryAfter(now time.Time, retryAfter *time.Duration, disableCooling bool, cooldownLimit time.Duration) time.Time {
 	if retryAfter != nil && *retryAfter == 0 {
 		return time.Time{}
 	}
-	return recoverableFailureRetryAfterWithHint(now, retryAfter, disableCooling)
+	return recoverableFailureRetryAfterWithHint(now, retryAfter, disableCooling, cooldownLimit)
 }
 
-func recoverableFailureRetryAfterWithHint(now time.Time, retryAfter *time.Duration, disableCooling bool) time.Time {
+func recoverableFailureRetryAfterWithHint(now time.Time, retryAfter *time.Duration, disableCooling bool, cooldownLimit time.Duration) time.Time {
 	if disableCooling {
 		return time.Time{}
 	}
@@ -128,13 +120,18 @@ func recoverableFailureRetryAfterWithHint(now time.Time, retryAfter *time.Durati
 	if seconds < 0 {
 		return time.Time{}
 	}
+	var cooldown time.Duration
 	if retryAfter != nil && *retryAfter > 0 {
-		return now.Add(*retryAfter)
+		cooldown = *retryAfter
+	} else if seconds == 0 {
+		cooldown = transientErrorCooldown
+	} else {
+		cooldown = time.Duration(seconds) * time.Second
 	}
-	if seconds == 0 {
-		return now.Add(transientErrorCooldown)
+	if cooldownLimit > 0 {
+		cooldown = min(cooldown, cooldownLimit)
 	}
-	return now.Add(time.Duration(seconds) * time.Second)
+	return now.Add(cooldown)
 }
 
 // SetConfig updates the runtime config snapshot used by request-time helpers.
@@ -1695,6 +1692,10 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 			}
 		}
 		now = time.Now()
+		var cooldownLimit time.Duration
+		if !result.Success && strings.EqualFold(auth.Provider, "codex") {
+			cooldownLimit = m.runtimeConfigSnapshot().TransientErrorCooldownLimit()
+		}
 		responseHeaders := internallogging.GetResponseHeaders(ctx)
 		var cooldownRecordsBefore []CooldownStateRecord
 		trackCooldownState := m.cooldownStore != nil
@@ -1882,7 +1883,7 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 						// is written and the quota exponential backoff never moves;
 						// a still-live genuine quota deadline is left untouched and
 						// keeps blocking through the generic retry branches below.
-						next := transientRateLimitRetryAfter(now, result.RetryAfter, disableCooling)
+						next := transientRateLimitRetryAfter(now, result.RetryAfter, disableCooling, cooldownLimit)
 						ownModelNonQuotaDeadline = next
 						if isForceResult {
 							ownModelForceDeadline = next
@@ -2070,10 +2071,10 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 								}
 							}
 						case 408, 500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 526:
-							state.NextRetryAfter = recoverableFailureRetryAfterWithHint(now, result.RetryAfter, disableCooling)
+							state.NextRetryAfter = recoverableFailureRetryAfterWithHint(now, result.RetryAfter, disableCooling, cooldownLimit)
 							state.Unavailable = !state.NextRetryAfter.IsZero()
 						default:
-							state.NextRetryAfter = recoverableFailureRetryAfter(now, disableCooling)
+							state.NextRetryAfter = recoverableFailureRetryAfterWithHint(now, nil, disableCooling, 0)
 							state.Unavailable = !state.NextRetryAfter.IsZero()
 						}
 						if !isQuotaCooldownResultError(result.Error) {
@@ -2281,7 +2282,7 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 							}
 						}
 					}
-					ownAuthForceDeadline, ownAuthRetryDeadline := applyAuthFailureState(auth, result.Error, result.RetryAfter, now, disableCooling)
+					ownAuthForceDeadline, ownAuthRetryDeadline := applyAuthFailureState(auth, result.Error, result.RetryAfter, now, disableCooling, cooldownLimit)
 					cooldownSeq := m.currentExecutionSeq()
 					isQuota429 := !disableCooling &&
 						statusCodeFromResult(result.Error) == 429 &&
@@ -4401,7 +4402,7 @@ func isRequestInvalidError(err error) bool {
 	return false
 }
 
-func applyAuthFailureState(auth *Auth, resultErr *Error, retryAfter *time.Duration, now time.Time, disableCooling bool) (time.Time, time.Time) {
+func applyAuthFailureState(auth *Auth, resultErr *Error, retryAfter *time.Duration, now time.Time, disableCooling bool, cooldownLimit time.Duration) (time.Time, time.Time) {
 	if auth == nil {
 		return time.Time{}, time.Time{}
 	}
@@ -4453,7 +4454,7 @@ func applyAuthFailureState(auth *Auth, resultErr *Error, retryAfter *time.Durati
 	} else if isTransientRateLimitResultError(resultErr) && statusCode == http.StatusTooManyRequests {
 		// Without a model key the transient capacity rejection degrades to an
 		// auth-level transient cooldown (issue 7017), never quota exhaustion.
-		next := transientRateLimitRetryAfter(now, retryAfter, disableCooling)
+		next := transientRateLimitRetryAfter(now, retryAfter, disableCooling, cooldownLimit)
 		ownAuthNonQuotaDeadline = next
 		if isForceAuth {
 			ownAuthForceDeadline = next
@@ -4553,13 +4554,13 @@ func applyAuthFailureState(auth *Auth, resultErr *Error, retryAfter *time.Durati
 			auth.NextRetryAfter = next
 		case 408, 500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 526:
 			auth.StatusMessage = "transient upstream error"
-			auth.NextRetryAfter = recoverableFailureRetryAfterWithHint(now, retryAfter, disableCooling)
+			auth.NextRetryAfter = recoverableFailureRetryAfterWithHint(now, retryAfter, disableCooling, cooldownLimit)
 			auth.Unavailable = !auth.NextRetryAfter.IsZero()
 		default:
 			if auth.StatusMessage == "" {
 				auth.StatusMessage = "request failed"
 			}
-			auth.NextRetryAfter = recoverableFailureRetryAfter(now, disableCooling)
+			auth.NextRetryAfter = recoverableFailureRetryAfterWithHint(now, nil, disableCooling, 0)
 			auth.Unavailable = !auth.NextRetryAfter.IsZero()
 		}
 	}

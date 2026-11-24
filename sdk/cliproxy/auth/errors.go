@@ -474,6 +474,9 @@ type trustedRetryAfterError struct {
 }
 
 func trustedRetryAfterHint(err error) *time.Duration {
+	if usesLegacyCodexRetry(err) {
+		return nil
+	}
 	if trusted := trustedRetryAfterFromError(err); trusted != nil {
 		return trusted
 	}
@@ -490,6 +493,11 @@ func trustedRetryAfterHint(err error) *time.Duration {
 	}
 	value := *retryAfter
 	return &value
+}
+
+func usesLegacyCodexRetry(err error) bool {
+	var policy interface{ UsesLegacyCodexRetry() bool }
+	return errors.As(err, &policy) && policy.UsesLegacyCodexRetry()
 }
 
 func withTrustedRetryAfter(err error, retryAfter *time.Duration) error {

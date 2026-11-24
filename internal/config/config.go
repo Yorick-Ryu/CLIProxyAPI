@@ -4,6 +4,11 @@
 // debug settings, proxy configuration, and API keys.
 package config
 
+import (
+	"math"
+	"time"
+)
+
 // ServerResponseCompression mirrors SDKConfig.ResponseCompression on the outer
 // Config so JSON and YAML round trips preserve server.response-compression.
 // The canonical storage remains SDKConfig.ResponseCompression; read the
@@ -110,6 +115,15 @@ type Config struct {
 	// TransientErrorCooldownSeconds controls cooldowns for transient upstream errors (408/500/502/503/504/520-526).
 	// 0 keeps the legacy default cooldown. Negative values disable these cooldowns.
 	TransientErrorCooldownSeconds int `yaml:"transient-error-cooldown-seconds" json:"transient-error-cooldown-seconds"`
+
+	// TransientErrorRespectRetryAfter selects upstream Codex retry and cooldown
+	// handling (nil/true) or the behavior before the v8.0.77 sync (false).
+	// Both modes allow immediate retry for capacity 429s with Retry-After: 0.
+	TransientErrorRespectRetryAfter *bool `yaml:"transient-error-respect-retry-after,omitempty" json:"transient-error-respect-retry-after,omitempty"`
+
+	// TransientErrorMaxCooldownSeconds caps transient Codex cooldowns in upstream mode.
+	// Values <= 0 disable the cap.
+	TransientErrorMaxCooldownSeconds int `yaml:"transient-error-max-cooldown-seconds" json:"transient-error-max-cooldown-seconds"`
 
 	// AuthAutoRefreshWorkers overrides the size of the core auth auto-refresh and manual refresh-all worker pool.
 	// When <= 0, the default worker count is used.
@@ -229,4 +243,21 @@ type Config struct {
 
 	// Payload defines default and override rules for provider payload parameters.
 	Payload PayloadConfig `yaml:"payload" json:"payload"`
+}
+
+// RespectTransientErrorRetryAfter reports whether Codex uses upstream retry handling.
+func (cfg *Config) RespectTransientErrorRetryAfter() bool {
+	if cfg == nil || cfg.TransientErrorRespectRetryAfter == nil {
+		return true
+	}
+	return *cfg.TransientErrorRespectRetryAfter
+}
+
+// TransientErrorCooldownLimit returns the optional cap in upstream Codex mode.
+func (cfg *Config) TransientErrorCooldownLimit() time.Duration {
+	if cfg == nil || !cfg.RespectTransientErrorRetryAfter() || cfg.TransientErrorMaxCooldownSeconds <= 0 {
+		return 0
+	}
+	seconds := min(int64(cfg.TransientErrorMaxCooldownSeconds), math.MaxInt64/int64(time.Second))
+	return time.Duration(seconds) * time.Second
 }

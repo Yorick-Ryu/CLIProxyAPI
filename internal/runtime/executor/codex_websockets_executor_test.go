@@ -218,7 +218,7 @@ func TestClearCodexReasoningReplayOnWebsocketInvalidSignature(t *testing.T) {
 		t.Fatal("failed to seed websocket replay cache")
 	}
 	payload := []byte(`{"type":"error","status":400,"body":{"error":{"message":"Invalid signature in thinking block","type":"invalid_request_error","code":"invalid_request_error"}}}`)
-	if errClear := clearCodexReasoningReplayOnWebsocketError(context.Background(), scope, payload); errClear != nil {
+	if errClear := (codexErrorPolicy{}).clearReasoningReplayOnWebsocketError(context.Background(), scope, payload); errClear != nil {
 		t.Fatalf("clear websocket replay error: %v", errClear)
 	}
 	if _, ok := internalcache.GetCodexReasoningReplayItem(scope.modelName, scope.sessionKey); ok {

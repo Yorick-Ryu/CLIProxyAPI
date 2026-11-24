@@ -189,7 +189,7 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 		}
 		if respHS != nil && respHS.StatusCode > 0 {
 			unlockStreamSession()
-			return nil, newCodexStatusErrWithHeadersAndCooling(respHS.StatusCode, respHS.Header, bodyErr, e.modelLevelCooling())
+			return nil, e.errorPolicy().statusError(respHS.StatusCode, respHS.Header, bodyErr)
 		}
 		unlockStreamSession()
 		return nil, errDial
@@ -462,7 +462,7 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 			helps.EmitWebSocketResponseEvent(ctx, opts, auth, e.Identifier(), req.Model, payload)
 			payload = helps.RestoreCodexMultiAgentV2Response(payload, restoreMultiAgentV2)
 
-			if wsErr, ok := parseCodexWebsocketErrorWithCooling(payload, e.modelLevelCooling()); ok {
+			if wsErr, ok := e.errorPolicy().websocketError(payload); ok {
 				if sess != nil {
 					if timeoutReached && len(bufferedChunks) > 0 {
 						e.invalidateUpstreamConn(sess, conn, "upstream_error", wsErr)
@@ -475,7 +475,7 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 					logCodexWebsocketDisconnected(executionSessionID, authID, wsURL, "upstream_error", wsErr)
 					_ = closer.Close()
 				}
-				if errClearReplay := clearCodexReasoningReplayOnWebsocketError(ctx, replayScope, payload); errClearReplay != nil {
+				if errClearReplay := e.errorPolicy().clearReasoningReplayOnWebsocketError(ctx, replayScope, payload); errClearReplay != nil {
 					if isEphemeralSession {
 						closeCodexWebsocketSession(sess, "replay_clear_error")
 					}
@@ -495,13 +495,13 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 				}
 				return nil, wsErr
 			}
-			if streamErr, terminalBody, ok := codexTerminalFailureErrWithCooling(payload, e.modelLevelCooling()); ok {
+			if streamErr, terminalBody, ok := e.errorPolicy().terminalFailureError(payload); ok {
 				// A transient capacity or usage-limit rejection during bootstrap is retried on
 				// another credential, so the downstream websocket session must survive this
 				// upstream teardown. Notifying the disconnect here (or when no buffered payload
 				// chunk precedes the error) would close the client connection before the retry
 				// can deliver anything.
-				overloadFailover := isCodexOverloadBootstrapFailure(terminalBody)
+				overloadFailover := streamErr.IsTransientRateLimit() || e.errorPolicy().isOverloadBootstrapFailure(terminalBody)
 				usageLimitFailover := isCodexUsageLimitError(terminalBody)
 				failoverPending := overloadFailover || usageLimitFailover
 				if failoverPending && timeoutReached {
@@ -543,7 +543,7 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 						if streamErr.StatusCode() == http.StatusTooManyRequests && streamErr.RetryAfter() != nil {
 							return nil, streamErr
 						}
-						return nil, newCodexBootstrapOverloadErrWithRetryAfter(terminalBody, streamErr.RetryAfter())
+						return nil, e.errorPolicy().bootstrapOverloadError(terminalBody, streamErr.RetryAfter())
 					}
 					return nil, streamErr
 				}
@@ -756,7 +756,7 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 			helps.EmitWebSocketResponseEvent(ctx, opts, auth, e.Identifier(), req.Model, payload)
 			payload = helps.RestoreCodexMultiAgentV2Response(payload, restoreMultiAgentV2)
 
-			if wsErr, ok := parseCodexWebsocketErrorWithCooling(payload, e.modelLevelCooling()); ok {
+			if wsErr, ok := e.errorPolicy().websocketError(payload); ok {
 				terminateReason = "upstream_error"
 				terminateErr = wsErr
 				// The disconnect notification makes the downstream handler close the client and
@@ -769,7 +769,7 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 					sess.clearActive(conn, readCh)
 					unlockStreamSession()
 				}
-				if errClearReplay := clearCodexReasoningReplayOnWebsocketError(ctx, replayScope, payload); errClearReplay != nil {
+				if errClearReplay := e.errorPolicy().clearReasoningReplayOnWebsocketError(ctx, replayScope, payload); errClearReplay != nil {
 					terminateErr = errClearReplay
 					helps.RecordAPIWebsocketError(ctx, e.cfg, "replay_clear_error", errClearReplay)
 					reporter.PublishFailure(ctx, errClearReplay)
@@ -787,7 +787,7 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 				}
 				return
 			}
-			if streamErr, terminalBody, ok := codexTerminalFailureErrWithCooling(payload, e.modelLevelCooling()); ok {
+			if streamErr, terminalBody, ok := e.errorPolicy().terminalFailureError(payload); ok {
 				terminateReason = "upstream_error"
 				terminateErr = streamErr
 				// Publish the downstream disconnect only after an in-stream error was delivered,

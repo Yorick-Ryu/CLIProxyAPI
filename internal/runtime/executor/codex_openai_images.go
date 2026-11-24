@@ -143,7 +143,7 @@ func (e *CodexExecutor) executeOpenAIImage(ctx context.Context, auth *cliproxyau
 	}
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), data))
-		err = newCodexStatusErrWithHeadersAndCooling(httpResp.StatusCode, httpResp.Header, data, e.modelLevelCooling())
+		err = e.errorPolicy().statusError(httpResp.StatusCode, httpResp.Header, data)
 		return resp, err
 	}
 
@@ -155,7 +155,7 @@ func (e *CodexExecutor) executeOpenAIImage(ctx context.Context, auth *cliproxyau
 		}
 		eventData := bytes.TrimSpace(line[len(dataTag):])
 		reporter.ObserveResponseModel(eventData)
-		if errEvent, _, ok := codexTerminalFailureErrWithCooling(eventData, e.modelLevelCooling()); ok {
+		if errEvent, _, ok := e.errorPolicy().terminalFailureError(eventData); ok {
 			err = errEvent
 			return resp, err
 		}
@@ -247,7 +247,7 @@ func (e *CodexExecutor) executeOpenAIImageStream(ctx context.Context, auth *clip
 			return nil, errRead
 		}
 		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), data))
-		err = newCodexStatusErrWithHeadersAndCooling(httpResp.StatusCode, httpResp.Header, data, e.modelLevelCooling())
+		err = e.errorPolicy().statusError(httpResp.StatusCode, httpResp.Header, data)
 		return nil, err
 	}
 
@@ -289,7 +289,7 @@ func (e *CodexExecutor) executeOpenAIImageStream(ctx context.Context, auth *clip
 			}
 			eventData := bytes.TrimSpace(line[len(dataTag):])
 			reporter.ObserveResponseModel(eventData)
-			if errEvent, _, ok := codexTerminalFailureErrWithCooling(eventData, e.modelLevelCooling()); ok {
+			if errEvent, _, ok := e.errorPolicy().terminalFailureError(eventData); ok {
 				helps.RecordAPIResponseError(ctx, e.cfg, errEvent)
 				reporter.PublishFailure(ctx, errEvent)
 				sendError(errEvent)
@@ -396,7 +396,7 @@ func (e *CodexExecutor) executeDirectOpenAIImage(ctx context.Context, auth *clip
 	}
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), data))
-		err = newCodexStatusErrWithHeadersAndCooling(httpResp.StatusCode, httpResp.Header, data, e.modelLevelCooling())
+		err = e.errorPolicy().statusError(httpResp.StatusCode, httpResp.Header, data)
 		return resp, err
 	}
 
@@ -463,7 +463,7 @@ func (e *CodexExecutor) executeDirectOpenAIImageStream(ctx context.Context, auth
 			return nil, errRead
 		}
 		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), data))
-		err = newCodexStatusErrWithHeadersAndCooling(httpResp.StatusCode, httpResp.Header, data, e.modelLevelCooling())
+		err = e.errorPolicy().statusError(httpResp.StatusCode, httpResp.Header, data)
 		return nil, err
 	}
 

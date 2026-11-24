@@ -3,9 +3,11 @@ package executor
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -380,60 +382,20 @@ func TestIssue7600CodexSSEBootstrapConflictingHeadersPreservesTopLevelRetryAfter
 }
 
 func TestIssue7600ManagerAppliesNestedOverloadCooldownInsteadOf60sFallback(t *testing.T) {
-	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, errUpgrade := upgrader.Upgrade(w, r, nil)
-		if errUpgrade != nil {
-			t.Errorf("upgrade websocket: %v", errUpgrade)
-			return
-		}
-		defer func() { _ = conn.Close() }()
-		if _, _, errRead := conn.ReadMessage(); errRead != nil {
-			return
-		}
-		for _, frame := range []string{
-			`{"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}`,
-			`{"type":"response.in_progress","response":{"id":"resp_1","status":"in_progress"}}`,
-			issue7600CapturedOverload326,
-		} {
-			if errWrite := conn.WriteMessage(websocket.TextMessage, []byte(frame)); errWrite != nil {
-				return
-			}
-		}
-	}))
-	defer server.Close()
+	server := newCodexRetryPolicyWebsocketServer(t, issue7600CapturedOverload326)
 
 	cfg := &config.Config{
 		Codex: config.CodexConfig{
 			StreamBootstrapBuffering: false,
 		},
 	}
-	manager := cliproxyauth.NewManager(nil, &cliproxyauth.RoundRobinSelector{}, nil)
+	manager, auth := newCodexRetryPolicyManager(t, server.URL, cfg)
 	manager.RegisterExecutor(NewCodexWebsocketsExecutor(cfg))
-
-	model := "gpt-6.1-sol-issue7600-mgr"
-	auth := &cliproxyauth.Auth{
-		ID:       "codex-issue7600-mgr",
-		Provider: "codex",
-		Status:   cliproxyauth.StatusActive,
-		Attributes: map[string]string{
-			"base_url":   server.URL,
-			"websockets": "true",
-			"api_key":    "sk-test",
-		},
-	}
-	if _, errReg := manager.Register(cliproxyauth.WithSkipPersist(context.Background()), auth); errReg != nil {
-		t.Fatalf("Register() error = %v", errReg)
-	}
-	registry.GetGlobalRegistry().RegisterClient(auth.ID, auth.Provider, []*registry.ModelInfo{{ID: model}})
-	t.Cleanup(func() {
-		registry.GetGlobalRegistry().UnregisterClient(auth.ID)
-	})
 
 	before := time.Now()
 	result, errStream := manager.ExecuteStream(context.Background(), []string{"codex"}, cliproxyexecutor.Request{
-		Model:   model,
-		Payload: []byte(`{"model":"gpt-6.1-sol-issue7600-mgr","input":[{"type":"message","id":"msg-1"}]}`),
+		Model:   "gpt-6.1-sol",
+		Payload: []byte(`{"model":"gpt-6.1-sol","input":[{"type":"message","id":"msg-1"}]}`),
 	}, cliproxyexecutor.Options{
 		SourceFormat:   sdktranslator.FromString("openai-response"),
 		ResponseFormat: sdktranslator.FromString("openai-response"),
@@ -449,11 +411,155 @@ func TestIssue7600ManagerAppliesNestedOverloadCooldownInsteadOf60sFallback(t *te
 	if !ok || updated == nil {
 		t.Fatal("expected auth to remain registered")
 	}
-	state := updated.ModelStates[model]
+	state := updated.ModelStates["gpt-6.1-sol"]
 	if state == nil || !state.Unavailable {
 		t.Fatalf("expected model state to enter cooldown, got %+v", state)
 	}
 	if state.NextRetryAfter.Before(before.Add(300*time.Second)) || state.NextRetryAfter.After(before.Add(350*time.Second)) {
 		t.Fatalf("NextRetryAfter = %v (remaining %v), want ~326s from %v (must not fall back to 60s)", state.NextRetryAfter, state.NextRetryAfter.Sub(before), before)
+	}
+}
+
+func newCodexRetryPolicyWebsocketServer(t *testing.T, errorFrame string) *httptest.Server {
+	t.Helper()
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, errUpgrade := upgrader.Upgrade(w, r, nil)
+		if errUpgrade != nil {
+			t.Errorf("upgrade websocket: %v", errUpgrade)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		if _, _, errRead := conn.ReadMessage(); errRead != nil {
+			return
+		}
+		for _, frame := range []string{
+			`{"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}`,
+			`{"type":"response.in_progress","response":{"id":"resp_1","status":"in_progress"}}`,
+			errorFrame,
+		} {
+			if errWrite := conn.WriteMessage(websocket.TextMessage, []byte(frame)); errWrite != nil {
+				return
+			}
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func newCodexRetryPolicyManager(t *testing.T, baseURL string, cfg *config.Config) (*cliproxyauth.Manager, *cliproxyauth.Auth) {
+	t.Helper()
+	manager := cliproxyauth.NewManager(nil, &cliproxyauth.RoundRobinSelector{}, nil)
+	manager.SetConfig(cfg)
+
+	model := "gpt-6.1-sol"
+	auth := &cliproxyauth.Auth{
+		ID:       "codex-issue7600-mgr",
+		Provider: "codex",
+		Status:   cliproxyauth.StatusActive,
+		Attributes: map[string]string{
+			"base_url":   baseURL,
+			"websockets": "true",
+			"api_key":    "sk-test",
+		},
+	}
+	if _, errReg := manager.Register(cliproxyauth.WithSkipPersist(context.Background()), auth); errReg != nil {
+		t.Fatalf("Register() error = %v", errReg)
+	}
+	registry.GetGlobalRegistry().RegisterClient(auth.ID, auth.Provider, []*registry.ModelInfo{{ID: model}})
+	t.Cleanup(func() {
+		registry.GetGlobalRegistry().UnregisterClient(auth.ID)
+	})
+	return manager, auth
+}
+
+func TestCodexRetryPolicyWebsocket(t *testing.T) {
+	const turnLimit = `{"type":"error","status":429,"headers":{"Retry-After":"0"},"error":{"type":"rate_limit_error","code":"turn_rate_limit_exceeded","message":"Codex is at capacity"}}`
+	for _, test := range []struct {
+		name       string
+		frame      string
+		legacy     bool
+		limit      int
+		wantDelay  time.Duration
+		wantQuota  bool
+		wantHeader string
+	}{
+		{name: "upstream overload", frame: issue7600CapturedOverload326, wantDelay: 326 * time.Second, wantHeader: "326"},
+		{name: "capped upstream overload", frame: issue7600CapturedOverload326, limit: 30, wantDelay: 30 * time.Second, wantHeader: "30"},
+		{name: "legacy overload", frame: issue7600CapturedOverload326, legacy: true, limit: 30, wantDelay: time.Minute},
+		{name: "upstream capacity zero", frame: turnLimit},
+		{name: "legacy capacity zero", frame: turnLimit, legacy: true},
+		{name: "legacy capacity positive", frame: strings.Replace(turnLimit, `"Retry-After":"0"`, `"Retry-After":"30"`, 1), legacy: true, wantDelay: time.Second, wantQuota: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := newCodexRetryPolicyWebsocketServer(t, test.frame)
+			respect := !test.legacy
+			cfg := &config.Config{
+				TransientErrorRespectRetryAfter:  &respect,
+				TransientErrorMaxCooldownSeconds: test.limit,
+			}
+			manager, auth := newCodexRetryPolicyManager(t, server.URL, cfg)
+			manager.RegisterExecutor(NewCodexWebsocketsExecutor(cfg))
+			manager.SetRetryConfig(0, 0, 0)
+			before := time.Now()
+			_, err := manager.Execute(context.Background(), []string{"codex"}, cliproxyexecutor.Request{
+				Model: "gpt-6.1-sol", Payload: []byte(`{"model":"gpt-6.1-sol","input":[{"type":"message","id":"msg-1"}]}`),
+			}, cliproxyexecutor.Options{
+				SourceFormat: sdktranslator.FromString("openai-response"), ResponseFormat: sdktranslator.FromString("openai-response"),
+			})
+			if err == nil {
+				t.Fatal("expected upstream rejection")
+			}
+			if got := cliproxyauth.SafeResponseHeaders(err).Get("Retry-After"); got != test.wantHeader {
+				t.Errorf("downstream Retry-After = %q, want %q", got, test.wantHeader)
+			}
+			updated, _ := manager.GetByID(auth.ID)
+			state := updated.ModelStates["gpt-6.1-sol"]
+			if state == nil || state.Quota.Exceeded != test.wantQuota {
+				t.Fatalf("unexpected model cooldown state %+v, want quota=%t", state, test.wantQuota)
+			}
+			if test.wantDelay == 0 {
+				if !state.NextRetryAfter.IsZero() {
+					t.Fatalf("expected immediate retry, got %v", state.NextRetryAfter)
+				}
+			} else if delay := state.NextRetryAfter.Sub(before); delay < test.wantDelay || delay >= test.wantDelay+time.Second {
+				t.Fatalf("cooldown duration = %v, want %v", delay, test.wantDelay)
+			}
+		})
+	}
+}
+
+func TestCodexRetryPolicyCapacityZeroStartsImmediateRound(t *testing.T) {
+	for _, mode := range []struct {
+		name    string
+		respect bool
+	}{{"upstream", true}, {"legacy", false}} {
+		t.Run(mode.name, func(t *testing.T) {
+			var attempts atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if attempts.Add(1) == 1 {
+					w.Header().Set("Retry-After", "0")
+					w.WriteHeader(http.StatusTooManyRequests)
+					_, _ = io.WriteString(w, issue7017TurnRateLimitBody)
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, `data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[]}}`+"\n\n")
+			}))
+			t.Cleanup(server.Close)
+
+			cfg := &config.Config{TransientErrorRespectRetryAfter: &mode.respect}
+			manager, _ := newCodexRetryPolicyManager(t, server.URL, cfg)
+			manager.RegisterExecutor(NewCodexExecutor(cfg))
+			manager.SetRetryConfig(1, 0, 0)
+			_, err := manager.Execute(context.Background(), []string{"codex"}, cliproxyexecutor.Request{
+				Model: "gpt-6.1-sol", Payload: []byte(`{"model":"gpt-6.1-sol","input":[{"type":"message","id":"msg-1"}]}`),
+			}, cliproxyexecutor.Options{
+				SourceFormat: sdktranslator.FromString("openai-response"), ResponseFormat: sdktranslator.FromString("openai-response"),
+			})
+			if err != nil || attempts.Load() != 2 {
+				t.Fatalf("expected one immediate retry and success, got %d attempts and error %v", attempts.Load(), err)
+			}
+		})
 	}
 }

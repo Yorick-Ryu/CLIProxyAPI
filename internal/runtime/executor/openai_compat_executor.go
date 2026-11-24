@@ -1284,6 +1284,7 @@ type statusErr struct {
 	credentialScoped   bool
 	streamTruncated    bool
 	transientRateLimit bool
+	legacyCodexRetry   bool
 	transientTransport bool
 	tosViolation       bool
 	tosAppealURL       string
@@ -1314,6 +1315,9 @@ func (e statusErr) IsStreamTruncated() bool { return e.streamTruncated }
 // IsTransientRateLimit marks a transient per-model capacity/admission 429
 // that must not be recorded as credential quota exhaustion.
 func (e statusErr) IsTransientRateLimit() bool { return e.transientRateLimit }
+
+// UsesLegacyCodexRetry reports whether Codex used the pre-v8.0.77 retry policy.
+func (e statusErr) UsesLegacyCodexRetry() bool { return e.legacyCodexRetry }
 
 // IsTerminalTOSViolation marks a 403 PERMISSION_DENIED carrying an ErrorInfo
 // reason=TOS_VIOLATION. The conductor must deactivate the credential rather

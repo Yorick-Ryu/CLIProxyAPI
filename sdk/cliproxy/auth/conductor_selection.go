@@ -3352,7 +3352,7 @@ func (m *Manager) annotatePoolCooldownTerminalErrorAt(ctx context.Context, provi
 	if m == nil || lastErr == nil {
 		return lastErr
 	}
-	if statusCodeFromError(lastErr) != http.StatusTooManyRequests {
+	if statusCodeFromError(lastErr) != http.StatusTooManyRequests || usesLegacyCodexRetry(lastErr) {
 		return lastErr
 	}
 	var marker interface{ IsModelCooldown() bool }

@@ -48,17 +48,17 @@ func codexWebsocketErrorStatus(payload []byte) int {
 	return 0
 }
 
-func codexWebsocketErrorStatusWithHeaders(payload []byte, headers http.Header) int {
+func (p codexErrorPolicy) websocketErrorStatus(payload []byte, headers http.Header) int {
 	if status := codexWebsocketErrorStatus(payload); status > 0 {
 		return status
 	}
 	if len(headers) == 0 {
 		return 0
 	}
-	return inferCodexWebsocketErrorStatus(payload)
+	return p.inferWebsocketErrorStatus(payload, headers)
 }
 
-func inferCodexWebsocketErrorStatus(payload []byte) int {
+func (p codexErrorPolicy) inferWebsocketErrorStatus(payload []byte, headers http.Header) int {
 	if isCodexWebsocketConnectionLimitError(payload) {
 		return http.StatusTooManyRequests
 	}
@@ -66,7 +66,7 @@ func inferCodexWebsocketErrorStatus(payload []byte) int {
 	if !ok {
 		return 0
 	}
-	if isCodexUsageLimitError(body) || isCodexTransientCapacityError(body) {
+	if isCodexUsageLimitError(body) || p.isCapacityError(body, headers) {
 		return http.StatusTooManyRequests
 	}
 	if codexTerminalErrorIsContextLength(body) {
@@ -87,6 +87,10 @@ func inferCodexWebsocketErrorStatus(payload []byte) int {
 }
 
 func parseCodexWebsocketErrorWithCooling(payload []byte, modelLevelCooling bool) (error, bool) {
+	return (codexErrorPolicy{modelLevelCooling: modelLevelCooling}).websocketError(payload)
+}
+
+func (p codexErrorPolicy) websocketError(payload []byte) (error, bool) {
 	if len(payload) == 0 {
 		return nil, false
 	}
@@ -94,19 +98,20 @@ func parseCodexWebsocketErrorWithCooling(payload []byte, modelLevelCooling bool)
 		return nil, false
 	}
 	headers := parseCodexWebsocketErrorHeaders(payload)
-	status := codexWebsocketErrorStatusWithHeaders(payload, headers)
+	status := p.websocketErrorStatus(payload, headers)
 	if status <= 0 {
 		return nil, false
 	}
 
 	out := buildCodexWebsocketErrorPayload(payload, status)
 	isUsageLimit := isCodexUsageLimitError(out)
-	transientCapacity := !isUsageLimit && isCodexTransientCapacityError(out)
+	transientCapacity := !isUsageLimit && p.isTransientCapacityError(out, headers)
 	statusError := statusErr{
 		code:               status,
 		msg:                string(out),
-		credentialScoped:   isUsageLimit && !modelLevelCooling,
+		credentialScoped:   isUsageLimit && !p.modelLevelCooling,
 		transientRateLimit: transientCapacity && status == http.StatusTooManyRequests,
+		legacyCodexRetry:   p.legacyRetry,
 	}
 	// Hint precedence: the quota body reset wins, then the connection-limit
 	// immediate-retry contract, then the generic Retry-After header.
@@ -115,10 +120,8 @@ func parseCodexWebsocketErrorWithCooling(payload []byte, modelLevelCooling bool)
 	} else if isCodexWebsocketConnectionLimitError(payload) {
 		retryAfter := time.Duration(0)
 		statusError.retryAfter = &retryAfter
-	} else if shouldParseCodexRetryAfterHeader(status) {
-		if retryAfter := parseRetryAfterHeader(headers, time.Now()); retryAfter != nil {
-			statusError.retryAfter = retryAfter
-		}
+	} else {
+		statusError.retryAfter = p.headerRetryAfter(headers, status, statusError.transientRateLimit)
 	}
 	return statusErrWithHeaders{
 		statusErr: statusError,
@@ -126,9 +129,9 @@ func parseCodexWebsocketErrorWithCooling(payload []byte, modelLevelCooling bool)
 	}, true
 }
 
-func clearCodexReasoningReplayOnWebsocketError(ctx context.Context, scope codexReasoningReplayScope, payload []byte) error {
+func (p codexErrorPolicy) clearReasoningReplayOnWebsocketError(ctx context.Context, scope codexReasoningReplayScope, payload []byte) error {
 	headers := parseCodexWebsocketErrorHeaders(payload)
-	status := codexWebsocketErrorStatusWithHeaders(payload, headers)
+	status := p.websocketErrorStatus(payload, headers)
 	if status <= 0 {
 		return nil
 	}
@@ -218,6 +221,18 @@ func shouldParseCodexRetryAfterHeader(statusCode int) bool {
 	default:
 		return false
 	}
+}
+
+func (p codexErrorPolicy) headerRetryAfter(headers http.Header, status int, transientRateLimit bool) *time.Duration {
+	if (p.legacyRetry && !transientRateLimit) || !shouldParseCodexRetryAfterHeader(status) {
+		return nil
+	}
+	hint := parseRetryAfterHeader(headers, time.Now())
+	if hint != nil && p.cooldownLimit > 0 && (status != http.StatusTooManyRequests || transientRateLimit) && *hint > p.cooldownLimit {
+		limit := p.cooldownLimit
+		return &limit
+	}
+	return hint
 }
 
 func parseCodexWebsocketErrorHeaders(payload []byte) http.Header {

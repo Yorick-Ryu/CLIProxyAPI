@@ -99,6 +99,9 @@ func renderConfigSave(data []byte, persistCfg *Config, migrating bool) ([]byte, 
 	if persistCfg != nil && persistCfg.Claude.OAuthIncludeCreateAPIKey == nil {
 		deleteYAMLPath(original.Content[0], "claude.oauth-include-create-api-key")
 	}
+	if persistCfg != nil && persistCfg.TransientErrorRespectRetryAfter == nil {
+		deleteYAMLPath(original.Content[0], "transient-error-respect-retry-after")
+	}
 
 	// Merge generated into original in-place, preserving comments/order of existing nodes.
 	mergeMappingPreserve(original.Content[0], generated.Content[0])
@@ -468,8 +471,8 @@ func isKnownDefaultValue(path []string, node *yaml.Node) bool {
 		return false
 	}
 
-	// Pointer-backed booleans (such as cache-user-id, disable-cooling, and oauth-include-create-api-key): explicit values are meaningful and must be preserved.
-	if len(path) > 0 && (path[len(path)-1] == "cache-user-id" || path[len(path)-1] == "disable-cooling" || path[len(path)-1] == "oauth-include-create-api-key") && node != nil && node.Kind == yaml.ScalarNode && node.Tag == "!!bool" {
+	// Pointer-backed booleans (such as cache-user-id, disable-cooling, transient-error-respect-retry-after, and oauth-include-create-api-key): explicit values are meaningful and must be preserved.
+	if len(path) > 0 && (path[len(path)-1] == "cache-user-id" || path[len(path)-1] == "disable-cooling" || path[len(path)-1] == "transient-error-respect-retry-after" || path[len(path)-1] == "oauth-include-create-api-key") && node != nil && node.Kind == yaml.ScalarNode && node.Tag == "!!bool" {
 		return false
 	}
 

@@ -271,6 +271,17 @@ routing:
     # Set to 0 to keep the legacy 60-second cooldown; set to -1 to disable transient error cooldowns.
     transient-error-cooldown-seconds: 0
 
+    # Codex retry and cooldown policy. True (default) uses upstream behavior.
+    # False restores handling before the v8.0.77 sync: local transient cooldowns,
+    # standard 429 backoff for capacity rejections, and legacy response-header handling.
+    # A capacity 429 with an explicit Retry-After: 0 allows immediate retry in both modes.
+    transient-error-respect-retry-after: true
+
+    # Optional upper bound in seconds for transient Codex cooldowns in upstream mode.
+    # Set to 0 to use upstream timing. A positive value (e.g. 30 or 60) caps delays
+    # for errors such as server_is_overloaded. Legacy mode uses its normal cooldown.
+    transient-error-max-cooldown-seconds: 0
+
 # Shared request/response behavior.
 requests:
   # Proxy URL. Supports socks5/http/https protocols. Example: socks5://user:pass@192.168.1.1:1080/

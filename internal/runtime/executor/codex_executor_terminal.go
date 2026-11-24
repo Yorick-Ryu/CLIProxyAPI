@@ -153,12 +153,19 @@ func codexTerminalStreamErr(eventData []byte) (statusErr, []byte, bool) {
 }
 
 func codexTerminalStreamErrWithCooling(eventData []byte, modelLevelCooling bool) (statusErr, []byte, bool) {
+	return (codexErrorPolicy{modelLevelCooling: modelLevelCooling}).terminalStreamError(eventData)
+}
+
+func (p codexErrorPolicy) terminalStreamError(eventData []byte) (statusErr, []byte, bool) {
 	body, ok := codexTerminalFailureBody(eventData)
-	if !ok || !codexTerminalStreamErrShouldHandle(body) {
+	if !ok {
 		return statusErr{}, nil, false
 	}
 	headers := parseCodexWebsocketErrorHeaders(eventData)
-	return newCodexStatusErrWithHeadersAndCooling(http.StatusBadRequest, headers, body, modelLevelCooling), body, true
+	if !p.shouldHandleTerminalStreamError(body, headers) {
+		return statusErr{}, nil, false
+	}
+	return p.statusError(http.StatusBadRequest, headers, body), body, true
 }
 
 func codexTerminalFailureErr(eventData []byte) (statusErr, []byte, bool) {
@@ -166,15 +173,20 @@ func codexTerminalFailureErr(eventData []byte) (statusErr, []byte, bool) {
 }
 
 func codexTerminalFailureErrWithCooling(eventData []byte, modelLevelCooling bool) (statusErr, []byte, bool) {
-	if streamErr, body, ok := codexTerminalStreamErrWithCooling(eventData, modelLevelCooling); ok {
-		return streamErr, body, true
-	}
+	return (codexErrorPolicy{modelLevelCooling: modelLevelCooling}).terminalFailureError(eventData)
+}
+
+func (p codexErrorPolicy) terminalFailureError(eventData []byte) (statusErr, []byte, bool) {
 	body, ok := codexTerminalFailureBody(eventData)
 	if !ok {
 		return statusErr{}, nil, false
 	}
 	headers := parseCodexWebsocketErrorHeaders(eventData)
-	return newCodexStatusErrWithHeadersAndCooling(codexTerminalFailureStatus(body), headers, body, modelLevelCooling), body, true
+	status := http.StatusBadRequest
+	if !p.shouldHandleTerminalStreamError(body, headers) {
+		status = codexTerminalFailureStatus(body)
+	}
+	return p.statusError(status, headers, body), body, true
 }
 
 func codexTerminalFailureStatus(body []byte) int {
@@ -244,11 +256,11 @@ func codexTerminalFailureBody(eventData []byte) ([]byte, bool) {
 	return doc.Bytes(), true
 }
 
-func codexTerminalStreamErrShouldHandle(body []byte) bool {
+func (p codexErrorPolicy) shouldHandleTerminalStreamError(body []byte, headers http.Header) bool {
 	if codexTerminalErrorIsContextLength(body) {
 		return true
 	}
-	if isCodexUsageLimitError(body) || isCodexTransientCapacityError(body) {
+	if isCodexUsageLimitError(body) || p.isCapacityError(body, headers) {
 		return true
 	}
 	code, _, ok := codexStatusErrorClassification(http.StatusBadRequest, body)
@@ -361,25 +373,31 @@ func newCodexStatusErrWithCooling(statusCode int, body []byte, modelLevelCooling
 }
 
 func newCodexStatusErrWithHeadersAndCooling(statusCode int, headers http.Header, body []byte, modelLevelCooling bool) statusErr {
+	return (codexErrorPolicy{modelLevelCooling: modelLevelCooling}).statusError(statusCode, headers, body)
+}
+
+func (p codexErrorPolicy) statusError(statusCode int, headers http.Header, body []byte) statusErr {
 	errCode := statusCode
 	isUsageLimit := isCodexUsageLimitError(body)
-	credentialScoped := isUsageLimit && !modelLevelCooling
-	transientCapacity := !isUsageLimit && isCodexTransientCapacityError(body)
-	if transientCapacity || isUsageLimit {
+	transientCapacity := !isUsageLimit && p.isTransientCapacityError(body, headers)
+	if isUsageLimit || transientCapacity || (p.legacyRetry && isCodexModelCapacityError(body)) {
 		errCode = http.StatusTooManyRequests
 	}
 	body = classifyCodexStatusError(errCode, body)
-	err := statusErr{code: errCode, msg: string(body), credentialScoped: credentialScoped, transientRateLimit: transientCapacity && errCode == http.StatusTooManyRequests}
+	err := statusErr{
+		code: errCode, msg: string(body),
+		credentialScoped:   isUsageLimit && !p.modelLevelCooling,
+		transientRateLimit: transientCapacity,
+		legacyCodexRetry:   p.legacyRetry,
+	}
 	// A usage_limit_reached body reset describes quota recovery and wins over
 	// the generic Retry-After header. Other 429s and recoverable transient
 	// upstream errors honour the upstream header so capacity rejections cool
 	// until their real deadline.
 	if retryAfter := parseCodexRetryAfter(errCode, body, time.Now()); retryAfter != nil {
 		err.retryAfter = retryAfter
-	} else if shouldParseCodexRetryAfterHeader(errCode) {
-		if retryAfter := parseRetryAfterHeader(headers, time.Now()); retryAfter != nil {
-			err.retryAfter = retryAfter
-		}
+	} else {
+		err.retryAfter = p.headerRetryAfter(headers, errCode, err.transientRateLimit)
 	}
 	return err
 }
@@ -753,7 +771,11 @@ func newCodexBootstrapOverloadErr(body []byte) statusErr {
 }
 
 func newCodexBootstrapOverloadErrWithRetryAfter(body []byte, preferredRetryAfter *time.Duration) statusErr {
-	err := newCodexStatusErr(http.StatusServiceUnavailable, body)
+	return (codexErrorPolicy{}).bootstrapOverloadError(body, preferredRetryAfter)
+}
+
+func (p codexErrorPolicy) bootstrapOverloadError(body []byte, preferredRetryAfter *time.Duration) statusErr {
+	err := p.statusError(http.StatusServiceUnavailable, nil, body)
 	if preferredRetryAfter != nil {
 		delay := *preferredRetryAfter
 		err.retryAfter = &delay
@@ -766,7 +788,11 @@ func newCodexBootstrapOverloadErrWithRetryAfter(body []byte, preferredRetryAfter
 // Only these failures justify replacing the whole attempt during bootstrap; every other terminal
 // failure keeps the original in-stream delivery semantics so downstream behaviour is unchanged.
 func isCodexOverloadBootstrapFailure(body []byte) bool {
-	if isCodexTransientCapacityError(body) {
+	return (codexErrorPolicy{}).isOverloadBootstrapFailure(body)
+}
+
+func (p codexErrorPolicy) isOverloadBootstrapFailure(body []byte) bool {
+	if p.isCapacityError(body, nil) {
 		return true
 	}
 	errorType := strings.ToLower(strings.TrimSpace(ojson.GetBytesNoCopy(body, "error.type").String()))
