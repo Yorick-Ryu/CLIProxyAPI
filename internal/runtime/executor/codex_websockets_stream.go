@@ -26,7 +26,11 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 			result.OnResponseCommitted = helps.CodexTurnStateCommitObserver(ctx)
 		}
 	}()
-	log.Debugf("Executing Codex Websockets stream request with auth ID: %s, model: %s", auth.ID, req.Model)
+	authID := ""
+	if auth != nil {
+		authID = auth.ID
+	}
+	log.Debugf("Executing Codex Websockets stream request with auth ID: %s, model: %s", authID, req.Model)
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -114,10 +118,11 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 	multiAgentV2Conflict := prepared.multiAgentV2Conflict
 	reporter.SetTranslatedReasoningEffort(clientBody, to.String())
 
-	var authID, authLabel, authType, authValue string
-	authID = auth.ID
-	authLabel = auth.Label
-	authType, authValue = auth.AccountInfo()
+	var authLabel, authType, authValue string
+	if auth != nil {
+		authLabel = auth.Label
+		authType, authValue = auth.AccountInfo()
+	}
 
 	wsReqBody := frameCodexWebsocketRequestBody(upstreamBody)
 	if errSize := validateCodexWebsocketPayloadSize(e.cfg, wsReqBody); errSize != nil {
