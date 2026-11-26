@@ -512,7 +512,7 @@ func TestCodexWebsocketReusedSessionRefreshesDeadlineForNewTurn(t *testing.T) {
 
 	readCh2 := sess.activate(client)
 	waitForRenewedDeadline(t, observed.deadlines, shortDeadline.Add(time.Minute))
-	if errSend := writeCodexWebsocketMessage(sess, client, []byte(`{"type":"response.create","model":"gpt-6-astra","input":[]}`)); errSend != nil {
+	if errSend := writeCodexWebsocketMessage(nil, sess, client, newWebsocketConnectionCloser(client), []byte(`{"type":"response.create","model":"gpt-6-astra","input":[]}`)); errSend != nil {
 		t.Fatalf("write turn 2 request: %v", errSend)
 	}
 	select {
