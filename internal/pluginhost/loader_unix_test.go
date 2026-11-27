@@ -129,9 +129,8 @@ func TestUnixPluginReloadAfterShutdownUsesReplacedFile(t *testing.T) {
 
 	secondClient.Shutdown()
 
-	// Reopening unchanged content must map a fresh instance: the resident Go
-	// runtime keeps package globals after shutdown and cannot be reinitialized.
-	// The new instance must not inherit the closed instance's shutdown state.
+	// Reopening unchanged content must map a fresh image: native Go images
+	// stay mapped after shutdown and retain their closed package globals.
 	thirdClient, errOpenThird := dynamicLibraryLoader{}.Open(file, host)
 	if errOpenThird != nil {
 		t.Fatalf("Open() third error = %v", errOpenThird)
@@ -140,8 +139,14 @@ func TestUnixPluginReloadAfterShutdownUsesReplacedFile(t *testing.T) {
 	if !okThird {
 		t.Fatalf("Open() third client type = %T, want *dynamicLibraryClient", thirdClient)
 	}
+	if third.handle == nil {
+		t.Fatal("third client handle is nil")
+	}
 	if third.handle == second.handle || third.handle == firstHandle {
 		t.Fatalf("third handle = %v, want a fresh instance distinct from %v and %v", third.handle, second.handle, firstHandle)
+	}
+	if third.tempPath == second.tempPath {
+		t.Fatalf("third tempPath = %q, want distinct reload shadow copy", third.tempPath)
 	}
 	if testHostCallbackID(t, third) == testHostCallbackID(t, second) {
 		t.Fatal("third client reused the closed instance's host callback identity")
