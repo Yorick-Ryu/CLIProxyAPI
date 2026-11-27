@@ -66,7 +66,7 @@ func (p codexErrorPolicy) inferWebsocketErrorStatus(payload []byte, headers http
 	if !ok {
 		return 0
 	}
-	if isCodexUsageLimitError(body) || p.isCapacityError(body, headers) {
+	if isCodexUsageLimitError(body) || isCodexBillingQuotaError(body) || p.isCapacityError(body, headers) {
 		return http.StatusTooManyRequests
 	}
 	if codexTerminalErrorIsContextLength(body) {
@@ -105,23 +105,28 @@ func (p codexErrorPolicy) websocketError(payload []byte) (error, bool) {
 
 	out := buildCodexWebsocketErrorPayload(payload, status)
 	isUsageLimit := isCodexUsageLimitError(out)
-	transientCapacity := !isUsageLimit && p.isTransientCapacityError(out, headers)
+	isBillingQuota := isCodexBillingQuotaError(out)
+	transientCapacity := !isUsageLimit && !isBillingQuota && p.isTransientCapacityError(out, headers)
+	errCode := status
+	if isBillingQuota {
+		errCode = http.StatusTooManyRequests
+	}
 	statusError := statusErr{
-		code:               status,
+		code:               errCode,
 		msg:                string(out),
-		credentialScoped:   isUsageLimit && !p.modelLevelCooling,
-		transientRateLimit: transientCapacity && status == http.StatusTooManyRequests,
+		credentialScoped:   isBillingQuota || (isUsageLimit && !p.modelLevelCooling),
+		transientRateLimit: transientCapacity && errCode == http.StatusTooManyRequests,
 		legacyCodexRetry:   p.legacyRetry,
 	}
 	// Hint precedence: the quota body reset wins, then the connection-limit
 	// immediate-retry contract, then the generic Retry-After header.
-	if retryAfter := parseCodexRetryAfter(status, out, time.Now()); retryAfter != nil {
+	if retryAfter := parseCodexRetryAfter(errCode, out, time.Now()); retryAfter != nil {
 		statusError.retryAfter = retryAfter
 	} else if isCodexWebsocketConnectionLimitError(payload) {
 		retryAfter := time.Duration(0)
 		statusError.retryAfter = &retryAfter
 	} else {
-		statusError.retryAfter = p.headerRetryAfter(headers, status, statusError.transientRateLimit)
+		statusError.retryAfter = p.headerRetryAfter(headers, errCode, statusError.transientRateLimit)
 	}
 	return statusErrWithHeaders{
 		statusErr: statusError,

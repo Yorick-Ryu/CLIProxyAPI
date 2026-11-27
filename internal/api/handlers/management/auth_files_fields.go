@@ -245,13 +245,18 @@ func applyAuthDisabledState(auth *coreauth.Auth, disabled bool) {
 	if auth == nil {
 		return
 	}
+	wasDisabled := auth.Disabled || auth.Status == coreauth.StatusDisabled
 	auth.Disabled = disabled
 	if disabled {
 		auth.Status = coreauth.StatusDisabled
 		auth.StatusMessage = "disabled via management API"
-	} else {
+	} else if wasDisabled {
 		auth.Status = coreauth.StatusActive
 		auth.StatusMessage = ""
+		auth.Unavailable = false
+		auth.LastError = nil
+	} else if auth.Status == "" {
+		auth.Status = coreauth.StatusActive
 	}
 	auth.UpdatedAt = time.Now()
 	if auth.Metadata == nil {
@@ -861,6 +866,7 @@ func syncAuthFileDisabledState(auth *coreauth.Auth) {
 	if !ok {
 		return
 	}
+	wasDisabled := auth.Disabled || auth.Status == coreauth.StatusDisabled
 	auth.Disabled = disabled
 	if disabled {
 		auth.Status = coreauth.StatusDisabled
@@ -869,8 +875,14 @@ func syncAuthFileDisabledState(auth *coreauth.Auth) {
 		}
 		return
 	}
-	auth.Status = coreauth.StatusActive
-	auth.StatusMessage = ""
+	if wasDisabled {
+		auth.Status = coreauth.StatusActive
+		auth.StatusMessage = ""
+		auth.Unavailable = false
+		auth.LastError = nil
+	} else if auth.Status == "" {
+		auth.Status = coreauth.StatusActive
+	}
 }
 
 func (h *Handler) removeAuth(ctx context.Context, id string) {

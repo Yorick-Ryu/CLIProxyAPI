@@ -129,9 +129,8 @@ func TestUnixPluginReloadAfterShutdownUsesReplacedFile(t *testing.T) {
 
 	secondClient.Shutdown()
 
-	// Reopening without a content change must reuse the already resident
-	// image instead of mapping a second copy of the same runtime, and the
-	// shutdown above must have reached that image exactly once.
+	// Reopening unchanged content must map a fresh image: native Go images
+	// stay mapped after shutdown and retain their closed package globals.
 	thirdClient, errOpenThird := dynamicLibraryLoader{}.Open(file, host)
 	if errOpenThird != nil {
 		t.Fatalf("Open() third error = %v", errOpenThird)
@@ -140,8 +139,17 @@ func TestUnixPluginReloadAfterShutdownUsesReplacedFile(t *testing.T) {
 	if !okThird {
 		t.Fatalf("Open() third client type = %T, want *dynamicLibraryClient", thirdClient)
 	}
-	if third.handle != second.handle {
-		t.Fatalf("third handle = %v, want reused resident handle %v", third.handle, second.handle)
+	if third.handle == nil {
+		t.Fatal("third client handle is nil")
+	}
+	if third.handle == second.handle || third.handle == firstHandle {
+		t.Fatalf("third handle = %v, want a fresh instance distinct from %v and %v", third.handle, second.handle, firstHandle)
+	}
+	if third.tempPath == second.tempPath {
+		t.Fatalf("third tempPath = %q, want distinct reload shadow copy", third.tempPath)
+	}
+	if testHostCallbackID(t, third) == testHostCallbackID(t, second) {
+		t.Fatal("third client reused the closed instance's host callback identity")
 	}
 	respThird, errCallThird := thirdClient.Call(context.Background(), "test.marker", nil)
 	if errCallThird != nil {
@@ -150,8 +158,8 @@ func TestUnixPluginReloadAfterShutdownUsesReplacedFile(t *testing.T) {
 	if string(respThird) != "v2" {
 		t.Fatalf("Call() third response = %q, want v2", respThird)
 	}
-	if gotCalls := testShutdownCallCount(t, thirdClient); gotCalls != baselineCalls+1 {
-		t.Fatalf("plugin shutdown calls = %d, want baseline %d + 1", gotCalls, baselineCalls)
+	if gotCalls := testShutdownCallCount(t, thirdClient); gotCalls != baselineCalls {
+		t.Fatalf("fresh instance shutdown calls = %d, want initial baseline %d", gotCalls, baselineCalls)
 	}
 	thirdClient.Shutdown()
 }

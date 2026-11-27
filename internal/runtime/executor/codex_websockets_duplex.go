@@ -531,6 +531,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 						localCompactionOrder = localCompactionOrder[1:]
 					}
 					metadataMu.Unlock()
+					sess.clearDuplexWaitingParent(conn)
 				}
 				for idx, chunk := range chunks {
 					select {
@@ -597,6 +598,9 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 			helps.RecordAPIWebsocketRequest(streamCtx, e.cfg, helps.UpstreamRequestLog{
 				URL: initial.wsURL, Method: "WEBSOCKET", Body: prepared.sessionInstructions.LogBody(payload), Provider: e.Identifier(), AuthID: auth.ID,
 			})
+			if !sess.beginDuplexCreate(conn) {
+				extendCodexWebsocketReadDeadline(conn)
+			}
 			if errWrite := writeCodexWebsocketMessage(e.cfg, sess, conn, closer, payload); errWrite != nil {
 				fail(mapCodexWebsocketWriteError(sess, conn, errWrite))
 				return false
@@ -745,6 +749,9 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 					helps.RecordAPIWebsocketRequest(streamCtx, e.cfg, helps.UpstreamRequestLog{
 						URL: initial.wsURL, Method: "WEBSOCKET", Body: payload, Provider: e.Identifier(), AuthID: auth.ID,
 					})
+					if !sess.beginDuplexSteer(conn) {
+						extendCodexWebsocketReadDeadline(conn)
+					}
 					if errWrite := writeCodexWebsocketMessage(e.cfg, sess, conn, closer, payload); errWrite != nil {
 						fail(mapCodexWebsocketWriteError(sess, conn, errWrite))
 						return
